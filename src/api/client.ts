@@ -1,0 +1,764 @@
+/**
+ * ApiClient — configurable HTTP client for the agentic coding back-end.
+ *
+ * Usage:
+ *   const api = new ApiClient({ baseUrl: 'http://localhost:3001' });
+ *   const history = await api.getChatHistory('chat-1');
+ *
+ * Features:
+ *   - Automatic retry with exponential back-off and jitter
+ *   - Configurable retry budget (count, delay, max delay, retryable status codes)
+ *   - Per-request AbortController support
+ *   - Mock server for local development
+ *   - SSE-based real-time agent event streaming
+ */
+
+import type {
+  ApiResponse,
+  SendMessageRequest,
+  SendMessageResponse,
+  ApproveCommandRequest,
+  ApproveCommandResponse,
+  RejectCommandRequest,
+  RejectCommandResponse,
+  SetAutoApproveRequest,
+  SetAutoApproveResponse,
+  GetAutoApproveResponse,
+  ChangeModelRequest,
+  ChangeModelResponse,
+  SummarizeContextRequest,
+  SummarizeContextResponse,
+  RevertToCheckpointRequest,
+  RevertToCheckpointResponse,
+  RevertFileRequest,
+  RevertFileResponse,
+  CreateProjectRequest,
+  CreateProjectResponse,
+  UpdateProjectRequest,
+  UpdateProjectResponse,
+  DeleteProjectResponse,
+  ReorderProjectsRequest,
+  CreateChatRequest,
+  CreateChatResponse,
+  UpdateChatRequest,
+  UpdateChatResponse,
+  DeleteChatRequest,
+  DeleteChatResponse,
+  ReorderChatsRequest,
+  GetFsChildrenResponse,
+  GetChatHistoryResponse,
+  GetProjectsResponse,
+  GetSettingsResponse,
+  AgentEvent,
+} from './types';
+
+/* ── Retry Configuration ────────────────────────────────────────── */
+
+export interface RetryConfig {
+  /** Maximum number of retry attempts (0 = no retries). Default 3. */
+  maxRetries: number;
+  /** Initial delay in ms before the first retry. Default 500. */
+  baseDelay: number;
+  /** Maximum delay in ms between retries (caps exponential growth). Default 15 000. */
+  maxDelay: number;
+  /** Multiplier applied to the delay after each attempt. Default 2. */
+  backoffMultiplier: number;
+  /** When true, a random jitter of 0–50% of the delay is added. Default true. */
+  jitter: boolean;
+  /** HTTP status codes that are eligible for retry. Default [408,429,500,502,503,504]. */
+  retryableStatusCodes: number[];
+  /** If true, network errors (TypeError / AbortError) are retried. Default true. */
+  retryOnNetworkError: boolean;
+}
+
+const DEFAULT_RETRY: RetryConfig = {
+  maxRetries: 3,
+  baseDelay: 500,
+  maxDelay: 15_000,
+  backoffMultiplier: 2,
+  jitter: true,
+  retryableStatusCodes: [408, 429, 500, 502, 503, 504],
+  retryOnNetworkError: true,
+};
+
+/* ── Client Configuration ───────────────────────────────────────── */
+
+export interface ApiClientConfig {
+  /** Base URL of the API server (e.g. "http://localhost:3001/api"). */
+  baseUrl: string;
+  /** Optional bearer token for authentication. */
+  token?: string;
+  /** Request timeout in ms. Default 30 000. */
+  timeout?: number;
+  /** When true the client delegates to the built-in mock server. */
+  useMock?: boolean;
+  /** Retry configuration. Merged with defaults. */
+  retry?: Partial<RetryConfig>;
+  /** Called before each retry — return false to abort the retry chain. */
+  onRetry?: (attempt: number, delay: number, error: string, method: string, path: string) => boolean | void;
+}
+
+/* ── Client Class ───────────────────────────────────────────────── */
+
+export class ApiClient {
+  private config: Required<Omit<ApiClientConfig, 'retry' | 'onRetry'>>;
+  private retryConfig: RetryConfig;
+  private onRetry?: ApiClientConfig['onRetry'];
+  private abortControllers = new Map<string, AbortController>();
+  private eventListeners = new Map<string, ((event: AgentEvent) => void)[]>();
+  private activeSessions = new Map<string, AbortController>();
+
+  constructor(config: Partial<ApiClientConfig> = {}) {
+    this.config = {
+      baseUrl: config.baseUrl ?? 'http://localhost:3001/api',
+      token: config.token ?? '',
+      timeout: config.timeout ?? 30_000,
+      useMock: config.useMock ?? false,
+    };
+    this.retryConfig = { ...DEFAULT_RETRY, ...config.retry };
+    this.onRetry = config.onRetry;
+  }
+
+  /* ── Retry helpers ───────────────────────────────────────────── */
+
+  /** Compute delay for the given attempt (0-indexed). */
+  private computeDelay(attempt: number): number {
+    const { baseDelay, backoffMultiplier, maxDelay, jitter } = this.retryConfig;
+    let delay = baseDelay * Math.pow(backoffMultiplier, attempt);
+    delay = Math.min(delay, maxDelay);
+    if (jitter) {
+      // Add 0-50 % random jitter to decorrelate concurrent retries
+      delay += delay * Math.random() * 0.5;
+    }
+    return Math.round(delay);
+  }
+
+  /** Determine whether an HTTP status code is retryable. */
+  private isRetryableStatus(status: number): boolean {
+    return this.retryConfig.retryableStatusCodes.includes(status);
+  }
+
+  /** Determine whether an error is retryable. */
+  private isRetryableError(err: unknown): boolean {
+    if (!this.retryConfig.retryOnNetworkError) return false;
+    if (err instanceof TypeError) return true; // network failure
+    if (err instanceof DOMException && err.name === 'AbortError') return false; // user-cancelled
+    return true;
+  }
+
+  /** Sleep helper (respects abort signal). */
+  private sleep(ms: number, signal?: AbortSignal): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(resolve, ms);
+      signal?.addEventListener('abort', () => {
+        clearTimeout(timer);
+        reject(new DOMException('Aborted', 'AbortError'));
+      }, { once: true });
+    });
+  }
+
+  /* ── Private request with retry ──────────────────────────────── */
+
+  private headers(): Record<string, string> {
+    const h: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (this.config.token) {
+      h['Authorization'] = `Bearer ${this.config.token}`;
+    }
+    return h;
+  }
+
+  private async request<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+    requestId?: string,
+  ): Promise<ApiResponse<T>> {
+    // ── Mock path (no retry needed) ──
+    if (this.config.useMock) {
+      return this.mockRequest<T>(method, path, body);
+    }
+
+    // ── Real HTTP path with retry ──
+    const controller = new AbortController();
+    if (requestId) {
+      this.abortControllers.get(requestId)?.abort();
+      this.abortControllers.set(requestId, controller);
+    }
+
+    const { maxRetries } = this.retryConfig;
+    let lastError = '';
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      // ── Wait before retry (skip on first attempt) ──
+      if (attempt > 0) {
+        const delay = this.computeDelay(attempt - 1);
+
+        // Notify retry listener — they can abort the chain
+        if (this.onRetry) {
+          const shouldContinue = this.onRetry(attempt, delay, lastError, method, path);
+          if (shouldContinue === false) {
+            break;
+          }
+        }
+
+        try {
+          await this.sleep(delay, controller.signal);
+        } catch {
+          // abort during sleep
+          break;
+        }
+      }
+
+      const timeoutId = setTimeout(() => controller.abort(), this.config.timeout);
+
+      try {
+        const res = await fetch(`${this.config.baseUrl}${path}`, {
+          method,
+          headers: this.headers(),
+          body: body ? JSON.stringify(body) : undefined,
+          signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+
+        // ── Success ──
+        if (res.ok) {
+          const payload = await res.json();
+
+          // Backend returns envelope: { ok, data, error, timestamp }
+          if (
+            payload &&
+            typeof payload === 'object' &&
+            'ok' in payload &&
+            'data' in payload
+          ) {
+            const envelope = payload as ApiResponse<T>;
+            return {
+              ok: envelope.ok,
+              data: envelope.data,
+              error: envelope.error,
+              timestamp: envelope.timestamp ?? new Date().toISOString(),
+            };
+          }
+
+          // Fallback for non-enveloped success payloads.
+          return { ok: true, data: payload as T, timestamp: new Date().toISOString() };
+        }
+
+        // ── Non-retryable HTTP error ──
+        if (!this.isRetryableStatus(res.status) || attempt === maxRetries) {
+          const errorData = await res.json().catch(() => ({}));
+          if (
+            errorData &&
+            typeof errorData === 'object' &&
+            'ok' in errorData &&
+            'data' in errorData
+          ) {
+            const envelope = errorData as ApiResponse<T>;
+            return {
+              ok: false,
+              data: null as unknown as T,
+              error: envelope.error ?? `HTTP ${res.status}`,
+              timestamp: envelope.timestamp ?? new Date().toISOString(),
+            };
+          }
+
+          lastError = (errorData as { error?: string }).error ?? `HTTP ${res.status}`;
+          return {
+            ok: false,
+            data: null as unknown as T,
+            error: lastError,
+            timestamp: new Date().toISOString(),
+          };
+        }
+
+        // ── Retryable HTTP error — loop continues ──
+        const errorData = await res.json().catch(() => ({}));
+        lastError = (errorData as { error?: string }).error ?? `HTTP ${res.status}`;
+      } catch (err) {
+        clearTimeout(timeoutId);
+
+        // User-initiated abort — do not retry
+        if (err instanceof DOMException && err.name === 'AbortError') {
+          return {
+            ok: false,
+            data: null as unknown as T,
+            error: 'Request aborted',
+            timestamp: new Date().toISOString(),
+          };
+        }
+
+        lastError = err instanceof Error ? err.message : 'Unknown error';
+
+        // Non-retryable network error
+        if (!this.isRetryableError(err) || attempt === maxRetries) {
+          return {
+            ok: false,
+            data: null as unknown as T,
+            error: lastError,
+            timestamp: new Date().toISOString(),
+          };
+        }
+
+        // Retryable — loop continues
+      }
+    }
+
+    // Exhausted retries
+    if (requestId) this.abortControllers.delete(requestId);
+    return {
+      ok: false,
+      data: null as unknown as T,
+      error: `Failed after ${maxRetries + 1} attempts: ${lastError}`,
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  /** Cancel an in-flight request by its ID. */
+  cancel(requestId: string) {
+    this.abortControllers.get(requestId)?.abort();
+    this.abortControllers.delete(requestId);
+  }
+
+  /* ── Concurrent Session Management ───────────────────────────── */
+
+  /**
+   * Start an agent session for a chat. Each chat gets its own
+   * AbortController so multiple chats can run concurrently.
+   * Calling this again for the same chatId aborts the previous session.
+   */
+  startSession(chatId: string): AbortController {
+    this.activeSessions.get(chatId)?.abort();
+    const controller = new AbortController();
+    this.activeSessions.set(chatId, controller);
+    return controller;
+  }
+
+  /** End (clean up) an agent session for a chat. */
+  endSession(chatId: string): void {
+    this.activeSessions.delete(chatId);
+  }
+
+  /** Get all currently active chat session IDs. */
+  getActiveSessions(): string[] {
+    return Array.from(this.activeSessions.keys());
+  }
+
+  /** Cancel a specific chat's in-flight session. */
+  cancelSession(chatId: string): void {
+    this.activeSessions.get(chatId)?.abort();
+    this.activeSessions.delete(chatId);
+  }
+
+  /** Cancel all active sessions across all chats. */
+  cancelAllSessions(): void {
+    this.activeSessions.forEach((controller) => controller.abort());
+    this.activeSessions.clear();
+  }
+
+  /* ── Actions (client → backend) ──────────────────────────────── */
+
+  /** Send a user message to a chat. Manages a per-chat session so
+   *  multiple chats can have concurrent in-flight requests. */
+  async sendMessage(req: SendMessageRequest): Promise<ApiResponse<SendMessageResponse>> {
+    this.startSession(req.chatId);
+    try {
+      const res = await this.request<SendMessageResponse>(
+        'POST',
+        `/chat/${req.chatId}/messages`,
+        { content: req.content },
+        `send-${req.chatId}`,
+      );
+      return res;
+    } finally {
+      this.endSession(req.chatId);
+    }
+  }
+
+  /** Approve a pending tool call. */
+  async approveCommand(req: ApproveCommandRequest): Promise<ApiResponse<ApproveCommandResponse>> {
+    return this.request('POST', `/chat/${req.chatId}/approve`, { toolCallId: req.toolCallId });
+  }
+
+  /** Reject a pending tool call. */
+  async rejectCommand(req: RejectCommandRequest): Promise<ApiResponse<RejectCommandResponse>> {
+    return this.request('POST', `/chat/${req.chatId}/reject`, {
+      toolCallId: req.toolCallId,
+      reason: req.reason,
+    });
+  }
+
+  /** Replace the full set of auto-approve rules. */
+  async setAutoApproveRules(req: SetAutoApproveRequest): Promise<ApiResponse<SetAutoApproveResponse>> {
+    return this.request('PUT', '/settings/auto-approve', req);
+  }
+
+  /** Retrieve current auto-approve rules. */
+  async getAutoApproveRules(): Promise<ApiResponse<GetAutoApproveResponse>> {
+    return this.request('GET', '/settings/auto-approve');
+  }
+
+  /** Change the active model. */
+  async changeModel(req: ChangeModelRequest): Promise<ApiResponse<ChangeModelResponse>> {
+    return this.request('PUT', '/settings/model', req);
+  }
+
+  /** Summarize the context window of a chat. */
+  async summarizeContext(req: SummarizeContextRequest): Promise<ApiResponse<SummarizeContextResponse>> {
+    return this.request('POST', `/chat/${req.chatId}/summarize`);
+  }
+
+  /** Revert a chat to a specific checkpoint. */
+  async revertToCheckpoint(req: RevertToCheckpointRequest): Promise<ApiResponse<RevertToCheckpointResponse>> {
+    return this.request('POST', `/chat/${req.chatId}/revert/${req.checkpointId}`);
+  }
+
+  /** Revert a single file edit. */
+  async revertFile(req: RevertFileRequest): Promise<ApiResponse<RevertFileResponse>> {
+    return this.request('POST', `/chat/${req.chatId}/revert-file/${req.fileEditId}`);
+  }
+
+  /* ── Data fetching (backend → frontend) ──────────────────────── */
+
+  /** Fetch complete chat history and all associated agent activity. */
+  async getChatHistory(chatId: string): Promise<ApiResponse<GetChatHistoryResponse>> {
+    return this.request('GET', `/chat/${chatId}/history`, undefined, `history-${chatId}`);
+  }
+
+  /** Fetch all projects and their chats. */
+  async getProjects(): Promise<ApiResponse<GetProjectsResponse>> {
+    return this.request('GET', '/projects', undefined, 'projects');
+  }
+
+  async createProject(req: CreateProjectRequest): Promise<ApiResponse<CreateProjectResponse>> {
+    return this.request('POST', '/projects', req);
+  }
+
+  async updateProject(projectId: string, req: UpdateProjectRequest): Promise<ApiResponse<UpdateProjectResponse>> {
+    return this.request('PATCH', `/projects/${projectId}`, req);
+  }
+
+  async deleteProject(projectId: string): Promise<ApiResponse<DeleteProjectResponse>> {
+    return this.request('DELETE', `/projects/${projectId}`);
+  }
+
+  async reorderProjects(req: ReorderProjectsRequest): Promise<ApiResponse<GetProjectsResponse>> {
+    return this.request('PATCH', '/projects/reorder', req);
+  }
+
+  async createChat(req: CreateChatRequest): Promise<ApiResponse<CreateChatResponse>> {
+    return this.request('POST', `/projects/${req.projectId}/chats`, { title: req.title });
+  }
+
+  async updateChat(req: UpdateChatRequest): Promise<ApiResponse<UpdateChatResponse>> {
+    return this.request('PATCH', `/chats/${req.chatId}`, {
+      title: req.title,
+      isPinned: req.isPinned,
+    });
+  }
+
+  async deleteChat(req: DeleteChatRequest): Promise<ApiResponse<DeleteChatResponse>> {
+    return this.request('DELETE', `/chats/${req.chatId}`);
+  }
+
+  async reorderChats(req: ReorderChatsRequest): Promise<ApiResponse<GetProjectsResponse>> {
+    return this.request('PATCH', `/projects/${req.projectId}/chats/reorder`, { chatIds: req.chatIds });
+  }
+
+  async getFsChildren(path?: string): Promise<ApiResponse<GetFsChildrenResponse>> {
+    const query = path ? `?path=${encodeURIComponent(path)}` : '';
+    return this.request('GET', `/fs/children${query}`);
+  }
+
+  /** Fetch global settings (model, limits, auto-approve rules). */
+  async getSettings(): Promise<ApiResponse<GetSettingsResponse>> {
+    return this.request('GET', '/settings', undefined, 'settings');
+  }
+
+  /* ── Agent event stream (SSE / WebSocket) ────────────────────── */
+
+  /**
+   * Subscribe to real-time agent events for a chat.
+   * Returns an unsubscribe function.
+   *
+   * In mock mode this simulates periodic events.
+   * In production this connects to an SSE endpoint with automatic
+   * reconnection and exponential back-off on failure.
+   */
+  subscribeToAgentEvents(
+    chatId: string,
+    callback: (event: AgentEvent) => void,
+  ): () => void {
+    if (this.config.useMock) {
+      return this.mockSubscribe(chatId, callback);
+    }
+
+    let cancelled = false;
+    let reconnectAttempt = 0;
+
+    const connect = () => {
+      if (cancelled) return;
+
+      const url = `${this.config.baseUrl}/chat/${chatId}/events`;
+      const eventSource = new EventSource(url);
+
+      eventSource.onopen = () => {
+        // Reset back-off on successful connection
+        reconnectAttempt = 0;
+      };
+
+      eventSource.onmessage = (e) => {
+        try {
+          const event: AgentEvent = JSON.parse(e.data);
+          callback(event);
+        } catch {
+          // skip malformed events
+        }
+      };
+
+      eventSource.onerror = () => {
+        eventSource.close();
+        if (cancelled) return;
+
+        // Reconnect with exponential back-off
+        const delay = this.computeDelay(reconnectAttempt);
+        reconnectAttempt = Math.min(reconnectAttempt + 1, 10);
+        setTimeout(connect, delay);
+      };
+
+      // Store reference for cleanup
+      const list = this.eventListeners.get(chatId) || [];
+      list.push(callback);
+      this.eventListeners.set(chatId, list);
+
+      // Override cleanup for this specific connection
+      cleanupRef.close = () => {
+        eventSource.close();
+      };
+    };
+
+    const cleanupRef = { close: () => {} };
+
+    connect();
+
+    return () => {
+      cancelled = true;
+      cleanupRef.close();
+      const remaining = (this.eventListeners.get(chatId) || []).filter((l) => l !== callback);
+      this.eventListeners.set(chatId, remaining);
+    };
+  }
+
+  /* ── Mock Implementation ──────────────────────────────────────── */
+
+  private async mockDelay(ms = 300) {
+    return new Promise((resolve) => setTimeout(resolve, ms + Math.random() * 200));
+  }
+
+  private async mockRequest<T>(method: string, path: string, body?: unknown): Promise<ApiResponse<T>> {
+    await this.mockDelay();
+
+    // ── POST /chat/:id/messages ──
+    if (method === 'POST' && path.match(/\/chat\/[^/]+\/messages$/)) {
+      const { content } = body as { content: string };
+      const msg: import('../types').Message = {
+        id: `msg-${Date.now()}`,
+        role: 'user',
+        content,
+        timestamp: new Date(),
+      };
+      return this.ok({ message: msg } as T);
+    }
+
+    // ── POST /chat/:id/approve ──
+    if (method === 'POST' && path.match(/\/chat\/[^/]+\/approve$/)) {
+      const { toolCallId } = body as { toolCallId: string };
+      const tc: import('../types').ToolCall = {
+        id: toolCallId,
+        name: 'edit_file',
+        status: 'completed',
+        input: { path: 'src/components/Dashboard.tsx' },
+        output: 'Edit applied successfully',
+        timestamp: new Date(),
+        duration: 142,
+      };
+      return this.ok({ toolCall: tc, fileEdits: [] } as T);
+    }
+
+    // ── POST /chat/:id/reject ──
+    if (method === 'POST' && path.match(/\/chat\/[^/]+\/reject$/)) {
+      const { toolCallId } = body as { toolCallId: string };
+      return this.ok({ toolCallId, status: 'rejected' } as T);
+    }
+
+    // ── PUT /settings/auto-approve ──
+    if (method === 'PUT' && path === '/settings/auto-approve') {
+      const { rules } = body as SetAutoApproveRequest;
+      const saved = rules.map((r, i) => ({
+        id: `rule-${i}`,
+        ...r,
+        createdAt: new Date().toISOString(),
+      }));
+      return this.ok({ rules: saved } as T);
+    }
+
+    // ── GET /settings/auto-approve ──
+    if (method === 'GET' && path === '/settings/auto-approve') {
+      return this.ok({ rules: [] } as T);
+    }
+
+    // ── PUT /settings/model ──
+    if (method === 'PUT' && path === '/settings/model') {
+      const { model } = body as ChangeModelRequest;
+      return this.ok({
+        model,
+        previousModel: 'Claude Sonnet 4',
+        contextLimit: model.includes('Opus') ? 200_000 : 128_000,
+      } as T);
+    }
+
+    // ── POST /chat/:id/summarize ──
+    if (method === 'POST' && path.match(/\/chat\/[^/]+\/summarize$/)) {
+      const { mockContextItems } = await import('../data/mockData');
+      const summarized = mockContextItems.map((item) => {
+        if (item.type === 'conversation' || item.type === 'tool_output') {
+          return { ...item, tokens: Math.floor(item.tokens * 0.3) };
+        }
+        return item;
+      });
+      const tokensBefore = mockContextItems.reduce((s, i) => s + i.tokens, 0);
+      const tokensAfter = summarized.reduce((s, i) => s + i.tokens, 0);
+      return this.ok({ contextItems: summarized, tokensBefore, tokensAfter } as T);
+    }
+
+    // ── POST /chat/:id/revert/:checkpointId ──
+    if (method === 'POST' && path.match(/\/chat\/[^/]+\/revert\/[^/]+$/)) {
+      const {
+        mockMessages,
+        mockToolCalls,
+        mockFileEdits,
+        mockCheckpoints,
+        mockReasoningBlocks,
+      } = await import('../data/mockData');
+
+      const cpId = path.split('/').pop()!;
+      const cp = mockCheckpoints.find((c) => c.id === cpId);
+      if (!cp) return this.err('Checkpoint not found');
+
+      const msgIdx = mockMessages.findIndex((m) => m.id === cp.messageId);
+      const cpIdx = mockCheckpoints.findIndex((c) => c.id === cpId);
+      const keptCheckpoints = mockCheckpoints.slice(0, cpIdx + 1);
+      const laterCpIds = mockCheckpoints.slice(cpIdx + 1).map((c) => c.id);
+
+      return this.ok({
+        messages: mockMessages.slice(0, msgIdx + 1),
+        toolCalls: mockToolCalls.filter((tc) => tc.timestamp.getTime() <= cp.timestamp.getTime()),
+        fileEdits: mockFileEdits.filter((fe) => !laterCpIds.includes(fe.checkpointId)),
+        checkpoints: keptCheckpoints,
+        reasoningBlocks: mockReasoningBlocks.filter(
+          (rb) => !laterCpIds.includes(rb.checkpointId),
+        ),
+      } as T);
+    }
+
+    // ── POST /chat/:id/revert-file/:fileEditId ──
+    if (method === 'POST' && path.match(/\/chat\/[^/]+\/revert-file\/[^/]+$/)) {
+      const feId = path.split('/').pop()!;
+      const { mockFileEdits } = await import('../data/mockData');
+      return this.ok({
+        removedFileEditId: feId,
+        fileEdits: mockFileEdits.filter((fe) => fe.id !== feId),
+      } as T);
+    }
+
+    // ── GET /chat/:id/history ──
+    if (method === 'GET' && path.match(/\/chat\/[^/]+\/history$/)) {
+      const {
+        mockMessages,
+        mockToolCalls,
+        mockFileEdits,
+        mockCheckpoints,
+        mockContextItems,
+        mockReasoningBlocks,
+      } = await import('../data/mockData');
+
+      const chatId = path.split('/')[2];
+      return this.ok({
+        chatId,
+        messages: mockMessages,
+        toolCalls: mockToolCalls,
+        fileEdits: mockFileEdits,
+        checkpoints: mockCheckpoints,
+        reasoningBlocks: mockReasoningBlocks,
+        contextItems: mockContextItems,
+        maxTokens: 128_000,
+        model: 'Claude Sonnet 4',
+      } as T);
+    }
+
+    // ── GET /projects ──
+    if (method === 'GET' && path === '/projects') {
+      const { mockProjects } = await import('../data/mockData');
+      return this.ok({ projects: mockProjects } as T);
+    }
+
+    // ── GET /settings ──
+    if (method === 'GET' && path === '/settings') {
+      return this.ok({
+        model: 'Claude Sonnet 4',
+        availableModels: [
+          'Claude Sonnet 4',
+          'Claude Opus 4',
+          'Claude Haiku 3.5',
+          'GPT-4o',
+          'GPT-4.1',
+        ],
+        contextLimit: 128_000,
+        autoApproveRules: [],
+      } as T);
+    }
+
+    return this.err(`Mock: no handler for ${method} ${path}`);
+  }
+
+  private mockSubscribe(
+    chatId: string,
+    callback: (event: AgentEvent) => void,
+  ): () => void {
+    let cancelled = false;
+
+    const timer = setTimeout(() => {
+      if (cancelled) return;
+      callback({
+        type: 'approval_required',
+        chatId,
+        timestamp: new Date().toISOString(),
+        payload: {
+          toolCallId: 'pending-1',
+          toolName: 'edit_file',
+          input: { path: 'src/components/Dashboard.tsx' },
+          description: 'Edit Dashboard component to add TypeScript props interface',
+        },
+      });
+    }, 1500);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }
+
+  private ok<T>(data: T): ApiResponse<T> {
+    return { ok: true, data, timestamp: new Date().toISOString() };
+  }
+
+  private err<T>(error: string): ApiResponse<T> {
+    return { ok: false, data: null as unknown as T, error, timestamp: new Date().toISOString() };
+  }
+}
+
+/* ── Singleton default instance ────────────────────────────────── */
+
+export const api = new ApiClient();

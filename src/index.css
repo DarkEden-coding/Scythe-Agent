@@ -1,0 +1,123 @@
+@import "tailwindcss";
+
+@theme {
+  --color-gray-950: #0a0a0f;
+  --color-gray-900: #111118;
+  --color-gray-850: #16161f;
+  --color-gray-800: #1c1c27;
+  --color-gray-750: #232330;
+  --color-gray-700: #2a2a3a;
+  --color-gray-600: #3a3a4d;
+  --color-gray-500: #52526b;
+  --color-gray-400: #7a7a95;
+  --color-gray-300: #a0a0b8;
+  --color-gray-200: #c8c8d8;
+  --color-aqua-50: #e0fffe;
+  --color-aqua-100: #b3fffc;
+  --color-aqua-200: #7dfff8;
+  --color-aqua-300: #4df5ea;
+  --color-aqua-400: #22d3d8;
+  --color-aqua-500: #0abdc2;
+  --color-aqua-600: #069a9e;
+  --color-aqua-700: #057a7d;
+}
+
+/* Custom scrollbar for dark theme */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #2a2a3a;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #3a3a4d;
+}
+
+/* Animations */
+@keyframes slide-in-from-bottom {
+  from {
+    transform: translateY(10px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes dropdown-open {
+  from {
+    opacity: 0;
+    transform: scaleY(0.95) translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: scaleY(1) translateY(0);
+  }
+}
+
+.animate-in {
+  animation-duration: 200ms;
+  animation-fill-mode: both;
+}
+
+.slide-in-from-bottom-2 {
+  animation-name: slide-in-from-bottom;
+}
+
+.fade-in {
+  animation-name: fade-in;
+}
+
+.animate-dropdown {
+  animation: dropdown-open 200ms ease-out both;
+  transform-origin: top center;
+}
+
+/* Code block styling */
+pre {
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+}
+
+/* Ensure smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Focus styles */
+*:focus-visible {
+  outline: 2px solid #22d3d8;
+  outline-offset: 2px;
+}
+
+/* Resize handle */
+.resize-handle {
+  position: relative;
+}
+
+.resize-handle::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  right: -4px;
+  cursor: col-resize;
+}
+
+body {
+  background: #0a0a0f;
+}
