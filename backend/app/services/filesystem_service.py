@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 from app.config.settings import get_settings
@@ -13,12 +14,16 @@ class FilesystemService:
             self.allowed_roots = configured_roots
         else:
             repo_root = Path(__file__).resolve().parents[3]
-            self.allowed_roots = [repo_root, Path.home().resolve()]
+            self.allowed_roots = [repo_root]
 
     def _is_within_allowed_roots(self, path: Path) -> bool:
+        # Resolve both the Path object and use os.path.realpath to catch symlink escapes
+        resolved = path.resolve()
+        real = Path(os.path.realpath(str(path)))
         for root in self.allowed_roots:
             try:
-                path.relative_to(root)
+                resolved.relative_to(root)
+                real.relative_to(root)
                 return True
             except ValueError:
                 continue

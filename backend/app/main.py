@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -9,23 +10,36 @@ from app.api.routes.filesystem import router as filesystem_router
 from app.api.routes.projects import router as projects_router
 from app.api.routes.settings import router as settings_router
 from app.config.settings import get_settings
+from app.db.base import Base
 from app.db.seed import seed_demo_data
-from app.db.session import get_sessionmaker
+from app.db.session import get_engine, get_sessionmaker
 from app.mcp.client_manager import get_mcp_client_manager
+from app.middleware.error_handler import ServiceError, catch_all_handler, service_error_handler
 from app.providers.openrouter.model_catalog import OpenRouterModelCatalogService
 from app.tools.registry import get_tool_registry
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    # Ensure all tables exist before seeding
+    Base.metadata.create_all(bind=get_engine())
+
+    # Sync DB work in its own session block, closed before any await
     session_factory = get_sessionmaker()
     with session_factory() as session:
         seed_demo_data(session)
         session.commit()
+
+    # Async operations each get their own session
+    with session_factory() as session:
         await OpenRouterModelCatalogService(session).sync_models_on_startup()
+
+    with session_factory() as session:
         try:
-            manager = get_mcp_client_manager(session)
-            discovered, _errors = await manager.discover_and_cache_tools()
+            manager = get_mcp_client_manager()
+            discovered, _errors = await manager.discover_and_cache_tools(session)
             get_tool_registry().register_mcp_tools(
                 [
                     {
@@ -38,8 +52,8 @@ async def lifespan(_: FastAPI):
                 ]
             )
         except Exception:
-            # Keep startup resilient for local MVP continuity.
-            pass
+            logger.warning("MCP tool discovery failed during startup", exc_info=True)
+
     yield
 
 
@@ -53,6 +67,11 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # Register error handlers
+    app.add_exception_handler(ServiceError, service_error_handler)
+    app.add_exception_handler(Exception, catch_all_handler)
+
     app.include_router(projects_router)
     app.include_router(filesystem_router)
     app.include_router(settings_router)

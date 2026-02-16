@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
@@ -17,8 +18,10 @@ def get_chat_history(chat_id: str, db: Session = Depends(get_db)):
     try:
         data = ChatService(db).get_chat_history(chat_id)
         return ok(data.model_dump())
-    except Exception as exc:  # pragma: no cover - defensive route boundary
-        return err(str(exc))
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
+    except Exception:
+        return JSONResponse(status_code=500, content=err("Internal server error").model_dump())
 
 
 @router.post("/{chat_id}/messages")
@@ -26,8 +29,10 @@ async def send_message(chat_id: str, request: SendMessageRequest, db: Session = 
     try:
         data = await ChatService(db).send_message(chat_id=chat_id, content=request.content)
         return ok(data.model_dump())
-    except Exception as exc:  # pragma: no cover - defensive route boundary
-        return err(str(exc))
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
+    except Exception:
+        return JSONResponse(status_code=500, content=err("Internal server error").model_dump())
 
 
 @router.post("/{chat_id}/approve")
@@ -35,8 +40,10 @@ async def approve(chat_id: str, request: ApproveCommandRequest, db: Session = De
     try:
         tool_call, file_edits = await ApprovalService(db).approve(chat_id=chat_id, tool_call_id=request.toolCallId)
         return ok({"toolCall": tool_call.model_dump(), "fileEdits": [f.model_dump() for f in file_edits]})
-    except Exception as exc:  # pragma: no cover - defensive route boundary
-        return err(str(exc))
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
+    except Exception:
+        return JSONResponse(status_code=500, content=err("Internal server error").model_dump())
 
 
 @router.post("/{chat_id}/reject")
@@ -48,8 +55,10 @@ async def reject(chat_id: str, request: RejectCommandRequest, db: Session = Depe
             reason=request.reason,
         )
         return ok({"toolCallId": tool_call.id, "status": "rejected"})
-    except Exception as exc:  # pragma: no cover - defensive route boundary
-        return err(str(exc))
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
+    except Exception:
+        return JSONResponse(status_code=500, content=err("Internal server error").model_dump())
 
 
 @router.post("/{chat_id}/summarize")
@@ -57,8 +66,10 @@ async def summarize(chat_id: str, db: Session = Depends(get_db)):
     try:
         data = await SummarizeService(db).summarize(chat_id)
         return ok(data.model_dump())
-    except Exception as exc:  # pragma: no cover - defensive route boundary
-        return err(str(exc))
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
+    except Exception:
+        return JSONResponse(status_code=500, content=err("Internal server error").model_dump())
 
 
 @router.post("/{chat_id}/revert/{checkpoint_id}")
@@ -66,8 +77,10 @@ def revert(chat_id: str, checkpoint_id: str, db: Session = Depends(get_db)):
     try:
         data = RevertService(db).revert_to_checkpoint(chat_id, checkpoint_id)
         return ok(data.model_dump())
-    except Exception as exc:  # pragma: no cover - defensive route boundary
-        return err(str(exc))
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
+    except Exception:
+        return JSONResponse(status_code=500, content=err("Internal server error").model_dump())
 
 
 @router.post("/{chat_id}/revert-file/{file_edit_id}")
@@ -75,5 +88,7 @@ def revert_file(chat_id: str, file_edit_id: str, db: Session = Depends(get_db)):
     try:
         data = RevertService(db).revert_file(chat_id, file_edit_id)
         return ok(data.model_dump())
-    except Exception as exc:  # pragma: no cover - defensive route boundary
-        return err(str(exc))
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
+    except Exception:
+        return JSONResponse(status_code=500, content=err("Internal server error").model_dump())

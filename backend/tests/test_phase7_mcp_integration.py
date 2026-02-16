@@ -43,8 +43,8 @@ def test_mcp_discovery_cache_success_and_partial_failure() -> None:
             )
         session.commit()
 
-        manager = MCPClientManager(session)
-        discovered, errors = asyncio.run(manager.discover_and_cache_tools())
+        manager = MCPClientManager()
+        discovered, errors = asyncio.run(manager.discover_and_cache_tools(session))
 
         names = {(d.server_id, d.name) for d in discovered}
         assert ("mcp-local-1", "echo_tool") in names

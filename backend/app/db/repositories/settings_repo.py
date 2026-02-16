@@ -30,12 +30,18 @@ class SettingsRepository:
         settings.updated_at = updated_at
         return settings
 
+    def set_context_limit(self, context_limit: int) -> Settings:
+        settings = self.get_settings()
+        if settings is None:
+            raise ValueError("Settings record missing")
+        settings.context_limit = context_limit
+        return settings
+
     def list_auto_approve_rules(self) -> list[AutoApproveRule]:
         return list(self.db.scalars(select(AutoApproveRule).order_by(AutoApproveRule.created_at.asc())).all())
 
     def replace_auto_approve_rules(self, rules: list[AutoApproveRule]) -> list[AutoApproveRule]:
-        for row in self.list_auto_approve_rules():
-            self.db.delete(row)
+        self.db.execute(delete(AutoApproveRule))
         for rule in rules:
             self.db.add(rule)
         return rules

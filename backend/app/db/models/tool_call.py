@@ -16,7 +16,7 @@ class ToolCall(Base):
 
     id: Mapped[str] = mapped_column(Text, primary_key=True)
     chat_id: Mapped[str] = mapped_column(ForeignKey("chats.id", ondelete="CASCADE"), nullable=False)
-    checkpoint_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    checkpoint_id: Mapped[str | None] = mapped_column(ForeignKey("checkpoints.id", ondelete="SET NULL"), nullable=True)
     name: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(Text, nullable=False)
     input_json: Mapped[str] = mapped_column(Text, nullable=False)
@@ -27,4 +27,3 @@ class ToolCall(Base):
     parallel_group: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     chat: Mapped["Chat"] = relationship(back_populates="tool_calls")
-

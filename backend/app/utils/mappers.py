@@ -9,4 +9,3 @@ def map_file_action_for_ui(action: str) -> str:
         "deleted": "delete",
     }
     return mapping.get(action, action)
-

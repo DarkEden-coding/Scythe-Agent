@@ -1,7 +1,6 @@
-import json
 from datetime import datetime, timezone
 
-from sqlalchemy import delete
+from sqlalchemy import and_, delete, or_
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -12,6 +11,12 @@ from app.db.models.file_edit import FileEdit
 from app.db.models.message import Message
 from app.db.models.reasoning_block import ReasoningBlock
 from app.db.models.tool_call import ToolCall
+
+
+def _normalize_ts(iso_str: str) -> str:
+    """Ensure ISO timestamp has consistent microsecond padding for string comparison."""
+    dt = datetime.fromisoformat(iso_str)
+    return dt.strftime("%Y-%m-%dT%H:%M:%S.%f+00:00")
 
 
 class ChatRepository:
@@ -176,21 +181,56 @@ class ChatRepository:
     def delete_file_edit(self, file_edit: FileEdit) -> None:
         self.db.delete(file_edit)
 
-    def delete_after_checkpoint(self, *, chat_id: str, cutoff_timestamp: str) -> None:
+    def delete_after_checkpoint(
+        self, *, chat_id: str, cutoff_timestamp: str, checkpoint_id: str
+    ) -> None:
+        cutoff = _normalize_ts(cutoff_timestamp)
+        # Delete records that are strictly after the cutoff, OR have the same
+        # timestamp but do not belong to the checkpoint being reverted to.
         self.db.execute(
-            delete(Message).where(Message.chat_id == chat_id, Message.timestamp > cutoff_timestamp)
+            delete(Message).where(
+                Message.chat_id == chat_id,
+                or_(
+                    Message.timestamp > cutoff,
+                    and_(Message.timestamp == cutoff, Message.checkpoint_id != checkpoint_id),
+                ),
+            )
         )
         self.db.execute(
-            delete(ToolCall).where(ToolCall.chat_id == chat_id, ToolCall.timestamp > cutoff_timestamp)
+            delete(ToolCall).where(
+                ToolCall.chat_id == chat_id,
+                or_(
+                    ToolCall.timestamp > cutoff,
+                    and_(ToolCall.timestamp == cutoff, ToolCall.checkpoint_id != checkpoint_id),
+                ),
+            )
         )
         self.db.execute(
-            delete(FileEdit).where(FileEdit.chat_id == chat_id, FileEdit.timestamp > cutoff_timestamp)
+            delete(FileEdit).where(
+                FileEdit.chat_id == chat_id,
+                or_(
+                    FileEdit.timestamp > cutoff,
+                    and_(FileEdit.timestamp == cutoff, FileEdit.checkpoint_id != checkpoint_id),
+                ),
+            )
         )
         self.db.execute(
-            delete(ReasoningBlock).where(ReasoningBlock.chat_id == chat_id, ReasoningBlock.timestamp > cutoff_timestamp)
+            delete(ReasoningBlock).where(
+                ReasoningBlock.chat_id == chat_id,
+                or_(
+                    ReasoningBlock.timestamp > cutoff,
+                    and_(ReasoningBlock.timestamp == cutoff, ReasoningBlock.checkpoint_id != checkpoint_id),
+                ),
+            )
         )
         self.db.execute(
-            delete(Checkpoint).where(Checkpoint.chat_id == chat_id, Checkpoint.timestamp > cutoff_timestamp)
+            delete(Checkpoint).where(
+                Checkpoint.chat_id == chat_id,
+                or_(
+                    Checkpoint.timestamp > cutoff,
+                    and_(Checkpoint.timestamp == cutoff, Checkpoint.id != checkpoint_id),
+                ),
+            )
         )
 
     def commit(self) -> None:
@@ -198,14 +238,3 @@ class ChatRepository:
 
     def rollback(self) -> None:
         self.db.rollback()
-
-    def now_iso(self) -> str:
-        return datetime.now(timezone.utc).isoformat()
-
-    @staticmethod
-    def parse_input_json(raw: str) -> dict:
-        try:
-            value = json.loads(raw)
-            return value if isinstance(value, dict) else {}
-        except json.JSONDecodeError:
-            return {}

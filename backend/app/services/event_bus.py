@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 class EventBus:
@@ -36,11 +39,21 @@ class EventBus:
             }
 
             dead: list[asyncio.Queue[dict[str, Any]]] = []
-            for queue in self._subs.get(chat_id, set()):
+            # Bug 33: iterate over a copy of the set to avoid mutation during iteration
+            for queue in list(self._subs.get(chat_id, set())):
                 try:
                     queue.put_nowait(ordered_event)
                 except asyncio.QueueFull:
-                    dead.append(queue)
+                    # Bug 14: drain one old item and retry once before dropping
+                    try:
+                        queue.get_nowait()
+                        queue.put_nowait(ordered_event)
+                    except (asyncio.QueueEmpty, asyncio.QueueFull):
+                        logger.warning(
+                            "Dropping subscriber queue for chat_id=%s: queue full after drain retry",
+                            chat_id,
+                        )
+                        dead.append(queue)
             for queue in dead:
                 self._subs[chat_id].discard(queue)
 
@@ -59,4 +72,3 @@ def get_event_bus() -> EventBus:
     if _event_bus is None:
         _event_bus = EventBus()
     return _event_bus
-

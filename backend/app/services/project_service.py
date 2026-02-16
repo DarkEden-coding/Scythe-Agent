@@ -1,6 +1,7 @@
-from datetime import datetime, timezone
 from pathlib import Path
-from uuid import uuid4
+
+from app.utils.ids import generate_id
+from app.utils.time import utc_now_iso
 
 from sqlalchemy.orm import Session
 
@@ -26,11 +27,11 @@ class ProjectService:
 
     @staticmethod
     def _now() -> str:
-        return datetime.now(timezone.utc).isoformat()
+        return utc_now_iso()
 
     @staticmethod
     def _new_id(prefix: str) -> str:
-        return f"{prefix}-{uuid4().hex[:12]}"
+        return generate_id(prefix)
 
     def _normalize_dir_path(self, raw_path: str) -> str:
         path = Path(raw_path).expanduser().resolve()

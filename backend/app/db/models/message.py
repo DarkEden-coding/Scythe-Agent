@@ -19,7 +19,6 @@ class Message(Base):
     role: Mapped[str] = mapped_column(Text, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     timestamp: Mapped[str] = mapped_column(Text, nullable=False)
-    checkpoint_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    checkpoint_id: Mapped[str | None] = mapped_column(ForeignKey("checkpoints.id", ondelete="SET NULL"), nullable=True)
 
     chat: Mapped["Chat"] = relationship(back_populates="messages")
-

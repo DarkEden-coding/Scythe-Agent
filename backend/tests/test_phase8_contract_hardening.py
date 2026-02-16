@@ -1,7 +1,7 @@
 import asyncio
 import time
 
-from app.serializers.compat import map_file_action_for_ui, map_role_for_ui
+from app.utils.mappers import map_file_action_for_ui, map_role_for_ui
 from app.services.event_bus import get_event_bus
 
 

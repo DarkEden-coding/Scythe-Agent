@@ -9,7 +9,10 @@ from sqlalchemy.orm import Session
 from app.db.repositories.chat_repo import ChatRepository
 from app.db.repositories.settings_repo import SettingsRepository
 from app.schemas.chat import FileEditOut, ToolCallOut
-from app.serializers.compat import map_file_action_for_ui
+from app.utils.mappers import map_file_action_for_ui
+from app.utils.time import utc_now_iso
+from app.utils.auto_approve import matches_auto_approve_rules
+from app.utils.json_helpers import safe_parse_json
 from app.services.event_bus import EventBus, get_event_bus
 from app.tools.registry import ToolRegistry, get_tool_registry
 
@@ -27,33 +30,11 @@ class ApprovalService:
         self.event_bus = event_bus or get_event_bus()
         self.registry = tool_registry or get_tool_registry()
 
-    @staticmethod
-    def _now() -> str:
-        return datetime.now(timezone.utc).isoformat()
-
     def should_auto_approve(self, tool_name: str, input_payload: dict) -> bool:
         rules = self.settings_repo.list_auto_approve_rules()
-        path_value = str(input_payload.get("path", ""))
-        extension = os.path.splitext(path_value)[1] if path_value else ""
-        directory = os.path.dirname(path_value) if path_value else ""
-        payload_text = json.dumps(input_payload)
-
-        for rule in rules:
-            if not bool(rule.enabled):
-                continue
-            field = rule.field
-            value = rule.value
-            if field == "tool" and tool_name == value:
-                return True
-            if field == "path" and path_value == value:
-                return True
-            if field == "extension" and extension == value:
-                return True
-            if field == "directory" and directory.startswith(value):
-                return True
-            if field == "pattern" and value in payload_text:
-                return True
-        return False
+        return matches_auto_approve_rules(
+            tool_name=tool_name, input_payload=input_payload, rules=rules
+        )
 
     async def approve(self, *, chat_id: str, tool_call_id: str) -> tuple[ToolCallOut, list[FileEditOut]]:
         tool_call = self.chat_repo.get_tool_call(tool_call_id)
@@ -72,7 +53,7 @@ class ApprovalService:
         start = datetime.now(timezone.utc)
         file_edits: list[FileEditOut] = []
         try:
-            payload = self.chat_repo.parse_input_json(tool_call.input_json)
+            payload = safe_parse_json(tool_call.input_json)
             tool = self.registry.get_tool(tool_call.name)
             if tool is None:
                 raise ValueError(f"Tool not registered: {tool_call.name}")
@@ -86,7 +67,7 @@ class ApprovalService:
                     file_path=edit.file_path,
                     action=edit.action,
                     diff=edit.diff,
-                    timestamp=self._now(),
+                    timestamp=utc_now_iso(),
                 )
                 file_edits.append(
                     FileEditOut(
@@ -156,7 +137,7 @@ class ApprovalService:
             id=tool_call.id,
             name=tool_call.name,
             status=tool_call.status,
-            input=self.chat_repo.parse_input_json(tool_call.input_json),
+            input=safe_parse_json(tool_call.input_json),
             output=tool_call.output_text,
             timestamp=tool_call.timestamp,
             duration=tool_call.duration_ms,

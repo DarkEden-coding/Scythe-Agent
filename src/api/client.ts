@@ -9,7 +9,6 @@
  *   - Automatic retry with exponential back-off and jitter
  *   - Configurable retry budget (count, delay, max delay, retryable status codes)
  *   - Per-request AbortController support
- *   - Mock server for local development
  *   - SSE-based real-time agent event streaming
  */
 
@@ -90,8 +89,6 @@ export interface ApiClientConfig {
   token?: string;
   /** Request timeout in ms. Default 30 000. */
   timeout?: number;
-  /** When true the client delegates to the built-in mock server. */
-  useMock?: boolean;
   /** Retry configuration. Merged with defaults. */
   retry?: Partial<RetryConfig>;
   /** Called before each retry — return false to abort the retry chain. */
@@ -113,7 +110,6 @@ export class ApiClient {
       baseUrl: config.baseUrl ?? 'http://localhost:3001/api',
       token: config.token ?? '',
       timeout: config.timeout ?? 30_000,
-      useMock: config.useMock ?? false,
     };
     this.retryConfig = { ...DEFAULT_RETRY, ...config.retry };
     this.onRetry = config.onRetry;
@@ -175,11 +171,6 @@ export class ApiClient {
     body?: unknown,
     requestId?: string,
   ): Promise<ApiResponse<T>> {
-    // ── Mock path (no retry needed) ──
-    if (this.config.useMock) {
-      return this.mockRequest<T>(method, path, body);
-    }
-
     // ── Real HTTP path with retry ──
     const controller = new AbortController();
     if (requestId) {
@@ -483,18 +474,13 @@ export class ApiClient {
    * Subscribe to real-time agent events for a chat.
    * Returns an unsubscribe function.
    *
-   * In mock mode this simulates periodic events.
-   * In production this connects to an SSE endpoint with automatic
-   * reconnection and exponential back-off on failure.
+   * This connects to an SSE endpoint with automatic reconnection and
+   * exponential back-off on failure.
    */
   subscribeToAgentEvents(
     chatId: string,
     callback: (event: AgentEvent) => void,
   ): () => void {
-    if (this.config.useMock) {
-      return this.mockSubscribe(chatId, callback);
-    }
-
     let cancelled = false;
     let reconnectAttempt = 0;
 
@@ -549,213 +535,6 @@ export class ApiClient {
       const remaining = (this.eventListeners.get(chatId) || []).filter((l) => l !== callback);
       this.eventListeners.set(chatId, remaining);
     };
-  }
-
-  /* ── Mock Implementation ──────────────────────────────────────── */
-
-  private async mockDelay(ms = 300) {
-    return new Promise((resolve) => setTimeout(resolve, ms + Math.random() * 200));
-  }
-
-  private async mockRequest<T>(method: string, path: string, body?: unknown): Promise<ApiResponse<T>> {
-    await this.mockDelay();
-
-    // ── POST /chat/:id/messages ──
-    if (method === 'POST' && path.match(/\/chat\/[^/]+\/messages$/)) {
-      const { content } = body as { content: string };
-      const msg: import('../types').Message = {
-        id: `msg-${Date.now()}`,
-        role: 'user',
-        content,
-        timestamp: new Date(),
-      };
-      return this.ok({ message: msg } as T);
-    }
-
-    // ── POST /chat/:id/approve ──
-    if (method === 'POST' && path.match(/\/chat\/[^/]+\/approve$/)) {
-      const { toolCallId } = body as { toolCallId: string };
-      const tc: import('../types').ToolCall = {
-        id: toolCallId,
-        name: 'edit_file',
-        status: 'completed',
-        input: { path: 'src/components/Dashboard.tsx' },
-        output: 'Edit applied successfully',
-        timestamp: new Date(),
-        duration: 142,
-      };
-      return this.ok({ toolCall: tc, fileEdits: [] } as T);
-    }
-
-    // ── POST /chat/:id/reject ──
-    if (method === 'POST' && path.match(/\/chat\/[^/]+\/reject$/)) {
-      const { toolCallId } = body as { toolCallId: string };
-      return this.ok({ toolCallId, status: 'rejected' } as T);
-    }
-
-    // ── PUT /settings/auto-approve ──
-    if (method === 'PUT' && path === '/settings/auto-approve') {
-      const { rules } = body as SetAutoApproveRequest;
-      const saved = rules.map((r, i) => ({
-        id: `rule-${i}`,
-        ...r,
-        createdAt: new Date().toISOString(),
-      }));
-      return this.ok({ rules: saved } as T);
-    }
-
-    // ── GET /settings/auto-approve ──
-    if (method === 'GET' && path === '/settings/auto-approve') {
-      return this.ok({ rules: [] } as T);
-    }
-
-    // ── PUT /settings/model ──
-    if (method === 'PUT' && path === '/settings/model') {
-      const { model } = body as ChangeModelRequest;
-      return this.ok({
-        model,
-        previousModel: 'Claude Sonnet 4',
-        contextLimit: model.includes('Opus') ? 200_000 : 128_000,
-      } as T);
-    }
-
-    // ── POST /chat/:id/summarize ──
-    if (method === 'POST' && path.match(/\/chat\/[^/]+\/summarize$/)) {
-      const { mockContextItems } = await import('../data/mockData');
-      const summarized = mockContextItems.map((item) => {
-        if (item.type === 'conversation' || item.type === 'tool_output') {
-          return { ...item, tokens: Math.floor(item.tokens * 0.3) };
-        }
-        return item;
-      });
-      const tokensBefore = mockContextItems.reduce((s, i) => s + i.tokens, 0);
-      const tokensAfter = summarized.reduce((s, i) => s + i.tokens, 0);
-      return this.ok({ contextItems: summarized, tokensBefore, tokensAfter } as T);
-    }
-
-    // ── POST /chat/:id/revert/:checkpointId ──
-    if (method === 'POST' && path.match(/\/chat\/[^/]+\/revert\/[^/]+$/)) {
-      const {
-        mockMessages,
-        mockToolCalls,
-        mockFileEdits,
-        mockCheckpoints,
-        mockReasoningBlocks,
-      } = await import('../data/mockData');
-
-      const cpId = path.split('/').pop()!;
-      const cp = mockCheckpoints.find((c) => c.id === cpId);
-      if (!cp) return this.err('Checkpoint not found');
-
-      const msgIdx = mockMessages.findIndex((m) => m.id === cp.messageId);
-      const cpIdx = mockCheckpoints.findIndex((c) => c.id === cpId);
-      const keptCheckpoints = mockCheckpoints.slice(0, cpIdx + 1);
-      const laterCpIds = mockCheckpoints.slice(cpIdx + 1).map((c) => c.id);
-
-      return this.ok({
-        messages: mockMessages.slice(0, msgIdx + 1),
-        toolCalls: mockToolCalls.filter((tc) => tc.timestamp.getTime() <= cp.timestamp.getTime()),
-        fileEdits: mockFileEdits.filter((fe) => !laterCpIds.includes(fe.checkpointId)),
-        checkpoints: keptCheckpoints,
-        reasoningBlocks: mockReasoningBlocks.filter(
-          (rb) => !laterCpIds.includes(rb.checkpointId),
-        ),
-      } as T);
-    }
-
-    // ── POST /chat/:id/revert-file/:fileEditId ──
-    if (method === 'POST' && path.match(/\/chat\/[^/]+\/revert-file\/[^/]+$/)) {
-      const feId = path.split('/').pop()!;
-      const { mockFileEdits } = await import('../data/mockData');
-      return this.ok({
-        removedFileEditId: feId,
-        fileEdits: mockFileEdits.filter((fe) => fe.id !== feId),
-      } as T);
-    }
-
-    // ── GET /chat/:id/history ──
-    if (method === 'GET' && path.match(/\/chat\/[^/]+\/history$/)) {
-      const {
-        mockMessages,
-        mockToolCalls,
-        mockFileEdits,
-        mockCheckpoints,
-        mockContextItems,
-        mockReasoningBlocks,
-      } = await import('../data/mockData');
-
-      const chatId = path.split('/')[2];
-      return this.ok({
-        chatId,
-        messages: mockMessages,
-        toolCalls: mockToolCalls,
-        fileEdits: mockFileEdits,
-        checkpoints: mockCheckpoints,
-        reasoningBlocks: mockReasoningBlocks,
-        contextItems: mockContextItems,
-        maxTokens: 128_000,
-        model: 'Claude Sonnet 4',
-      } as T);
-    }
-
-    // ── GET /projects ──
-    if (method === 'GET' && path === '/projects') {
-      const { mockProjects } = await import('../data/mockData');
-      return this.ok({ projects: mockProjects } as T);
-    }
-
-    // ── GET /settings ──
-    if (method === 'GET' && path === '/settings') {
-      return this.ok({
-        model: 'Claude Sonnet 4',
-        availableModels: [
-          'Claude Sonnet 4',
-          'Claude Opus 4',
-          'Claude Haiku 3.5',
-          'GPT-4o',
-          'GPT-4.1',
-        ],
-        contextLimit: 128_000,
-        autoApproveRules: [],
-      } as T);
-    }
-
-    return this.err(`Mock: no handler for ${method} ${path}`);
-  }
-
-  private mockSubscribe(
-    chatId: string,
-    callback: (event: AgentEvent) => void,
-  ): () => void {
-    let cancelled = false;
-
-    const timer = setTimeout(() => {
-      if (cancelled) return;
-      callback({
-        type: 'approval_required',
-        chatId,
-        timestamp: new Date().toISOString(),
-        payload: {
-          toolCallId: 'pending-1',
-          toolName: 'edit_file',
-          input: { path: 'src/components/Dashboard.tsx' },
-          description: 'Edit Dashboard component to add TypeScript props interface',
-        },
-      });
-    }, 1500);
-
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }
-
-  private ok<T>(data: T): ApiResponse<T> {
-    return { ok: true, data, timestamp: new Date().toISOString() };
-  }
-
-  private err<T>(error: string): ApiResponse<T> {
-    return { ok: false, data: null as unknown as T, error, timestamp: new Date().toISOString() };
   }
 }
 

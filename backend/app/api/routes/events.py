@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import AsyncGenerator
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
@@ -34,7 +35,7 @@ async def stream_events(chat_id: str, request: Request):
                     heartbeat = {
                         "type": "heartbeat",
                         "chatId": chat_id,
-                        "timestamp": "",
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
                         "payload": {},
                     }
                     yield _sse_frame(heartbeat)

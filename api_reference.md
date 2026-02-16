@@ -33,7 +33,7 @@
 9. [Data Models](#data-models)
 10. [React Hooks](#react-hooks)
 11. [Error Handling](#error-handling)
-12. [Mock Server](#mock-server)
+12. [Backend connectivity](#backend-connectivity)
 13. [Examples](#examples)
 
 ---
@@ -75,7 +75,7 @@ The system supports:
 ```
 src/api/
 ├── types.ts      # All request/response TypeScript interfaces
-├── client.ts     # ApiClient class (HTTP, retry, mock, SSE)
+├── client.ts     # ApiClient class (HTTP, retry, SSE)
 ├── hooks.ts      # React hooks wrapping the client
 └── index.ts      # Barrel re-export
 ```
@@ -91,7 +91,6 @@ const api = new ApiClient({
   baseUrl: 'http://localhost:3001/api',  // API server URL
   token: 'your-bearer-token',            // Optional auth token
   timeout: 30_000,                        // Request timeout (ms)
-  useMock: false,                         // true = use built-in mock server
   retry: {
     maxRetries: 3,                        // Max retry attempts
     baseDelay: 500,                       // Initial retry delay (ms)
@@ -115,7 +114,6 @@ const api = new ApiClient({
 | `baseUrl` | `string` | `"/api"` | Base URL for all API requests |
 | `token` | `string` | `""` | Bearer token sent in `Authorization` header |
 | `timeout` | `number` | `30000` | Per-attempt timeout in milliseconds |
-| `useMock` | `boolean` | `true` | Use built-in mock server (no real HTTP) |
 | `retry` | `Partial<RetryConfig>` | See below | Retry configuration (merged with defaults) |
 | `onRetry` | `function` | `undefined` | Callback invoked before each retry attempt |
 
@@ -1126,16 +1124,12 @@ chat.cancelProcessing('chat-2');
 
 ---
 
-## Mock Server
+## Backend connectivity
 
-When `useMock: true` (default), all requests are handled by an in-memory mock server that:
-
-- Returns realistic data from the `mockData.ts` dataset
-- Simulates network latency (300–500 ms random delay)
-- Handles all 12 endpoints with logical behavior
-- Supports revert by filtering data based on checkpoint timestamps
-- Supports summarize by reducing token counts on conversation/tool_output items
-- Simulates SSE by emitting an `approval_required` event after 1.5 seconds
+`ApiClient` now always sends HTTP requests to the configured `baseUrl`. There is no
+built-in mock server or default dataset shipped with the frontend, so run your API
+locally (e.g., `http://localhost:3001/api`) or provide your own stubbed backend when
+developing without the production server.
 
 ### Switching to Production
 
@@ -1143,7 +1137,6 @@ When `useMock: true` (default), all requests are handled by an in-memory mock se
 const api = new ApiClient({
   baseUrl: 'https://your-api.example.com/api',
   token: process.env.API_TOKEN,
-  useMock: false,
   retry: {
     maxRetries: 5,
     baseDelay: 1000,
@@ -1160,7 +1153,7 @@ const api = new ApiClient({
 ```typescript
 import { ApiClient } from './api/client';
 
-const api = new ApiClient({ baseUrl: '/api', useMock: false });
+const api = new ApiClient({ baseUrl: '/api' });
 
 // 1. Load a chat
 const history = await api.getChatHistory('chat-1');
@@ -1223,7 +1216,6 @@ console.log(rulesRes.data.rules);
 ```typescript
 const api = new ApiClient({
   baseUrl: '/api',
-  useMock: false,
   retry: {
     maxRetries: 5,
     baseDelay: 1000,

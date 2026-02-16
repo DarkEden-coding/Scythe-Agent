@@ -1,5 +1,5 @@
-from datetime import datetime, timezone
-from uuid import uuid4
+from app.utils.ids import generate_id
+from app.utils.time import utc_now_iso
 
 from sqlalchemy.orm import Session
 
@@ -52,12 +52,20 @@ class SettingsService:
         )
 
     def _now(self) -> str:
-        return datetime.now(timezone.utc).isoformat()
+        return utc_now_iso()
 
     def _available_models(self) -> list[str]:
         models = self.repo.list_models()
         labels = [m.label for m in models if m.provider == "openrouter"]
         return labels or list(self.app_settings.fallback_models)
+
+    def _lookup_context_limit(self, model_label: str) -> int:
+        """Look up the context_limit for a model from ProviderModelCache."""
+        models = self.repo.list_models()
+        for m in models:
+            if m.label == model_label and m.context_limit is not None:
+                return m.context_limit
+        return self.app_settings.default_context_limit
 
     def ensure_active_model_valid(self) -> str:
         settings_row = self.repo.get_settings()
@@ -90,10 +98,12 @@ class SettingsService:
             raise ValueError(f"Model is not available: {model}")
 
         previous_model = settings_row.active_model
-        context_limit = settings_row.context_limit
+        # Look up the new model's context_limit and update the settings row
+        new_context_limit = self._lookup_context_limit(model)
         self.repo.set_active_model(model, updated_at=self._now())
+        self.repo.set_context_limit(new_context_limit)
         self.repo.commit()
-        return SetModelResponse(model=model, previousModel=previous_model, contextLimit=context_limit)
+        return SetModelResponse(model=model, previousModel=previous_model, contextLimit=new_context_limit)
 
     def get_auto_approve_rules(self) -> GetAutoApproveResponse:
         rules = self.repo.list_auto_approve_rules()
@@ -111,10 +121,10 @@ class SettingsService:
         )
 
     def set_auto_approve_rules(self, rules: list[AutoApproveRuleIn]) -> SetAutoApproveResponse:
-        now = datetime.now(timezone.utc).isoformat()
+        now = utc_now_iso()
         rows = [
             AutoApproveRule(
-                id=f"aar-{uuid4().hex[:12]}",
+                id=generate_id("aar"),
                 field=r.field,
                 value=r.value,
                 enabled=1 if r.enabled else 0,

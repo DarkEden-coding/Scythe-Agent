@@ -28,8 +28,7 @@ class _Transport(Protocol):
 
 
 class MCPClientManager:
-    def __init__(self, db: Session):
-        self.repo = MCPRepository(db)
+    def __init__(self):
         self._transports: dict[str, _Transport] = {}
         self._server_configs: dict[str, tuple[str, dict]] = {}
 
@@ -47,10 +46,11 @@ class MCPClientManager:
             return MCPHTTPTransport(config)
         raise ValueError(f"Unsupported MCP transport: {transport_name}")
 
-    async def discover_and_cache_tools(self) -> tuple[list[MCPToolDescriptor], list[str]]:
+    async def discover_and_cache_tools(self, db: Session) -> tuple[list[MCPToolDescriptor], list[str]]:
+        repo = MCPRepository(db)
         discovered: list[MCPToolDescriptor] = []
         errors: list[str] = []
-        servers = self.repo.list_enabled_servers()
+        servers = repo.list_enabled_servers()
         for server in servers:
             try:
                 config = json.loads(server.config_json)
@@ -77,12 +77,12 @@ class MCPClientManager:
                     )
                     for tool in tools
                 ]
-                self.repo.replace_server_tools(server_id=server.id, tools=cache_rows)
-                self.repo.set_last_connected(server, self._now())
+                repo.replace_server_tools(server_id=server.id, tools=cache_rows)
+                repo.set_last_connected(server, self._now())
                 discovered.extend(tools)
             except Exception as exc:
                 errors.append(f"{server.id}: {exc}")
-                for cached in self.repo.list_cached_tools_for_server(server.id):
+                for cached in repo.list_cached_tools_for_server(server.id):
                     schema = {}
                     try:
                         schema_value = json.loads(cached.schema_json)
@@ -99,7 +99,7 @@ class MCPClientManager:
                         )
                     )
             finally:
-                self.repo.commit()
+                repo.commit()
         return discovered, errors
 
     async def call_tool(self, server_id: str, tool_name: str, payload: dict) -> MCPToolCallResult:
@@ -119,12 +119,10 @@ class MCPClientManager:
 _manager: MCPClientManager | None = None
 
 
-def get_mcp_client_manager(db: Session | None = None) -> MCPClientManager:
+def get_mcp_client_manager() -> MCPClientManager:
     global _manager
     if _manager is None:
-        if db is None:
-            raise RuntimeError("MCP client manager not initialized")
-        _manager = MCPClientManager(db)
+        _manager = MCPClientManager()
     return _manager
 
 

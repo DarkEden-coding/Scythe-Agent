@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config.settings import get_settings
+from app.utils.time import utc_now_iso
 from app.db.models.auto_approve_rule import AutoApproveRule
 from app.db.models.chat import Chat
 from app.db.models.checkpoint import Checkpoint
@@ -21,13 +22,9 @@ from app.db.models.settings import Settings
 from app.db.models.tool_call import ToolCall
 
 
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
 def seed_demo_data(db: Session) -> None:
     settings = get_settings()
-    now = _now()
+    now = utc_now_iso()
 
     if db.get(Settings, 1) is None:
         db.add(
@@ -146,7 +143,7 @@ def seed_demo_data(db: Session) -> None:
             ]
         )
 
-    existing_models = {m.id for m in db.query(ProviderModelCache).all()}
+    existing_models = {m.id for m in db.scalars(select(ProviderModelCache)).all()}
     for idx, model in enumerate(settings.fallback_models):
         key = f"openrouter::{model}"
         if key not in existing_models:

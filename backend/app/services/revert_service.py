@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.db.repositories.chat_repo import ChatRepository
 from app.schemas.chat import FileEditOut, RevertFileResponse, RevertToCheckpointResponse
-from app.serializers.compat import map_file_action_for_ui
+from app.utils.mappers import map_file_action_for_ui
 from app.services.chat_service import ChatService
 
 
@@ -22,7 +22,11 @@ class RevertService:
         if checkpoint is None or checkpoint.chat_id != chat_id:
             raise ValueError(f"Checkpoint not found: {checkpoint_id}")
 
-        self.repo.delete_after_checkpoint(chat_id=chat_id, cutoff_timestamp=checkpoint.timestamp)
+        self.repo.delete_after_checkpoint(
+            chat_id=chat_id,
+            cutoff_timestamp=checkpoint.timestamp,
+            checkpoint_id=checkpoint_id,
+        )
         self.repo.update_chat_timestamp(chat, checkpoint.timestamp)
         self.repo.commit()
 
