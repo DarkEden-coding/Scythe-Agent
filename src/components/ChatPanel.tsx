@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Send,
   RotateCcw,
@@ -26,6 +26,8 @@ import {
 } from 'lucide-react';
 import { Message, Checkpoint, ContextItem, Project, ProjectChat } from '../types';
 import { ContextDropdown } from './ContextDropdown';
+import { Modal } from './Modal';
+import { Markdown } from './Markdown';
 import { cn } from '../utils/cn';
 import { useFilesystemBrowser } from '../api';
 
@@ -39,16 +41,17 @@ interface ChatPanelProps {
   onRemoveContextItem: (itemId: string) => void;
   onSendMessage?: (content: string) => void;
   projects: Project[];
-  activeChatId?: string;
+  activeChatId?: string | null;
   onSwitchChat?: (chatId: string) => void;
   isProcessing?: boolean;
   onCreateProject?: (name: string, path: string) => Promise<void> | void;
-  onCreateChat?: (projectId: string, title: string) => Promise<void> | void;
+  onCreateChat?: (projectId: string, title?: string) => Promise<void> | void;
   onRenameChat?: (chatId: string, title: string) => Promise<void> | void;
   onPinChat?: (chatId: string, isPinned: boolean) => Promise<void> | void;
   onDeleteChat?: (chatId: string) => Promise<void> | void;
   onReorderProjects?: (projectIds: string[]) => Promise<void> | void;
   onReorderChats?: (projectId: string, chatIds: string[]) => Promise<void> | void;
+  onDeleteProject?: (projectId: string) => Promise<void> | void;
 }
 
 export function ChatPanel({
@@ -71,11 +74,12 @@ export function ChatPanel({
   onDeleteChat,
   onReorderProjects,
   onReorderChats,
+  onDeleteProject,
 }: ChatPanelProps) {
   const [inputValue, setInputValue] = useState('');
   const [activeTab, setActiveTab] = useState<'chat' | 'projects'>('chat');
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeChatId, setActiveChatId] = useState(externalActiveChatId ?? 'chat-1');
+  const [activeChatId, setActiveChatId] = useState(externalActiveChatId ?? null);
   const [hoveredChatId, setHoveredChatId] = useState<string | null>(null);
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
 
@@ -83,7 +87,6 @@ export function ChatPanel({
   const [newModalStep, setNewModalStep] = useState<'choose' | 'project' | 'chat'>('choose');
   const [newProjectName, setNewProjectName] = useState('');
   const [newProjectPath, setNewProjectPath] = useState('');
-  const [newChatTitle, setNewChatTitle] = useState('');
   const [newChatProjectId, setNewChatProjectId] = useState('');
 
   const [reorderMode, setReorderMode] = useState(false);
@@ -93,12 +96,10 @@ export function ChatPanel({
   const [dragChatKey, setDragChatKey] = useState<{ projectId: string; chatIndex: number } | null>(null);
   const [dragOverChatIndex, setDragOverChatIndex] = useState<number | null>(null);
 
-  const modalRef = useRef<HTMLDivElement>(null);
-
   const fs = useFilesystemBrowser();
 
   useEffect(() => {
-    setActiveChatId(externalActiveChatId ?? 'chat-1');
+    setActiveChatId(externalActiveChatId ?? null);
   }, [externalActiveChatId]);
 
   useEffect(() => {
@@ -107,22 +108,11 @@ export function ChatPanel({
     }
   }, [projects, expandedProjects.size]);
 
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (modalRef.current && !modalRef.current.contains(e.target as Node)) {
-        closeNewModal();
-      }
-    };
-    if (showNewModal) document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [showNewModal]);
-
   const closeNewModal = () => {
     setShowNewModal(false);
     setNewModalStep('choose');
     setNewProjectName('');
     setNewProjectPath('');
-    setNewChatTitle('');
     setNewChatProjectId('');
   };
 
@@ -130,6 +120,11 @@ export function ChatPanel({
     setShowNewModal(true);
     setNewModalStep('choose');
     await fs.load();
+  };
+
+  const openNewChatInProject = async () => {
+    if (!currentProject || !onCreateChat) return;
+    await onCreateChat(currentProject.id);
   };
 
   const getCheckpointForMessage = (messageId: string) => checkpoints.find((cp) => cp.messageId === messageId);
@@ -166,7 +161,7 @@ export function ChatPanel({
   };
 
   const handleSend = () => {
-    if (!inputValue.trim()) return;
+    if (!inputValue.trim() || !activeChatId) return;
     if (onSendMessage) onSendMessage(inputValue.trim());
     setInputValue('');
   };
@@ -178,8 +173,8 @@ export function ChatPanel({
   };
 
   const handleCreateChat = async () => {
-    if (!newChatTitle.trim() || !newChatProjectId) return;
-    await onCreateChat?.(newChatProjectId, newChatTitle.trim());
+    if (!newChatProjectId) return;
+    await onCreateChat?.(newChatProjectId);
     closeNewModal();
   };
 
@@ -255,6 +250,7 @@ export function ChatPanel({
     : projects;
 
   const totalChats = projects.reduce((sum, p) => sum + p.chats.length, 0);
+  const currentProject = activeChatId ? projects.find((p) => p.chats.some((c) => c.id === activeChatId)) : undefined;
   const currentFolders = (fs.data?.children ?? []).filter((item) => item.kind === 'directory');
 
   return (
@@ -291,18 +287,41 @@ export function ChatPanel({
                   activeTab === 'projects' ? 'bg-aqua-500/20 text-aqua-400' : 'bg-gray-700/50 text-gray-500'
                 )}
               >
-                {totalChats}
+                {projects.length}
               </span>
             </button>
           </div>
 
           {activeTab === 'chat' && (
-            <ContextDropdown
-              contextItems={contextItems}
-              maxTokens={maxTokens}
-              onSummarize={onSummarize}
-              onRemoveItem={onRemoveContextItem}
-            />
+            <div className="flex items-center gap-2">
+              {currentProject && (
+                <div className="flex items-center gap-0.5">
+                  <button
+                    type="button"
+                    onClick={openNewChatInProject}
+                    title="New chat in this project"
+                    className="flex items-center justify-center w-5 h-5 rounded text-aqua-400 hover:bg-aqua-500/20 hover:text-aqua-300 transition-colors"
+                  >
+                    <Plus className="w-3 h-3" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('projects')}
+                    title="Go to projects"
+                    className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-gray-750/80 border border-gray-700/50 text-[11px] text-gray-400 hover:bg-gray-700/60 hover:text-gray-300 transition-colors cursor-pointer"
+                  >
+                    <Folder className="w-3 h-3 text-aqua-400/70" />
+                    {currentProject.name}
+                  </button>
+                </div>
+              )}
+              <ContextDropdown
+                contextItems={contextItems}
+                maxTokens={maxTokens}
+                onSummarize={onSummarize}
+                onRemoveItem={onRemoveContextItem}
+              />
+            </div>
           )}
 
           {activeTab === 'projects' && (
@@ -320,6 +339,8 @@ export function ChatPanel({
       {activeTab === 'chat' && (
         <>
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            {activeChatId ? (
+            <>
             {messages.map((message) => {
               const checkpoint = message.checkpointId ? getCheckpointForMessage(message.id) : null;
 
@@ -368,7 +389,11 @@ export function ChatPanel({
                             : 'bg-gray-800 text-gray-200 rounded-bl-md border border-gray-700/40'
                         )}
                       >
-                        <div className="whitespace-pre-wrap">{message.content}</div>
+                        {message.role === 'agent' ? (
+                          <Markdown content={message.content} />
+                        ) : (
+                          <div className="whitespace-pre-wrap">{message.content}</div>
+                        )}
                       </div>
                       <div className="mt-1 text-[10px] text-gray-600">{formatTime(message.timestamp)}</div>
                     </div>
@@ -388,17 +413,26 @@ export function ChatPanel({
                 </div>
               </div>
             )}
+            </>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-16 text-center">
+                <MessageSquare className="w-12 h-12 text-gray-600 mb-3" />
+                <p className="text-sm text-gray-400 mb-1">No chats yet.</p>
+                <p className="text-xs text-gray-500">Create a project or chat to get started.</p>
+              </div>
+            )}
           </div>
 
           <div className="p-3 border-t border-gray-700/40 bg-gray-850">
-            <div className="flex items-end gap-2">
+            <div className={cn('flex items-end gap-2', !activeChatId && 'opacity-50 pointer-events-none')}>
               <div className="flex-1 relative">
                 <textarea
                   value={inputValue}
                   onChange={(e) => setInputValue(e.target.value)}
-                  placeholder="Describe what you want to build..."
-                  className="w-full px-4 py-3 bg-gray-800 border border-gray-700/50 rounded-xl text-gray-200 placeholder-gray-500 resize-none focus:outline-none focus:border-aqua-500/50 focus:ring-1 focus:ring-aqua-500/30 transition-all text-sm"
+                  placeholder={activeChatId ? 'Describe what you want to build...' : 'Select or create a chat to continue'}
+                  className="w-full px-4 py-3 bg-gray-800 border border-gray-700/50 rounded-xl text-gray-200 placeholder-gray-500 resize-none focus:outline-none focus:border-aqua-500/50 focus:ring-1 focus:ring-aqua-500/30 transition-all text-sm disabled:cursor-not-allowed"
                   rows={2}
+                  disabled={!activeChatId}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault();
@@ -409,7 +443,8 @@ export function ChatPanel({
               </div>
               <button
                 onClick={handleSend}
-                className="p-3 bg-aqua-500 hover:bg-aqua-400 text-gray-950 rounded-xl transition-colors shadow-lg shadow-aqua-500/20"
+                disabled={!activeChatId}
+                className="p-3 bg-aqua-500 hover:bg-aqua-400 text-gray-950 rounded-xl transition-colors shadow-lg shadow-aqua-500/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-aqua-500"
               >
                 <Send className="w-4 h-4" />
               </button>
@@ -459,7 +494,7 @@ export function ChatPanel({
               filteredProjects.map((project) => {
                 const isExpanded = searchQuery ? true : expandedProjects.has(project.id);
                 return (
-                  <div key={project.id} className="rounded-xl overflow-hidden">
+                  <div key={project.id} className="rounded-xl overflow-visible">
                     <button
                       onClick={() => toggleProject(project.id)}
                       className="w-full flex items-center gap-2.5 px-3 py-2.5 hover:bg-gray-800/60 rounded-xl transition-colors group"
@@ -477,6 +512,20 @@ export function ChatPanel({
                       <div className="flex items-center gap-1.5 flex-shrink-0">
                         <span className="text-[10px] text-gray-500 bg-gray-800/80 px-1.5 py-0.5 rounded-md">{project.chats.length}</span>
                         <span className="text-[10px] text-gray-600 hidden group-hover:inline">{formatRelativeTime(project.lastAccessed)}</span>
+                        {onDeleteProject && (
+                          <button
+                            type="button"
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              if (!window.confirm(`Delete project "${project.name}"? This will remove all chats in this project.`)) return;
+                              await onDeleteProject(project.id);
+                            }}
+                            className="p-1 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded-md transition-colors opacity-0 group-hover:opacity-100"
+                            title="Delete project"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
                     </button>
 
@@ -498,11 +547,7 @@ export function ChatPanel({
                           />
                         ))}
                         <button
-                          onClick={() => {
-                            setNewChatProjectId(project.id);
-                            setNewModalStep('chat');
-                            setShowNewModal(true);
-                          }}
+                          onClick={() => onCreateChat?.(project.id)}
                           className="w-full flex items-center gap-2 px-3 py-2 text-gray-500 hover:text-gray-300 hover:bg-gray-800/40 rounded-lg transition-colors"
                         >
                           <Plus className="w-3 h-3" />
@@ -670,12 +715,13 @@ export function ChatPanel({
         </div>
       )}
 
-      {showNewModal && (
-        <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div
-            ref={modalRef}
-            className="w-full max-w-sm bg-gray-850 border border-gray-700/60 rounded-2xl shadow-2xl shadow-black/50 overflow-hidden"
-          >
+      <Modal
+        visible={showNewModal}
+        onClose={closeNewModal}
+        maxWidth="max-w-sm"
+        maxHeight=""
+        panelClassName="bg-gray-850 border-gray-700/60 rounded-2xl shadow-black/50 overflow-hidden"
+      >
             {newModalStep === 'choose' && (
               <>
                 <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700/40">
@@ -854,20 +900,9 @@ export function ChatPanel({
                     </select>
                   </div>
 
-                  <div>
-                    <label className="block text-[11px] font-medium text-gray-400 mb-1.5">Chat Title</label>
-                    <input
-                      type="text"
-                      value={newChatTitle}
-                      onChange={(e) => setNewChatTitle(e.target.value)}
-                      placeholder="e.g. Add authentication flow"
-                      className="w-full px-3 py-2 bg-gray-800 border border-gray-700/50 rounded-xl text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-aqua-500/50 focus:ring-1 focus:ring-aqua-500/20 transition-all"
-                    />
-                  </div>
-
                   <button
                     onClick={handleCreateChat}
-                    disabled={!newChatTitle.trim() || !newChatProjectId}
+                    disabled={!newChatProjectId}
                     className="w-full py-2.5 text-sm font-medium text-gray-950 bg-aqua-500 hover:bg-aqua-400 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl transition-colors shadow-lg shadow-aqua-500/20"
                   >
                     Create Chat
@@ -875,9 +910,7 @@ export function ChatPanel({
                 </div>
               </>
             )}
-          </div>
-        </div>
-      )}
+      </Modal>
     </div>
   );
 }
@@ -906,15 +939,25 @@ function ChatListItem({
   onDelete?: (chatId: string) => Promise<void> | void;
 }) {
   const [showMenu, setShowMenu] = useState(false);
+  const menuContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showMenu) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuContainerRef.current && !menuContainerRef.current.contains(e.target as Node)) {
+        setShowMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showMenu]);
 
   return (
     <div
+      ref={menuContainerRef}
       className="relative"
       onMouseEnter={onMouseEnter}
-      onMouseLeave={() => {
-        onMouseLeave();
-        setShowMenu(false);
-      }}
+      onMouseLeave={onMouseLeave}
     >
       <div
         role="button"
@@ -973,7 +1016,7 @@ function ChatListItem({
       </div>
 
       {showMenu && (
-        <div className="absolute right-2 top-full z-20 mt-1 w-36 bg-gray-800 border border-gray-700/60 rounded-xl shadow-xl shadow-black/40 py-1 overflow-hidden">
+        <div className="absolute right-2 top-full z-20 mt-0.5 w-36 bg-gray-800 border border-gray-700/60 rounded-xl shadow-xl shadow-black/40 py-1 overflow-hidden">
           <button
             type="button"
             onClick={() => onPin?.(chat.id, !chat.isPinned)}
@@ -996,8 +1039,11 @@ function ChatListItem({
           <div className="my-1 h-px bg-gray-700/50" />
           <button
             type="button"
-            onClick={() => {
-              if (window.confirm('Delete this chat?')) onDelete?.(chat.id);
+            onClick={async (e) => {
+              e.stopPropagation();
+              if (!window.confirm('Delete this chat?')) return;
+              setShowMenu(false);
+              await onDelete?.(chat.id);
             }}
             className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10 transition-colors"
           >

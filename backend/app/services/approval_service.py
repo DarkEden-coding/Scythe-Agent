@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from app.db.repositories.chat_repo import ChatRepository
+from app.db.repositories.project_repo import ProjectRepository
 from app.db.repositories.settings_repo import SettingsRepository
 from app.schemas.chat import FileEditOut, ToolCallOut
 from app.utils.mappers import map_file_action_for_ui
@@ -26,6 +27,7 @@ class ApprovalService:
         tool_registry: ToolRegistry | None = None,
     ):
         self.chat_repo = ChatRepository(db)
+        self.project_repo = ProjectRepository(db)
         self.settings_repo = SettingsRepository(db)
         self.event_bus = event_bus or get_event_bus()
         self.registry = tool_registry or get_tool_registry()
@@ -36,7 +38,9 @@ class ApprovalService:
             tool_name=tool_name, input_payload=input_payload, rules=rules
         )
 
-    async def approve(self, *, chat_id: str, tool_call_id: str) -> tuple[ToolCallOut, list[FileEditOut]]:
+    async def approve(
+        self, *, chat_id: str, tool_call_id: str
+    ) -> tuple[ToolCallOut, list[FileEditOut]]:
         tool_call = self.chat_repo.get_tool_call(tool_call_id)
         if tool_call is None or tool_call.chat_id != chat_id:
             raise ValueError(f"Tool call not found: {tool_call_id}")
@@ -47,7 +51,10 @@ class ApprovalService:
         self.chat_repo.commit()
         await self.event_bus.publish(
             chat_id,
-            {"type": "tool_call_start", "payload": {"toolCall": self._tool_call_out(tool_call).model_dump()}},
+            {
+                "type": "tool_call_start",
+                "payload": {"toolCall": self._tool_call_out(tool_call).model_dump()},
+            },
         )
 
         start = datetime.now(timezone.utc)
@@ -57,7 +64,13 @@ class ApprovalService:
             tool = self.registry.get_tool(tool_call.name)
             if tool is None:
                 raise ValueError(f"Tool not registered: {tool_call.name}")
-            result = await tool.run(payload)
+            project_root = None
+            chat = self.chat_repo.get_chat(chat_id)
+            if chat:
+                project = self.project_repo.get_project(chat.project_id)
+                if project and project.path:
+                    project_root = project.path
+            result = await tool.run(payload, project_root=project_root)
 
             for idx, edit in enumerate(result.file_edits):
                 row = self.chat_repo.create_file_edit(
@@ -81,10 +94,15 @@ class ApprovalService:
                 )
                 await self.event_bus.publish(
                     chat_id,
-                    {"type": "file_edit", "payload": {"fileEdit": file_edits[-1].model_dump()}},
+                    {
+                        "type": "file_edit",
+                        "payload": {"fileEdit": file_edits[-1].model_dump()},
+                    },
                 )
 
-            duration_ms = int((datetime.now(timezone.utc) - start).total_seconds() * 1000)
+            duration_ms = int(
+                (datetime.now(timezone.utc) - start).total_seconds() * 1000
+            )
             self.chat_repo.set_tool_call_status(
                 tool_call,
                 status="completed",
@@ -93,7 +111,9 @@ class ApprovalService:
             )
             self.chat_repo.commit()
         except Exception as exc:
-            self.chat_repo.set_tool_call_status(tool_call, status="error", output_text=str(exc))
+            self.chat_repo.set_tool_call_status(
+                tool_call, status="error", output_text=str(exc)
+            )
             self.chat_repo.commit()
             await self.event_bus.publish(
                 chat_id,
@@ -114,7 +134,9 @@ class ApprovalService:
         )
         return tool_out, file_edits
 
-    async def reject(self, *, chat_id: str, tool_call_id: str, reason: str | None = None) -> ToolCallOut:
+    async def reject(
+        self, *, chat_id: str, tool_call_id: str, reason: str | None = None
+    ) -> ToolCallOut:
         tool_call = self.chat_repo.get_tool_call(tool_call_id)
         if tool_call is None or tool_call.chat_id != chat_id:
             raise ValueError(f"Tool call not found: {tool_call_id}")
@@ -122,7 +144,9 @@ class ApprovalService:
             raise ValueError(f"Tool call is not pending: {tool_call_id}")
 
         message = f"Rejected: {reason}" if reason else "Rejected"
-        self.chat_repo.set_tool_call_status(tool_call, status="rejected", output_text=message)
+        self.chat_repo.set_tool_call_status(
+            tool_call, status="rejected", output_text=message
+        )
         self.chat_repo.commit()
 
         tool_out = self._tool_call_out(tool_call)
@@ -141,6 +165,8 @@ class ApprovalService:
             output=tool_call.output_text,
             timestamp=tool_call.timestamp,
             duration=tool_call.duration_ms,
-            isParallel=bool(tool_call.parallel) if tool_call.parallel is not None else None,
+            isParallel=bool(tool_call.parallel)
+            if tool_call.parallel is not None
+            else None,
             parallelGroupId=tool_call.parallel_group,
         )

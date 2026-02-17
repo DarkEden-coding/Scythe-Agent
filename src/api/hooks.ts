@@ -15,6 +15,10 @@ import type {
   AgentEvent,
   AutoApproveRule,
   GetFsChildrenResponse,
+  OpenRouterConfig,
+  SetApiKeyResponse,
+  TestConnectionResponse,
+  SyncModelsResponse,
 } from './types';
 import type {
   Message,
@@ -97,11 +101,14 @@ function useAsyncState<T>(initial: T | null = null): [AsyncState<T>, (p: Promise
 
 /* ── useChatHistory ─────────────────────────────────────────────── */
 
+const isValidChatId = (id: string | null | undefined): id is string =>
+  typeof id === 'string' && id.length > 0;
+
 /**
  * Fetches the complete chat history for a given chatId and provides
  * mutable state + action dispatchers for the full agent session.
  */
-export function useChatHistory(chatId: string, client: ApiClient = defaultApi) {
+export function useChatHistory(chatId: string | null | undefined, client: ApiClient = defaultApi) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [toolCalls, setToolCalls] = useState<ToolCall[]>([]);
   const [fileEdits, setFileEdits] = useState<FileEdit[]>([]);
@@ -114,8 +121,20 @@ export function useChatHistory(chatId: string, client: ApiClient = defaultApi) {
   const [error, setError] = useState<string | null>(null);
   const [processingChats, setProcessingChats] = useState<Set<string>>(new Set());
 
-  // Fetch on mount / chatId change
+  // Fetch on mount / chatId change — skip when chatId is invalid
   useEffect(() => {
+    if (!isValidChatId(chatId)) {
+      setLoading(false);
+      setMessages([]);
+      setToolCalls([]);
+      setFileEdits([]);
+      setCheckpoints([]);
+      setReasoningBlocks([]);
+      setContextItems([]);
+      setError(null);
+      return;
+    }
+
     let cancelled = false;
     setLoading(true);
 
@@ -146,6 +165,9 @@ export function useChatHistory(chatId: string, client: ApiClient = defaultApi) {
   /* ── Action: send message ──────────────────────────────────── */
   const sendMessage = useCallback(
     async (content: string) => {
+      if (!isValidChatId(chatId)) {
+        return { ok: false as const, data: null, error: 'No chat selected', timestamp: new Date().toISOString() };
+      }
       setProcessingChats((prev) => new Set(prev).add(chatId));
       try {
         const res = await client.sendMessage({ chatId, content });
@@ -349,8 +371,8 @@ export function useProjects(client: ApiClient = defaultApi) {
   );
 
   const createChat = useCallback(
-    async (projectId: string, title: string) => {
-      const res = await client.createChat({ projectId, title });
+    async (projectId: string, title?: string) => {
+      const res = await client.createChat({ projectId, title: title?.trim() || undefined });
       if (res.ok) {
         await refresh();
       }
@@ -488,27 +510,98 @@ export function useFilesystemBrowser(initialPath?: string, client: ApiClient = d
   };
 }
 
+/* ── Settings cache (TTL 5 min, reduces bandwidth, enables instant display) ── */
+
+const SETTINGS_CACHE_TTL_MS = 5 * 60 * 1000;
+let settingsCache: { data: GetSettingsResponse; fetchedAt: number } | null = null;
+
+async function getSettingsCached(
+  client: ApiClient,
+): Promise<ApiResponse<GetSettingsResponse>> {
+  const now = Date.now();
+  if (
+    settingsCache &&
+    now - settingsCache.fetchedAt < SETTINGS_CACHE_TTL_MS
+  ) {
+    return { ok: true, data: settingsCache.data };
+  }
+  const res = await client.getSettings();
+  if (res.ok) {
+    settingsCache = { data: res.data, fetchedAt: Date.now() };
+  }
+  return res;
+}
+
+function getSettingsCacheSnapshot(): GetSettingsResponse | null {
+  if (
+    settingsCache &&
+    Date.now() - settingsCache.fetchedAt < SETTINGS_CACHE_TTL_MS
+  ) {
+    return settingsCache.data;
+  }
+  return null;
+}
+
 /* ── useSettings ────────────────────────────────────────────────── */
 
 export function useSettings(client: ApiClient = defaultApi) {
-  const [state, run] = useAsyncState<GetSettingsResponse>();
-  const [currentModel, setCurrentModel] = useState('Claude Sonnet 4');
-  const [autoApproveRules, setAutoApproveRules] = useState<AutoApproveRule[]>([]);
+  const cached = getSettingsCacheSnapshot();
+  const [state, setState] = useState<{
+    data: GetSettingsResponse | null;
+    loading: boolean;
+    error: string | null;
+  }>({
+    data: cached,
+    loading: !cached,
+    error: null,
+  });
+  const [currentModel, setCurrentModel] = useState(
+    cached?.model ?? 'Claude Sonnet 4',
+  );
+  const [autoApproveRules, setAutoApproveRules] = useState<AutoApproveRule[]>(
+    cached?.autoApproveRules ?? [],
+  );
+
+  const fetchSettings = useCallback(async () => {
+    setState((s) => ({ ...s, loading: true, error: null }));
+    const res = await getSettingsCached(client);
+    if (res.ok) {
+      setState({ data: res.data, loading: false, error: null });
+      setCurrentModel(res.data.model);
+      setAutoApproveRules(res.data.autoApproveRules);
+    } else {
+      setState((s) => ({
+        ...s,
+        loading: false,
+        error: res.error ?? 'Unknown error',
+      }));
+    }
+    return res;
+  }, [client]);
 
   useEffect(() => {
-    run(client.getSettings()).then((res) => {
+    fetchSettings();
+  }, [fetchSettings]);
+
+  const prefetchSettings = useCallback(() => {
+    return getSettingsCached(client).then((res) => {
       if (res.ok) {
+        setState({ data: res.data, loading: false, error: null });
         setCurrentModel(res.data.model);
         setAutoApproveRules(res.data.autoApproveRules);
       }
+      return res;
     });
-  }, [client, run]);
+  }, [client]);
 
   const changeModel = useCallback(
     async (model: string) => {
       const res = await client.changeModel({ model });
       if (res.ok) {
         setCurrentModel(res.data.model);
+        if (settingsCache) {
+          settingsCache = { ...settingsCache, data: { ...settingsCache.data, model: res.data.model } };
+        }
       }
       return res;
     },
@@ -540,11 +633,98 @@ export function useSettings(client: ApiClient = defaultApi) {
     error: state.error,
     currentModel,
     availableModels: state.data?.availableModels ?? [],
+    modelsByProvider: state.data?.modelsByProvider ?? {},
+    modelMetadata: state.data?.modelMetadata ?? {},
     contextLimit: state.data?.contextLimit ?? 128_000,
     autoApproveRules,
     changeModel,
     updateAutoApproveRules,
     getAutoApproveRules,
+    prefetchSettings,
+  };
+}
+
+/* ── useOpenRouter ──────────────────────────────────────────────── */
+
+/**
+ * Hook for managing OpenRouter configuration.
+ * Provides state and methods for API key management, connection testing,
+ * and model syncing.
+ */
+export function useOpenRouter(client: ApiClient = defaultApi) {
+  const [config, setConfig] = useState<OpenRouterConfig | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const refreshConfig = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    const res = await client.getOpenRouterConfig();
+    if (res.ok) {
+      setConfig(res.data);
+    } else {
+      setError(res.error ?? 'Failed to load OpenRouter config');
+    }
+    setLoading(false);
+    return res;
+  }, [client]);
+
+  useEffect(() => {
+    refreshConfig();
+  }, [refreshConfig]);
+
+  const setApiKey = useCallback(
+    async (apiKey: string): Promise<ApiResponse<SetApiKeyResponse>> => {
+      setLoading(true);
+      setError(null);
+      const res = await client.setOpenRouterApiKey({ apiKey });
+      if (res.ok) {
+        await refreshConfig();
+      } else {
+        setError(res.error ?? 'Failed to set API key');
+      }
+      setLoading(false);
+      return res;
+    },
+    [client, refreshConfig],
+  );
+
+  const testConnection = useCallback(async (): Promise<ApiResponse<TestConnectionResponse>> => {
+    setTesting(true);
+    setError(null);
+    const res = await client.testOpenRouterConnection();
+    if (!res.ok) {
+      setError(res.error ?? 'Connection test failed');
+    }
+    setTesting(false);
+    return res;
+  }, [client]);
+
+  const syncModels = useCallback(async (): Promise<ApiResponse<SyncModelsResponse>> => {
+    setSyncing(true);
+    setError(null);
+    const res = await client.syncOpenRouterModels();
+    if (res.ok) {
+      await refreshConfig();
+    } else {
+      setError(res.error ?? 'Model sync failed');
+    }
+    setSyncing(false);
+    return res;
+  }, [client, refreshConfig]);
+
+  return {
+    config,
+    loading,
+    testing,
+    syncing,
+    error,
+    setApiKey,
+    testConnection,
+    syncModels,
+    refreshConfig,
   };
 }
 
@@ -553,9 +733,10 @@ export function useSettings(client: ApiClient = defaultApi) {
 /**
  * Subscribes to the real-time agent event stream for a given chat.
  * Calls `onEvent` for each received event.
+ * Skips subscription when chatId is invalid.
  */
 export function useAgentEvents(
-  chatId: string,
+  chatId: string | null | undefined,
   onEvent: (event: AgentEvent) => void,
   client: ApiClient = defaultApi,
 ) {
@@ -563,6 +744,7 @@ export function useAgentEvents(
   onEventRef.current = onEvent;
 
   useEffect(() => {
+    if (!isValidChatId(chatId)) return () => {};
     const unsubscribe = client.subscribeToAgentEvents(chatId, (event) => {
       onEventRef.current(event);
     });

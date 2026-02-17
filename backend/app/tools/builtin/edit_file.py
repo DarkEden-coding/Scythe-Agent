@@ -4,21 +4,12 @@ import difflib
 from pathlib import Path
 
 from app.tools.contracts import ToolFileEdit, ToolResult
-
-_BLOCKED_PREFIXES = ["/etc", "/var", "/usr", "/bin", "/sbin", "/boot", "/proc", "/sys", "/dev"]
-
-
-def _validate_path(path_str: str) -> Path:
-    resolved = Path(path_str).resolve()
-    for prefix in _BLOCKED_PREFIXES:
-        if str(resolved).startswith(prefix):
-            raise ValueError(f"Access denied: {path_str} is in a restricted directory")
-    return resolved
+from app.tools.path_utils import resolve_path
 
 
 class EditFileTool:
     name = "edit_file"
-    description = "Write content to a file."
+    description = "Write content to a file. Use paths relative to the project root."
     input_schema = {
         "type": "object",
         "required": ["path", "content"],
@@ -28,9 +19,11 @@ class EditFileTool:
         },
     }
 
-    async def run(self, payload: dict) -> ToolResult:
+    async def run(
+        self, payload: dict, *, project_root: str | None = None
+    ) -> ToolResult:
         try:
-            target = _validate_path(payload.get("path", ""))
+            target = resolve_path(payload.get("path", ""), project_root=project_root)
         except ValueError as exc:
             return ToolResult(output=str(exc), file_edits=[])
 
@@ -47,13 +40,15 @@ class EditFileTool:
 
         diff = None
         if previous is not None:
-            diff_lines = list(difflib.unified_diff(
-                previous.splitlines(keepends=True),
-                content.splitlines(keepends=True),
-                fromfile="before",
-                tofile="after",
-                n=3,
-            ))
+            diff_lines = list(
+                difflib.unified_diff(
+                    previous.splitlines(keepends=True),
+                    content.splitlines(keepends=True),
+                    fromfile="before",
+                    tofile="after",
+                    n=3,
+                )
+            )
             diff = "".join(diff_lines[:100])
 
         file_edit = ToolFileEdit(file_path=str(target), action=action, diff=diff)

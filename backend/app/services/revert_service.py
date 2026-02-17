@@ -4,14 +4,17 @@ from sqlalchemy.orm import Session
 
 from app.db.repositories.chat_repo import ChatRepository
 from app.schemas.chat import FileEditOut, RevertFileResponse, RevertToCheckpointResponse
+from app.services.chat_history import ChatHistoryAssembler
+from app.services.settings_service import SettingsService
 from app.utils.mappers import map_file_action_for_ui
-from app.services.chat_service import ChatService
 
 
 class RevertService:
     def __init__(self, db: Session):
         self.repo = ChatRepository(db)
-        self.chat_service = ChatService(db)
+        self._assembler = ChatHistoryAssembler(
+            self.repo, SettingsService(db)
+        )
 
     def revert_to_checkpoint(self, chat_id: str, checkpoint_id: str) -> RevertToCheckpointResponse:
         chat = self.repo.get_chat(chat_id)
@@ -30,7 +33,7 @@ class RevertService:
         self.repo.update_chat_timestamp(chat, checkpoint.timestamp)
         self.repo.commit()
 
-        history = self.chat_service.get_chat_history(chat_id)
+        history = self._assembler.assemble(chat_id)
         return RevertToCheckpointResponse(
             messages=history.messages,
             toolCalls=history.toolCalls,

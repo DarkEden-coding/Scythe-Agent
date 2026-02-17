@@ -158,7 +158,7 @@ export interface ReorderProjectsRequest {
 
 export interface CreateChatRequest {
   projectId: string;
-  title: string;
+  title?: string;
 }
 
 export interface CreateChatResponse {
@@ -231,14 +231,18 @@ export interface GetFsChildrenResponse {
 // 3. Agent-to-user notifications / streaming
 export type AgentEventType =
   | 'message'
+  | 'content_delta'
   | 'tool_call_start'
   | 'tool_call_end'
   | 'file_edit'
   | 'reasoning_start'
+  | 'reasoning_delta'
   | 'reasoning_end'
   | 'checkpoint'
   | 'approval_required'
   | 'context_update'
+  | 'chat_title_updated'
+  | 'agent_done'
   | 'error';
 
 export interface AgentEvent {
@@ -246,13 +250,26 @@ export interface AgentEvent {
   chatId: string;
   timestamp: string;
   payload: AgentMessagePayload
+    | AgentContentDeltaPayload
     | AgentToolCallPayload
     | AgentFileEditPayload
     | AgentReasoningPayload
+    | AgentReasoningDeltaPayload
     | AgentCheckpointPayload
     | AgentApprovalPayload
     | AgentContextPayload
+    | AgentChatTitlePayload
     | AgentErrorPayload;
+}
+
+export interface AgentContentDeltaPayload {
+  messageId: string;
+  delta: string;
+}
+
+export interface AgentChatTitlePayload {
+  chatId: string;
+  title: string;
 }
 
 export interface AgentMessagePayload {
@@ -269,6 +286,11 @@ export interface AgentFileEditPayload {
 
 export interface AgentReasoningPayload {
   reasoningBlock: ReasoningBlock;
+}
+
+export interface AgentReasoningDeltaPayload {
+  reasoningBlockId: string;
+  delta: string;
 }
 
 export interface AgentCheckpointPayload {
@@ -293,9 +315,45 @@ export interface AgentErrorPayload {
 }
 
 // 4. Settings
+export interface ModelMetadata {
+  contextLimit?: number | null;
+  pricePerMillion?: number | null;
+}
+
 export interface GetSettingsResponse {
   model: string;
   availableModels: string[];
+  modelsByProvider: Record<string, string[]>;
+  modelMetadata: Record<string, ModelMetadata>;
   contextLimit: number;
   autoApproveRules: AutoApproveRule[];
+}
+
+// 5. OpenRouter configuration
+export interface OpenRouterConfig {
+  apiKeyMasked: string;
+  baseUrl: string;
+  connected: boolean;
+  modelCount: number;
+}
+
+export interface SetApiKeyRequest {
+  apiKey: string;
+}
+
+export interface SetApiKeyResponse {
+  success: boolean;
+  modelCount: number;
+  error?: string;
+}
+
+export interface TestConnectionResponse {
+  success: boolean;
+  error?: string;
+}
+
+export interface SyncModelsResponse {
+  success: boolean;
+  models: string[];
+  count: number;
 }

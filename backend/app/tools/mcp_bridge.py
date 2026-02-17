@@ -23,8 +23,9 @@ class MCPBridgeTool:
         self.description = description or f"MCP tool proxy for {tool_name}"
         self.input_schema = input_schema
 
-    async def run(self, payload: dict) -> ToolResult:
+    async def run(
+        self, payload: dict, *, project_root: str | None = None
+    ) -> ToolResult:
         manager = get_mcp_client_manager()
         result = await manager.call_tool(self.server_id, self.tool_name, payload)
         return ToolResult(output=result.text_output, file_edits=[])
-

@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ProjectChatOut(BaseModel):
@@ -24,8 +24,8 @@ class GetProjectsResponse(BaseModel):
 
 
 class CreateProjectRequest(BaseModel):
-    name: str
-    path: str
+    name: str = Field(min_length=1, max_length=200)
+    path: str = Field(min_length=1)
 
 
 class CreateProjectResponse(BaseModel):
@@ -33,7 +33,7 @@ class CreateProjectResponse(BaseModel):
 
 
 class UpdateProjectRequest(BaseModel):
-    name: str | None = None
+    name: str | None = Field(None, min_length=1, max_length=200)
     path: str | None = None
 
 
@@ -50,7 +50,7 @@ class ReorderProjectsRequest(BaseModel):
 
 
 class CreateChatRequest(BaseModel):
-    title: str
+    title: str = "New chat"
 
 
 class CreateChatResponse(BaseModel):

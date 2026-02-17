@@ -1,25 +1,29 @@
 from __future__ import annotations
 
 import json
+import os
+import logging
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config.settings import get_settings
 from app.utils.time import utc_now_iso
+from app.utils.encryption import encrypt
 from app.db.models.auto_approve_rule import AutoApproveRule
 from app.db.models.chat import Chat
 from app.db.models.checkpoint import Checkpoint
 from app.db.models.context_item import ContextItem
 from app.db.models.file_edit import FileEdit
-from app.db.models.mcp_server import MCPServer
-from app.db.models.mcp_tool_cache import MCPToolCache
 from app.db.models.message import Message
 from app.db.models.project import Project
 from app.db.models.provider_model_cache import ProviderModelCache
 from app.db.models.reasoning_block import ReasoningBlock
 from app.db.models.settings import Settings
 from app.db.models.tool_call import ToolCall
+
+
+logger = logging.getLogger(__name__)
 
 
 def seed_demo_data(db: Session) -> None:
@@ -35,6 +39,21 @@ def seed_demo_data(db: Session) -> None:
                 updated_at=now,
             )
         )
+
+    # Auto-migrate OPENROUTER_API_KEY from environment variable to database
+    settings_row = db.get(Settings, 1)
+    if settings_row is not None:
+        env_api_key = os.getenv("OPENROUTER_API_KEY")
+        # If env var exists and DB doesn't have a key, migrate it
+        if env_api_key and not settings_row.openrouter_api_key:
+            try:
+                encrypted_key = encrypt(env_api_key)
+                settings_row.openrouter_api_key = encrypted_key
+                logger.info(
+                    "Migrated OpenRouter API key from environment variable to database"
+                )
+            except Exception as e:
+                logger.error(f"Failed to migrate OpenRouter API key: {e}")
 
     if db.get(Project, "proj-1") is None:
         db.add(
@@ -60,6 +79,17 @@ def seed_demo_data(db: Session) -> None:
             )
         )
 
+    if db.get(Checkpoint, "cp-1") is None:
+        db.add(
+            Checkpoint(
+                id="cp-1",
+                chat_id="chat-1",
+                message_id="msg-1",
+                label="User request: dark mode",
+                timestamp=now,
+            )
+        )
+
     if db.get(Message, "msg-1") is None:
         db.add_all(
             [
@@ -80,17 +110,6 @@ def seed_demo_data(db: Session) -> None:
                     checkpoint_id=None,
                 ),
             ]
-        )
-
-    if db.get(Checkpoint, "cp-1") is None:
-        db.add(
-            Checkpoint(
-                id="cp-1",
-                chat_id="chat-1",
-                message_id="msg-1",
-                label="User request: dark mode",
-                timestamp=now,
-            )
         )
 
     if db.get(ToolCall, "tc-1") is None:
@@ -138,8 +157,20 @@ def seed_demo_data(db: Session) -> None:
     if db.get(ContextItem, "ctx-1") is None:
         db.add_all(
             [
-                ContextItem(id="ctx-1", chat_id="chat-1", type="conversation", label="Recent turns", tokens=512),
-                ContextItem(id="ctx-2", chat_id="chat-1", type="file", label="src/components/Dashboard.tsx", tokens=260),
+                ContextItem(
+                    id="ctx-1",
+                    chat_id="chat-1",
+                    type="conversation",
+                    label="Recent turns",
+                    tokens=512,
+                ),
+                ContextItem(
+                    id="ctx-2",
+                    chat_id="chat-1",
+                    type="file",
+                    label="src/components/Dashboard.tsx",
+                    tokens=260,
+                ),
             ]
         )
 
@@ -166,47 +197,5 @@ def seed_demo_data(db: Session) -> None:
                 value="read_file",
                 enabled=1,
                 created_at=now,
-            )
-        )
-
-    if db.get(MCPServer, "mcp-local-1") is None:
-        db.add(
-            MCPServer(
-                id="mcp-local-1",
-                name="local-mock-server",
-                transport="stdio",
-                config_json=json.dumps(
-                    {
-                        "mock_tools": [
-                            {
-                                "name": "echo_tool",
-                                "description": "Echo payload via MCP mock transport",
-                                "inputSchema": {
-                                    "type": "object",
-                                    "properties": {"text": {"type": "string"}},
-                                },
-                            }
-                        ]
-                    }
-                ),
-                enabled=1,
-                last_connected_at=None,
-            )
-        )
-
-    if db.get(MCPToolCache, "mcpt-mcp-local-1-echo_tool") is None:
-        db.add(
-            MCPToolCache(
-                id="mcpt-mcp-local-1-echo_tool",
-                server_id="mcp-local-1",
-                tool_name="echo_tool",
-                schema_json=json.dumps(
-                    {
-                        "type": "object",
-                        "properties": {"text": {"type": "string"}},
-                    }
-                ),
-                description="Echo payload via MCP mock transport",
-                discovered_at=now,
             )
         )

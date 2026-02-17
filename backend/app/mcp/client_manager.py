@@ -14,9 +14,8 @@ from app.mcp.protocol_models import (
     parse_tool_call_result,
     parse_tools_list_response,
 )
-from app.mcp.transports.http_transport import MCPHTTPTransport
-from app.mcp.transports.sse_transport import MCPSSETransport
-from app.mcp.transports.stdio_transport import MCPStdioTransport
+# Production has no built-in transports; tests register mock factories via register_transport_factory
+_transport_factory_registry: dict[str, type] = {}
 
 
 class _Transport(Protocol):
@@ -38,13 +37,15 @@ class MCPClientManager:
 
     def _build_transport(self, *, transport_name: str, config: dict) -> _Transport:
         key = transport_name.lower().strip()
-        if key == "stdio":
-            return MCPStdioTransport(config)
-        if key == "sse":
-            return MCPSSETransport(config)
-        if key == "http":
-            return MCPHTTPTransport(config)
-        raise ValueError(f"Unsupported MCP transport: {transport_name}")
+        factory = _transport_factory_registry.get(key)
+        if factory is not None:
+            return factory(config)
+        raise NotImplementedError(f"No transport factory registered for: {transport_name}")
+
+    @staticmethod
+    def register_transport_factory(name: str, factory: type) -> None:
+        """Register a transport factory for tests. name is e.g. 'stdio', 'sse', 'http'."""
+        _transport_factory_registry[name.lower().strip()] = factory
 
     async def discover_and_cache_tools(self, db: Session) -> tuple[list[MCPToolDescriptor], list[str]]:
         repo = MCPRepository(db)

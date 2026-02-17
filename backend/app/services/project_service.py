@@ -51,7 +51,10 @@ class ProjectService:
         )
 
     def _project_out(self, project: Project) -> ProjectOut:
-        chats_out = [self._chat_out(chat) for chat in self.repo.list_chats_for_project(project.id)]
+        chats_out = [
+            self._chat_out(chat)
+            for chat in self.repo.list_chats_for_project(project.id)
+        ]
         return ProjectOut(
             id=project.id,
             name=project.name,
@@ -79,12 +82,18 @@ class ProjectService:
         self.repo.commit()
         return CreateProjectResponse(project=self._project_out(project))
 
-    def update_project(self, *, project_id: str, name: str | None = None, path: str | None = None) -> UpdateProjectResponse:
+    def update_project(
+        self, *, project_id: str, name: str | None = None, path: str | None = None
+    ) -> UpdateProjectResponse:
         project = self.repo.get_project(project_id)
         if project is None:
             raise ValueError(f"Project not found: {project_id}")
         normalized_path = self._normalize_dir_path(path) if path is not None else None
-        self.repo.update_project(project, name=name.strip() if name is not None else None, path=normalized_path)
+        self.repo.update_project(
+            project,
+            name=name.strip() if name is not None else None,
+            path=normalized_path,
+        )
         project.last_active = self._now()
         self.repo.commit()
         return UpdateProjectResponse(project=self._project_out(project))
@@ -102,7 +111,9 @@ class ProjectService:
         self.repo.commit()
         return self.get_projects()
 
-    def create_chat(self, *, project_id: str, title: str) -> CreateChatResponse:
+    def create_chat(
+        self, *, project_id: str, title: str = "New chat"
+    ) -> CreateChatResponse:
         project = self.repo.get_project(project_id)
         if project is None:
             raise ValueError(f"Project not found: {project_id}")
@@ -110,7 +121,7 @@ class ProjectService:
         chat = Chat(
             id=self._new_id("chat"),
             project_id=project_id,
-            title=title.strip(),
+            title=title.strip() or "New chat",
             created_at=now,
             updated_at=now,
             sort_order=self.repo.get_next_chat_sort_order(project_id),
@@ -121,11 +132,17 @@ class ProjectService:
         self.repo.commit()
         return CreateChatResponse(chat=self._chat_out(chat))
 
-    def update_chat(self, *, chat_id: str, title: str | None = None, is_pinned: bool | None = None) -> UpdateChatResponse:
+    def update_chat(
+        self, *, chat_id: str, title: str | None = None, is_pinned: bool | None = None
+    ) -> UpdateChatResponse:
         chat = self.repo.get_chat(chat_id)
         if chat is None:
             raise ValueError(f"Chat not found: {chat_id}")
-        self.repo.update_chat(chat, title=title.strip() if title is not None else None, is_pinned=is_pinned)
+        self.repo.update_chat(
+            chat,
+            title=title.strip() if title is not None else None,
+            is_pinned=is_pinned,
+        )
         chat.updated_at = self._now()
         project = self.repo.get_project(chat.project_id)
         if project is not None:
@@ -143,9 +160,13 @@ class ProjectService:
 
         remaining = self.repo.list_chats_for_project(project_id)
         fallback_chat_id = remaining[0].id if remaining else None
-        return DeleteChatResponse(deletedChatId=chat_id, fallbackChatId=fallback_chat_id)
+        return DeleteChatResponse(
+            deletedChatId=chat_id, fallbackChatId=fallback_chat_id
+        )
 
-    def reorder_chats(self, *, project_id: str, chat_ids: list[str]) -> GetProjectsResponse:
+    def reorder_chats(
+        self, *, project_id: str, chat_ids: list[str]
+    ) -> GetProjectsResponse:
         project = self.repo.get_project(project_id)
         if project is None:
             raise ValueError(f"Project not found: {project_id}")

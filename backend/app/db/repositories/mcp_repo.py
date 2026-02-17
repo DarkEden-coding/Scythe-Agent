@@ -5,12 +5,10 @@ from sqlalchemy.orm import Session
 
 from app.db.models.mcp_server import MCPServer
 from app.db.models.mcp_tool_cache import MCPToolCache
+from app.db.repositories.base_repo import BaseRepository
 
 
-class MCPRepository:
-    def __init__(self, db: Session):
-        self.db = db
-
+class MCPRepository(BaseRepository):
     def list_enabled_servers(self) -> list[MCPServer]:
         stmt = (
             select(MCPServer)
@@ -41,6 +39,3 @@ class MCPRepository:
 
     def set_last_connected(self, server: MCPServer, timestamp: str) -> None:
         server.last_connected_at = timestamp
-
-    def commit(self) -> None:
-        self.db.commit()

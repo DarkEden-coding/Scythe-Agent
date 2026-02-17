@@ -3,26 +3,28 @@ import logging
 
 from sqlalchemy.orm import Session
 
+from app.config.settings import get_settings
 from app.db.repositories.chat_repo import ChatRepository
+from app.db.repositories.project_repo import ProjectRepository
 from app.db.repositories.settings_repo import SettingsRepository
 from app.db.session import get_sessionmaker
+from app.initial_information import apply_initial_information
+from app.preprocessors.system_prompt import DEFAULT_SYSTEM_PROMPT
+from app.tools.openrouter_format import get_openrouter_tools
 from app.schemas.chat import (
     CheckpointOut,
-    ContextItemOut,
-    FileEditOut,
     GetChatHistoryResponse,
     MessageOut,
-    ReasoningBlockOut,
     SendMessageResponse,
-    ToolCallOut,
 )
+from app.services.agent_loop import AgentLoop
+from app.services.api_key_resolver import APIKeyResolver
+from app.services.chat_history import ChatHistoryAssembler
 from app.services.approval_service import ApprovalService
 from app.services.event_bus import EventBus, get_event_bus
-from app.services.runtime_service import RuntimeService
 from app.services.settings_service import SettingsService
 from app.utils.ids import generate_id
-from app.utils.json_helpers import safe_parse_json
-from app.utils.mappers import map_file_action_for_ui, map_role_for_ui
+from app.utils.mappers import map_role_for_ui
 from app.utils.time import utc_now_iso
 
 logger = logging.getLogger(__name__)
@@ -39,6 +41,12 @@ class ChatService:
         chat = self.repo.get_chat(chat_id)
         if chat is None:
             raise ValueError(f"Chat not found: {chat_id}")
+
+        existing_messages = self.repo.list_messages(chat_id)
+        is_first_message = len(existing_messages) == 0
+        if is_first_message and chat.title == "New chat":
+            title = content.strip()[:64] or "New chat"
+            chat.title = title
 
         timestamp = utc_now_iso()
         message = self.repo.create_message(
@@ -77,13 +85,24 @@ class ChatService:
             reasoningBlocks=[],
         )
 
+        if is_first_message and chat.title != "New chat":
+            await self.event_bus.publish(
+                chat_id,
+                {
+                    "type": "chat_title_updated",
+                    "payload": {"chatId": chat_id, "title": chat.title},
+                },
+            )
         await self.event_bus.publish(
             chat_id,
             {"type": "message", "payload": {"message": message_out.model_dump()}},
         )
         await self.event_bus.publish(
             chat_id,
-            {"type": "checkpoint", "payload": {"checkpoint": checkpoint_out.model_dump()}},
+            {
+                "type": "checkpoint",
+                "payload": {"checkpoint": checkpoint_out.model_dump()},
+            },
         )
 
         self._schedule_runtime(
@@ -105,26 +124,30 @@ class ChatService:
         async def _runtime_pass() -> None:
             try:
                 await asyncio.sleep(0)
+                app_settings = get_settings()
+                max_iterations = app_settings.max_agent_iterations
                 with get_sessionmaker()() as bg_session:
-                    bg_settings_service = SettingsService(bg_session)
-                    settings = bg_settings_service.get_settings()
-                    plan_summary = await RuntimeService().plan_response(
-                        model=settings.model, user_content=content
+                    bg_settings_repo = SettingsRepository(bg_session)
+                    loop = AgentLoop(
+                        chat_repo=ChatRepository(bg_session),
+                        project_repo=ProjectRepository(bg_session),
+                        settings_repo=bg_settings_repo,
+                        settings_service=SettingsService(bg_session),
+                        api_key_resolver=APIKeyResolver(bg_settings_repo),
+                        approval_svc=ApprovalService(bg_session, event_bus=event_bus),
+                        event_bus=event_bus,
+                        apply_initial_information=apply_initial_information,
+                        get_openrouter_tools=get_openrouter_tools,
+                        default_system_prompt=DEFAULT_SYSTEM_PROMPT,
                     )
-                    description = f"Proposed from runtime scaffold for: {content[:32]} (checkpoint {checkpoint_id})"
-                    if plan_summary:
-                        description = f"{description}; planner={plan_summary[:120]}"
-                    await event_bus.publish(
-                        chat_id,
-                        {
-                            "type": "runtime_plan",
-                            "payload": {
-                                "checkpointId": checkpoint_id,
-                                "description": description,
-                            },
-                        },
+                    await loop.run(
+                        chat_id=chat_id,
+                        checkpoint_id=checkpoint_id,
+                        content=content,
+                        max_iterations=max_iterations,
                     )
-            except Exception:
+            except Exception as exc:
+                err_msg = str(exc)
                 logger.exception(
                     "Background runtime task failed for chat_id=%s checkpoint_id=%s",
                     chat_id,
@@ -133,120 +156,36 @@ class ChatService:
                 await event_bus.publish(
                     chat_id,
                     {
-                        "type": "error",
+                        "type": "message",
                         "payload": {
-                            "message": "Background runtime task failed unexpectedly.",
-                            "checkpointId": checkpoint_id,
+                            "message": {
+                                "id": generate_id("msg"),
+                                "role": "agent",
+                                "content": f"Error: {err_msg}",
+                                "timestamp": utc_now_iso(),
+                                "checkpointId": checkpoint_id,
+                            }
                         },
                     },
                 )
+                await event_bus.publish(
+                    chat_id,
+                    {
+                        "type": "error",
+                        "payload": {
+                            "message": err_msg,
+                            "checkpointId": checkpoint_id,
+                            "source": "backend",
+                        },
+                    },
+                )
+                await event_bus.publish(
+                    chat_id,
+                    {"type": "agent_done", "payload": {"checkpointId": checkpoint_id}},
+                )
 
-        asyncio.create_task(_runtime_pass())
-
-    def _is_auto_approved(self, *, tool_name: str, input_payload: dict) -> bool:
-        approval_svc = ApprovalService(self.repo.db)
-        return approval_svc.should_auto_approve(tool_name, input_payload)
+        _ = asyncio.create_task(_runtime_pass())
 
     def get_chat_history(self, chat_id: str) -> GetChatHistoryResponse:
-        chat = self.repo.get_chat(chat_id)
-        if chat is None:
-            raise ValueError(f"Chat not found: {chat_id}")
-
-        messages = [
-            MessageOut(
-                id=m.id,
-                role=map_role_for_ui(m.role),
-                content=m.content,
-                timestamp=m.timestamp,
-                checkpointId=m.checkpoint_id,
-            )
-            for m in self.repo.list_messages(chat_id)
-        ]
-
-        raw_tool_calls = self.repo.list_tool_calls(chat_id)
-        raw_file_edits = self.repo.list_file_edits(chat_id)
-        raw_reasoning_blocks = self.repo.list_reasoning_blocks(chat_id)
-
-        tool_calls = [
-            ToolCallOut(
-                id=t.id,
-                name=t.name,
-                status=t.status,
-                input=safe_parse_json(t.input_json),
-                output=t.output_text,
-                timestamp=t.timestamp,
-                duration=t.duration_ms,
-                isParallel=bool(t.parallel) if t.parallel is not None else None,
-                parallelGroupId=t.parallel_group,
-            )
-            for t in raw_tool_calls
-        ]
-
-        file_edits = [
-            FileEditOut(
-                id=f.id,
-                filePath=f.file_path,
-                action=map_file_action_for_ui(f.action),
-                diff=f.diff,
-                timestamp=f.timestamp,
-                checkpointId=f.checkpoint_id,
-            )
-            for f in raw_file_edits
-        ]
-
-        checkpoints = self.repo.list_checkpoints(chat_id)
-        cp_file_map: dict[str, list[str]] = {c.id: [] for c in checkpoints}
-        cp_tool_map: dict[str, list[str]] = {c.id: [] for c in checkpoints}
-        cp_reason_map: dict[str, list[str]] = {c.id: [] for c in checkpoints}
-
-        for t in raw_tool_calls:
-            if t.checkpoint_id and t.checkpoint_id in cp_tool_map:
-                cp_tool_map[t.checkpoint_id].append(t.id)
-        for f in raw_file_edits:
-            if f.checkpoint_id in cp_file_map:
-                cp_file_map[f.checkpoint_id].append(f.id)
-        for r in raw_reasoning_blocks:
-            if r.checkpoint_id in cp_reason_map:
-                cp_reason_map[r.checkpoint_id].append(r.id)
-
-        checkpoints_out = [
-            CheckpointOut(
-                id=c.id,
-                messageId=c.message_id,
-                timestamp=c.timestamp,
-                label=c.label,
-                fileEdits=cp_file_map.get(c.id, []),
-                toolCalls=cp_tool_map.get(c.id, []),
-                reasoningBlocks=cp_reason_map.get(c.id, []),
-            )
-            for c in checkpoints
-        ]
-
-        reasoning_blocks = [
-            ReasoningBlockOut(
-                id=r.id,
-                content=r.content,
-                timestamp=r.timestamp,
-                duration=r.duration_ms,
-                checkpointId=r.checkpoint_id,
-            )
-            for r in raw_reasoning_blocks
-        ]
-
-        context_items = [
-            ContextItemOut(id=c.id, type=c.type, name=c.label, tokens=c.tokens)
-            for c in self.repo.list_context_items(chat_id)
-        ]
-
-        settings = self.settings_service.get_settings()
-        return GetChatHistoryResponse(
-            chatId=chat_id,
-            messages=messages,
-            toolCalls=tool_calls,
-            fileEdits=file_edits,
-            checkpoints=checkpoints_out,
-            reasoningBlocks=reasoning_blocks,
-            contextItems=context_items,
-            maxTokens=settings.contextLimit,
-            model=settings.model,
-        )
+        assembler = ChatHistoryAssembler(self.repo, self.settings_service)
+        return assembler.assemble(chat_id)

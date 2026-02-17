@@ -11,4 +11,6 @@ class Settings(Base):
     active_model: Mapped[str] = mapped_column(Text, nullable=False)
     context_limit: Mapped[int] = mapped_column(Integer, nullable=False)
     updated_at: Mapped[str] = mapped_column(Text, nullable=False)
+    openrouter_api_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    openrouter_base_url: Mapped[str | None] = mapped_column(Text, nullable=True)
 

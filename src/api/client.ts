@@ -2,7 +2,7 @@
  * ApiClient — configurable HTTP client for the agentic coding back-end.
  *
  * Usage:
- *   const api = new ApiClient({ baseUrl: 'http://localhost:3001' });
+ *   const api = new ApiClient({ baseUrl: '/api' });
  *   const history = await api.getChatHistory('chat-1');
  *
  * Features:
@@ -49,6 +49,11 @@ import type {
   GetProjectsResponse,
   GetSettingsResponse,
   AgentEvent,
+  OpenRouterConfig,
+  SetApiKeyRequest,
+  SetApiKeyResponse,
+  TestConnectionResponse,
+  SyncModelsResponse,
 } from './types';
 
 /* ── Retry Configuration ────────────────────────────────────────── */
@@ -83,7 +88,7 @@ const DEFAULT_RETRY: RetryConfig = {
 /* ── Client Configuration ───────────────────────────────────────── */
 
 export interface ApiClientConfig {
-  /** Base URL of the API server (e.g. "http://localhost:3001/api"). */
+  /** Base URL of the API server (e.g. "/api" for proxied requests or "http://localhost:3001/api" for direct). */
   baseUrl: string;
   /** Optional bearer token for authentication. */
   token?: string;
@@ -107,7 +112,7 @@ export class ApiClient {
 
   constructor(config: Partial<ApiClientConfig> = {}) {
     this.config = {
-      baseUrl: config.baseUrl ?? 'http://localhost:3001/api',
+      baseUrl: config.baseUrl ?? '/api',
       token: config.token ?? '',
       timeout: config.timeout ?? 30_000,
     };
@@ -440,7 +445,8 @@ export class ApiClient {
   }
 
   async createChat(req: CreateChatRequest): Promise<ApiResponse<CreateChatResponse>> {
-    return this.request('POST', `/projects/${req.projectId}/chats`, { title: req.title });
+    const body = req.title != null && req.title !== '' ? { title: req.title } : {};
+    return this.request('POST', `/projects/${req.projectId}/chats`, body);
   }
 
   async updateChat(req: UpdateChatRequest): Promise<ApiResponse<UpdateChatResponse>> {
@@ -466,6 +472,28 @@ export class ApiClient {
   /** Fetch global settings (model, limits, auto-approve rules). */
   async getSettings(): Promise<ApiResponse<GetSettingsResponse>> {
     return this.request('GET', '/settings', undefined, 'settings');
+  }
+
+  /* ── OpenRouter configuration ────────────────────────────────── */
+
+  /** Get OpenRouter configuration (masked API key, connection status, model count). */
+  async getOpenRouterConfig(): Promise<ApiResponse<OpenRouterConfig>> {
+    return this.request('GET', '/settings/openrouter');
+  }
+
+  /** Set OpenRouter API key and trigger model sync. */
+  async setOpenRouterApiKey(req: SetApiKeyRequest): Promise<ApiResponse<SetApiKeyResponse>> {
+    return this.request('PUT', '/settings/openrouter/api-key', req);
+  }
+
+  /** Test connection to OpenRouter API using stored API key. */
+  async testOpenRouterConnection(): Promise<ApiResponse<TestConnectionResponse>> {
+    return this.request('POST', '/settings/openrouter/test');
+  }
+
+  /** Manually trigger OpenRouter model sync. */
+  async syncOpenRouterModels(): Promise<ApiResponse<SyncModelsResponse>> {
+    return this.request('POST', '/settings/openrouter/sync');
   }
 
   /* ── Agent event stream (SSE / WebSocket) ────────────────────── */
@@ -498,7 +526,8 @@ export class ApiClient {
       eventSource.onmessage = (e) => {
         try {
           const event: AgentEvent = JSON.parse(e.data);
-          callback(event);
+          // Defer callback to avoid [Violation] long-running handler
+          queueMicrotask(() => callback(event));
         } catch {
           // skip malformed events
         }

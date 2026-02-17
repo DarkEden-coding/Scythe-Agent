@@ -10,7 +10,6 @@ from app.api.routes.filesystem import router as filesystem_router
 from app.api.routes.projects import router as projects_router
 from app.api.routes.settings import router as settings_router
 from app.config.settings import get_settings
-from app.db.base import Base
 from app.db.seed import seed_demo_data
 from app.db.session import get_engine, get_sessionmaker
 from app.mcp.client_manager import get_mcp_client_manager
@@ -23,18 +22,25 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    # Ensure all tables exist before seeding
-    Base.metadata.create_all(bind=get_engine())
-
-    # Sync DB work in its own session block, closed before any await
+    # Schema managed by Alembic; sync DB work in its own session block
     session_factory = get_sessionmaker()
     with session_factory() as session:
         seed_demo_data(session)
         session.commit()
 
     # Async operations each get their own session
+    # Sync OpenRouter models using DB-stored API key
     with session_factory() as session:
-        await OpenRouterModelCatalogService(session).sync_models_on_startup()
+        from app.db.repositories.settings_repo import SettingsRepository
+        from app.services.api_key_resolver import APIKeyResolver
+
+        repo = SettingsRepository(session)
+        resolver = APIKeyResolver(repo)
+        client = resolver.create_client()
+        if client:
+            await OpenRouterModelCatalogService(session, client=client).sync_models_on_startup()
+        else:
+            logger.info("No OpenRouter API key configured - skipping model sync")
 
     with session_factory() as session:
         try:

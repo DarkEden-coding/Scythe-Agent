@@ -2,11 +2,17 @@ from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from app.config.defaults import DEFAULT_ACTIVE_MODEL, DEFAULT_CONTEXT_LIMIT, FALLBACK_MODELS
+from app.config.defaults import (
+    DEFAULT_ACTIVE_MODEL,
+    DEFAULT_CONTEXT_LIMIT,
+    FALLBACK_MODELS,
+)
 
 
 class AppSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
 
     app_env: str = "dev"
     app_name: str = "scythe-backend"
@@ -23,6 +29,7 @@ class AppSettings(BaseSettings):
         "http://127.0.0.1:4173",
     ]
     fs_allowed_roots: list[str] = []
+    max_agent_iterations: int = 20
 
 
 @lru_cache(maxsize=1)

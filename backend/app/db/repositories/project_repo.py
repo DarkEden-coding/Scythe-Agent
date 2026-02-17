@@ -4,12 +4,10 @@ from sqlalchemy.orm import Session
 from app.db.models.chat import Chat
 from app.db.models.message import Message
 from app.db.models.project import Project
+from app.db.repositories.base_repo import BaseRepository
 
 
-class ProjectRepository:
-    def __init__(self, db: Session):
-        self.db = db
-
+class ProjectRepository(BaseRepository):
     def list_projects(self) -> list[Project]:
         stmt = select(Project).order_by(Project.sort_order.asc(), Project.last_active.desc())
         return list(self.db.scalars(stmt).all())
@@ -89,9 +87,3 @@ class ProjectRepository:
             if chat.project_id != project_id:
                 raise ValueError(f"Chat {chat_id} does not belong to project {project_id}")
             chat.sort_order = idx
-
-    def commit(self) -> None:
-        self.db.commit()
-
-    def rollback(self) -> None:
-        self.db.rollback()

@@ -23,6 +23,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { ToolCall, FileEdit, Checkpoint, ReasoningBlock } from '../types';
+import { Markdown } from './Markdown';
 import { cn } from '../utils/cn';
 import type { AutoApproveRule } from '../api';
 
@@ -60,7 +61,8 @@ type TimelineItem =
   | { type: 'tool'; call: ToolCall }
   | { type: 'parallel'; calls: ToolCall[] }
   | { type: 'file'; edit: FileEdit }
-  | { type: 'reasoning'; block: ReasoningBlock };
+  | { type: 'reasoning'; block: ReasoningBlock }
+  | { type: 'reasoning_group'; checkpointId: string; blocks: ReasoningBlock[] };
 
 function DiffPreview({ diff, action }: { diff?: string; action: string }) {
   if (!diff) return null;
@@ -122,6 +124,7 @@ export function ActionsPanel({
   const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set());
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set(fileEdits.map(fe => fe.id)));
   const [expandedReasoning, setExpandedReasoning] = useState<Set<string>>(new Set());
+  const [expandedThinkingGroups, setExpandedThinkingGroups] = useState<Set<string>>(new Set());
   const [collapsedCheckpoints, setCollapsedCheckpoints] = useState<Set<string>>(new Set());
   const [expandedParallelGroups, setExpandedParallelGroups] = useState<Set<string>>(new Set());
 
@@ -144,6 +147,13 @@ export function ActionsPanel({
     if (newExpanded.has(blockId)) newExpanded.delete(blockId);
     else newExpanded.add(blockId);
     setExpandedReasoning(newExpanded);
+  };
+
+  const toggleThinkingGroup = (checkpointId: string) => {
+    const next = new Set(expandedThinkingGroups);
+    if (next.has(checkpointId)) next.delete(checkpointId);
+    else next.add(checkpointId);
+    setExpandedThinkingGroups(next);
   };
 
   const toggleCheckpointCollapse = (cpId: string) => {
@@ -214,9 +224,13 @@ export function ActionsPanel({
         allItems.push({ timestamp: fe.timestamp.getTime(), item: { type: 'file', edit: fe } });
       });
 
-      cpReasoningBlocks.forEach((rb) => {
-        allItems.push({ timestamp: rb.timestamp.getTime(), item: { type: 'reasoning', block: rb } });
-      });
+      if (cpReasoningBlocks.length > 0) {
+        const ts = Math.min(...cpReasoningBlocks.map((rb) => rb.timestamp.getTime()));
+        allItems.push({
+          timestamp: ts,
+          item: { type: 'reasoning_group', checkpointId: checkpoint.id, blocks: cpReasoningBlocks },
+        });
+      }
 
       allItems.sort((a, b) => a.timestamp - b.timestamp);
 
@@ -262,6 +276,16 @@ export function ActionsPanel({
           </div>
         </div>
 
+        {call.status === 'error' && call.output && (
+          <div className="mt-1 w-full max-w-full rounded-lg border border-red-500/40 bg-red-950/30 overflow-hidden">
+            <div className="px-2.5 py-2">
+              <span className="text-[10px] uppercase tracking-wider text-red-400 font-medium">Error</span>
+              <pre className="mt-1 text-[11px] text-red-300/90 bg-red-950/50 p-2 rounded-md overflow-x-auto border border-red-500/20 font-mono whitespace-pre-wrap break-all">
+                {call.output}
+              </pre>
+            </div>
+          </div>
+        )}
         {isExpanded && (
           <div className="mt-1 w-full max-w-full rounded-lg border border-gray-700/20 bg-gray-900/50 overflow-hidden">
             <div className="px-2.5 py-2 space-y-2">
@@ -271,7 +295,7 @@ export function ActionsPanel({
                   {JSON.stringify(call.input, null, 2)}
                 </pre>
               </div>
-              {call.output && (
+              {call.output && call.status !== 'error' && (
                 <div>
                   <span className="text-[10px] uppercase tracking-wider text-gray-600 font-medium">Output</span>
                   <pre className="mt-1 text-[11px] text-gray-400 bg-gray-950/50 p-2 rounded-md overflow-x-auto border border-gray-700/20 font-mono whitespace-pre-wrap break-all">
@@ -286,53 +310,64 @@ export function ActionsPanel({
     );
   };
 
-  const renderReasoningBlock = (block: ReasoningBlock) => {
+  const renderReasoningBlock = (block: ReasoningBlock, compact = true) => {
     const isExpanded = expandedReasoning.has(block.id);
-    const previewText = block.content.split('\n')[0].slice(0, 60);
+    const previewText = block.content.split('\n')[0].slice(0, compact ? 40 : 60).trim() || '…';
 
     return (
-      <div key={block.id} className="flex justify-center">
-        <div
+      <div key={block.id} className="flex flex-col">
+        <button
+          onClick={() => toggleReasoning(block.id)}
           className={cn(
-            'transition-all overflow-hidden',
-            isExpanded
-              ? 'w-[92%] rounded-xl border border-purple-500/20 bg-purple-500/[0.04]'
-              : 'inline-flex rounded-lg border border-purple-500/15 bg-purple-500/[0.03] hover:bg-purple-500/[0.07]'
+            'flex items-center gap-1.5 text-left w-full rounded-md px-2 py-1 transition-colors',
+            'hover:bg-purple-500/[0.06] border border-transparent hover:border-purple-500/15'
           )}
         >
-          {/* Header - always visible */}
-          <button
-            onClick={() => toggleReasoning(block.id)}
-            className={cn(
-              'flex items-center gap-1.5 transition-colors w-full',
-              isExpanded
-                ? 'px-3 py-2 border-b border-purple-500/10 hover:bg-purple-500/[0.04]'
-                : 'px-2.5 py-1.5 cursor-pointer'
-            )}
-          >
-            <span className="text-purple-400/70 flex-shrink-0">
-              {isExpanded ? <ChevronDown className="w-2.5 h-2.5" /> : <ChevronRight className="w-2.5 h-2.5" />}
-            </span>
-            <Sparkles className="w-3 h-3 text-purple-400/60 flex-shrink-0" />
-            <span className="text-[11px] text-purple-300/70 font-medium whitespace-nowrap">Thinking</span>
-            {!isExpanded && (
-              <span className="text-[10px] text-purple-400/30 font-mono truncate max-w-[200px]">
-                {previewText}…
-              </span>
-            )}
-            {block.duration && (
-              <span className="text-[10px] text-purple-400/30 font-mono whitespace-nowrap ml-auto">
-                {formatDuration(block.duration)}
-              </span>
-            )}
-          </button>
+          <span className="text-purple-400/60 flex-shrink-0">
+            {isExpanded ? <ChevronDown className="w-2.5 h-2.5" /> : <ChevronRight className="w-2.5 h-2.5" />}
+          </span>
+          <Sparkles className="w-2.5 h-2.5 text-purple-400/50 flex-shrink-0" />
+          <span className="text-[10px] text-purple-300/60 font-mono truncate flex-1">{previewText}</span>
+          {block.duration && (
+            <span className="text-[9px] text-purple-400/30 font-mono whitespace-nowrap">{formatDuration(block.duration)}</span>
+          )}
+        </button>
+        {isExpanded && (
+          <div className="mt-1 ml-5 pl-2 border-l border-purple-500/15 text-[10px] text-purple-200/50 leading-relaxed max-h-[200px] overflow-y-auto">
+            <Markdown content={block.content} className="text-[10px] text-purple-200/50" />
+          </div>
+        )}
+      </div>
+    );
+  };
 
-          {/* Expanded content */}
-          {isExpanded && (
-            <div className="px-3 py-2.5">
-              <div className="text-[11px] text-purple-200/50 font-mono leading-relaxed whitespace-pre-wrap max-h-[280px] overflow-y-auto">
-                {block.content}
-              </div>
+  const renderThinkingGroup = (checkpointId: string, blocks: ReasoningBlock[]) => {
+    const isGroupExpanded = expandedThinkingGroups.has(checkpointId);
+
+    return (
+      <div key={`thinking-${checkpointId}`} className="flex justify-center">
+        <div
+          className={cn(
+            'rounded-lg border transition-all overflow-hidden',
+            'border-purple-500/15 bg-purple-500/[0.03] hover:bg-purple-500/[0.06]',
+            isGroupExpanded ? 'w-[92%]' : 'inline-flex'
+          )}
+        >
+          <button
+            onClick={() => toggleThinkingGroup(checkpointId)}
+            className="flex items-center gap-1.5 px-2 py-1.5 w-full min-w-0"
+          >
+            <span className="text-purple-400/60 flex-shrink-0">
+              {isGroupExpanded ? <ChevronDown className="w-2.5 h-2.5" /> : <ChevronRight className="w-2.5 h-2.5" />}
+            </span>
+            <Sparkles className="w-2.5 h-2.5 text-purple-400/50 flex-shrink-0" />
+            <span className="text-[10px] text-purple-300/70 font-medium whitespace-nowrap">
+              Thinking · {blocks.length} {blocks.length === 1 ? 'thought' : 'thoughts'}
+            </span>
+          </button>
+          {isGroupExpanded && (
+            <div className="px-2 pb-2 pt-0 space-y-1 border-t border-purple-500/10">
+              {blocks.map((block) => renderReasoningBlock(block, true))}
             </div>
           )}
         </div>
@@ -540,7 +575,7 @@ export function ActionsPanel({
                     const isTypeTransition = prevItem !== null && prevItem.type !== item.type;
 
                     return (
-                      <div key={item.type === 'tool' ? item.call.id : item.type === 'file' ? item.edit.id : item.type === 'reasoning' ? item.block.id : `parallel-${idx}`}>
+                      <div key={item.type === 'tool' ? item.call.id : item.type === 'file' ? item.edit.id : item.type === 'reasoning' ? item.block.id : item.type === 'reasoning_group' ? `thinking-${item.checkpointId}` : `parallel-${idx}`}>
                         {/* Connector line between items */}
                         {showConnector && (
                           <div className="flex justify-center py-0.5">
@@ -556,6 +591,7 @@ export function ActionsPanel({
                         )}
 
                         {item.type === 'reasoning' && renderReasoningBlock(item.block)}
+                        {item.type === 'reasoning_group' && renderThinkingGroup(item.checkpointId, item.blocks)}
 
                         {item.type === 'tool' && (
                           <div className="flex justify-center">

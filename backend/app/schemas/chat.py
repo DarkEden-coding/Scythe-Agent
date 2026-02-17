@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class MessageOut(BaseModel):
@@ -68,7 +68,7 @@ class GetChatHistoryResponse(BaseModel):
 
 
 class SendMessageRequest(BaseModel):
-    content: str
+    content: str = Field(min_length=1, max_length=100_000)
 
 
 class SendMessageResponse(BaseModel):
@@ -77,7 +77,7 @@ class SendMessageResponse(BaseModel):
 
 
 class ApproveCommandRequest(BaseModel):
-    toolCallId: str
+    toolCallId: str = Field(min_length=1)
 
 
 class ApproveCommandResponse(BaseModel):
@@ -86,7 +86,7 @@ class ApproveCommandResponse(BaseModel):
 
 
 class RejectCommandRequest(BaseModel):
-    toolCallId: str
+    toolCallId: str = Field(min_length=1)
     reason: str | None = None
 
 

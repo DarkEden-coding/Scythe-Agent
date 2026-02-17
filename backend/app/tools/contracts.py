@@ -22,6 +22,6 @@ class Tool(Protocol):
     description: str
     input_schema: dict
 
-    async def run(self, payload: dict) -> ToolResult:
-        ...
-
+    async def run(
+        self, payload: dict, *, project_root: str | None = None
+    ) -> ToolResult: ...

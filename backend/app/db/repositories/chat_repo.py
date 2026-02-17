@@ -11,6 +11,7 @@ from app.db.models.file_edit import FileEdit
 from app.db.models.message import Message
 from app.db.models.reasoning_block import ReasoningBlock
 from app.db.models.tool_call import ToolCall
+from app.db.repositories.base_repo import BaseRepository
 
 
 def _normalize_ts(iso_str: str) -> str:
@@ -19,10 +20,7 @@ def _normalize_ts(iso_str: str) -> str:
     return dt.strftime("%Y-%m-%dT%H:%M:%S.%f+00:00")
 
 
-class ChatRepository:
-    def __init__(self, db: Session):
-        self.db = db
-
+class ChatRepository(BaseRepository):
     def get_chat(self, chat_id: str) -> Chat | None:
         return self.db.get(Chat, chat_id)
 
@@ -39,27 +37,51 @@ class ChatRepository:
         return self.db.get(FileEdit, file_edit_id)
 
     def list_messages(self, chat_id: str) -> list[Message]:
-        stmt = select(Message).where(Message.chat_id == chat_id).order_by(Message.timestamp.asc())
+        stmt = (
+            select(Message)
+            .where(Message.chat_id == chat_id)
+            .order_by(Message.timestamp.asc())
+        )
         return list(self.db.scalars(stmt).all())
 
     def list_tool_calls(self, chat_id: str) -> list[ToolCall]:
-        stmt = select(ToolCall).where(ToolCall.chat_id == chat_id).order_by(ToolCall.timestamp.asc())
+        stmt = (
+            select(ToolCall)
+            .where(ToolCall.chat_id == chat_id)
+            .order_by(ToolCall.timestamp.asc())
+        )
         return list(self.db.scalars(stmt).all())
 
     def list_file_edits(self, chat_id: str) -> list[FileEdit]:
-        stmt = select(FileEdit).where(FileEdit.chat_id == chat_id).order_by(FileEdit.timestamp.asc())
+        stmt = (
+            select(FileEdit)
+            .where(FileEdit.chat_id == chat_id)
+            .order_by(FileEdit.timestamp.asc())
+        )
         return list(self.db.scalars(stmt).all())
 
     def list_checkpoints(self, chat_id: str) -> list[Checkpoint]:
-        stmt = select(Checkpoint).where(Checkpoint.chat_id == chat_id).order_by(Checkpoint.timestamp.asc())
+        stmt = (
+            select(Checkpoint)
+            .where(Checkpoint.chat_id == chat_id)
+            .order_by(Checkpoint.timestamp.asc())
+        )
         return list(self.db.scalars(stmt).all())
 
     def list_reasoning_blocks(self, chat_id: str) -> list[ReasoningBlock]:
-        stmt = select(ReasoningBlock).where(ReasoningBlock.chat_id == chat_id).order_by(ReasoningBlock.timestamp.asc())
+        stmt = (
+            select(ReasoningBlock)
+            .where(ReasoningBlock.chat_id == chat_id)
+            .order_by(ReasoningBlock.timestamp.asc())
+        )
         return list(self.db.scalars(stmt).all())
 
     def list_context_items(self, chat_id: str) -> list[ContextItem]:
-        stmt = select(ContextItem).where(ContextItem.chat_id == chat_id).order_by(ContextItem.id.asc())
+        stmt = (
+            select(ContextItem)
+            .where(ContextItem.chat_id == chat_id)
+            .order_by(ContextItem.id.asc())
+        )
         return list(self.db.scalars(stmt).all())
 
     def create_message(
@@ -178,6 +200,27 @@ class ChatRepository:
     def link_message_checkpoint(self, message: Message, checkpoint_id: str) -> None:
         message.checkpoint_id = checkpoint_id
 
+    def create_reasoning_block(
+        self,
+        *,
+        reasoning_block_id: str,
+        chat_id: str,
+        checkpoint_id: str | None,
+        content: str,
+        timestamp: str,
+        duration_ms: int | None = None,
+    ) -> ReasoningBlock:
+        block = ReasoningBlock(
+            id=reasoning_block_id,
+            chat_id=chat_id,
+            checkpoint_id=checkpoint_id,
+            content=content,
+            timestamp=timestamp,
+            duration_ms=duration_ms,
+        )
+        self.db.add(block)
+        return block
+
     def delete_file_edit(self, file_edit: FileEdit) -> None:
         self.db.delete(file_edit)
 
@@ -192,7 +235,10 @@ class ChatRepository:
                 Message.chat_id == chat_id,
                 or_(
                     Message.timestamp > cutoff,
-                    and_(Message.timestamp == cutoff, Message.checkpoint_id != checkpoint_id),
+                    and_(
+                        Message.timestamp == cutoff,
+                        Message.checkpoint_id != checkpoint_id,
+                    ),
                 ),
             )
         )
@@ -201,7 +247,10 @@ class ChatRepository:
                 ToolCall.chat_id == chat_id,
                 or_(
                     ToolCall.timestamp > cutoff,
-                    and_(ToolCall.timestamp == cutoff, ToolCall.checkpoint_id != checkpoint_id),
+                    and_(
+                        ToolCall.timestamp == cutoff,
+                        ToolCall.checkpoint_id != checkpoint_id,
+                    ),
                 ),
             )
         )
@@ -210,7 +259,10 @@ class ChatRepository:
                 FileEdit.chat_id == chat_id,
                 or_(
                     FileEdit.timestamp > cutoff,
-                    and_(FileEdit.timestamp == cutoff, FileEdit.checkpoint_id != checkpoint_id),
+                    and_(
+                        FileEdit.timestamp == cutoff,
+                        FileEdit.checkpoint_id != checkpoint_id,
+                    ),
                 ),
             )
         )
@@ -219,7 +271,10 @@ class ChatRepository:
                 ReasoningBlock.chat_id == chat_id,
                 or_(
                     ReasoningBlock.timestamp > cutoff,
-                    and_(ReasoningBlock.timestamp == cutoff, ReasoningBlock.checkpoint_id != checkpoint_id),
+                    and_(
+                        ReasoningBlock.timestamp == cutoff,
+                        ReasoningBlock.checkpoint_id != checkpoint_id,
+                    ),
                 ),
             )
         )
@@ -228,13 +283,9 @@ class ChatRepository:
                 Checkpoint.chat_id == chat_id,
                 or_(
                     Checkpoint.timestamp > cutoff,
-                    and_(Checkpoint.timestamp == cutoff, Checkpoint.id != checkpoint_id),
+                    and_(
+                        Checkpoint.timestamp == cutoff, Checkpoint.id != checkpoint_id
+                    ),
                 ),
             )
         )
-
-    def commit(self) -> None:
-        self.db.commit()
-
-    def rollback(self) -> None:
-        self.db.rollback()
