@@ -86,7 +86,7 @@ class SettingsService:
 
     def _available_models(self) -> list[str]:
         models = self.repo.list_models()
-        labels = [m.label for m in models if m.provider == "openrouter"]
+        labels = [m.label for m in models]
         return labels or list(self.app_settings.fallback_models)
 
     def _models_by_provider(self) -> dict[str, list[str]]:
@@ -216,6 +216,88 @@ class SettingsService:
                 for r in rows
             ]
         )
+
+    def get_groq_config(self) -> dict:
+        """Get Groq configuration including masked API key and connection status."""
+        from app.services.api_key_resolver import APIKeyResolver
+
+        resolver = APIKeyResolver(self.repo)
+        has_key, api_key_masked = resolver.resolve_masked("groq")
+        models = self.repo.list_models()
+        model_count = len([m for m in models if m.provider == "groq"])
+
+        return {
+            "apiKeyMasked": api_key_masked,
+            "connected": has_key,
+            "modelCount": model_count,
+        }
+
+    def set_groq_api_key(self, api_key: str) -> dict:
+        """
+        Validate, encrypt, and save Groq API key.
+        Returns success status and model count.
+        """
+        if not api_key or not api_key.strip():
+            raise ValueError("API key cannot be empty")
+
+        api_key = api_key.strip()
+
+        try:
+            encrypted = encrypt(api_key)
+        except Exception as e:
+            logger.error(f"Failed to encrypt Groq API key: {e}")
+            raise ValueError(f"Failed to encrypt API key: {e}") from e
+
+        self.repo.set_groq_api_key(encrypted, updated_at=self._now())
+        self.repo.commit()
+
+        logger.info("Groq API key saved successfully")
+        return {"success": True, "modelCount": 0}
+
+    async def test_groq_connection(
+        self, api_key: str | None = None
+    ) -> tuple[bool, str | None]:
+        """
+        Test connection to Groq API.
+        Uses provided API key or falls back to stored/env key.
+        Returns (success, error_message).
+        """
+        from app.providers.groq.client import GroqClient
+        from app.services.api_key_resolver import APIKeyResolver
+
+        if api_key:
+            client = GroqClient(api_key=api_key)
+        else:
+            resolver = APIKeyResolver(self.repo)
+            client = resolver.create_client("groq")
+            if not client:
+                return False, "No API key configured"
+
+        try:
+            models = await client.get_models()
+            if models:
+                return True, None
+            return False, "No models returned from API"
+        except Exception as e:
+            logger.error(f"Groq connection test failed: {e}")
+            return False, str(e)
+
+    async def sync_groq_models(self) -> list[str]:
+        """
+        Manually trigger Groq model sync.
+        Returns list of model labels.
+        """
+        from app.providers.groq.model_catalog import GroqModelCatalogService
+        from app.services.api_key_resolver import APIKeyResolver
+
+        resolver = APIKeyResolver(self.repo)
+        client = resolver.create_client("groq")
+        if not client:
+            raise ValueError("No Groq API key configured")
+
+        catalog_service = GroqModelCatalogService(self.repo.db, client=client)
+        labels = await catalog_service.sync_models_on_startup(force_refresh=True)
+        return labels
 
     def get_openrouter_config(self) -> dict:
         """Get OpenRouter configuration including masked API key and connection status."""

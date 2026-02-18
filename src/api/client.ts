@@ -52,6 +52,7 @@ import type {
   GetSettingsResponse,
   AgentEvent,
   OpenRouterConfig,
+  GroqConfig,
   SetApiKeyRequest,
   SetApiKeyResponse,
   SetSystemPromptRequest,
@@ -520,6 +521,28 @@ export class ApiClient {
   /** Manually trigger OpenRouter model sync. */
   async syncOpenRouterModels(): Promise<ApiResponse<SyncModelsResponse>> {
     return this.request('POST', '/settings/openrouter/sync');
+  }
+
+  /* ── Groq configuration ────────────────────────────────────────── */
+
+  /** Get Groq configuration (masked API key, connection status, model count). */
+  async getGroqConfig(): Promise<ApiResponse<GroqConfig>> {
+    return this.request('GET', '/settings/groq');
+  }
+
+  /** Set Groq API key and trigger model sync. */
+  async setGroqApiKey(req: SetApiKeyRequest): Promise<ApiResponse<SetApiKeyResponse>> {
+    return this.request('PUT', '/settings/groq/api-key', req);
+  }
+
+  /** Test connection to Groq API using stored API key. */
+  async testGroqConnection(): Promise<ApiResponse<TestConnectionResponse>> {
+    return this.request('POST', '/settings/groq/test');
+  }
+
+  /** Manually trigger Groq model sync. */
+  async syncGroqModels(): Promise<ApiResponse<SyncModelsResponse>> {
+    return this.request('POST', '/settings/groq/sync');
   }
 
   /** Set custom system prompt. Empty string resets to default. */

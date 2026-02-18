@@ -16,6 +16,7 @@ export {
   useFilesystemBrowser,
   useSettings,
   useOpenRouter,
+  useGroq,
   useAgentEvents,
 } from './hooks';
 

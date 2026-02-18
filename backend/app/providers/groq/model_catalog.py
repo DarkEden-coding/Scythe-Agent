@@ -1,3 +1,5 @@
+"""Groq model catalog service for syncing and caching available models."""
+
 from __future__ import annotations
 
 import json
@@ -6,17 +8,24 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from app.config.settings import get_settings
-
-MODEL_CACHE_TTL_SECONDS = 300
 from app.db.models.provider_model_cache import ProviderModelCache
 from app.db.repositories.settings_repo import SettingsRepository
-from app.providers.openrouter.client import OpenRouterClient
+from app.providers.groq.client import GroqClient
+
+MODEL_CACHE_TTL_SECONDS = 300
+GROQ_FALLBACK_MODELS = [
+    "llama-3.3-70b-versatile",
+    "llama-3.1-8b-instant",
+    "llama-3.1-70b-versatile",
+]
 
 
-class OpenRouterModelCatalogService:
-    def __init__(self, db: Session, client: OpenRouterClient | None = None):
+class GroqModelCatalogService:
+    """Syncs and caches Groq models from the API."""
+
+    def __init__(self, db: Session, client: GroqClient | None = None) -> None:
         self.repo = SettingsRepository(db)
-        self.client = client or OpenRouterClient()
+        self.client = client or GroqClient()
         self.app_settings = get_settings()
 
     @staticmethod
@@ -25,7 +34,7 @@ class OpenRouterModelCatalogService:
 
     @staticmethod
     def _parse_context_limit(item: dict) -> int | None:
-        raw_value = item.get("context_length", item.get("max_context_tokens"))
+        raw_value = item.get("context_window", item.get("max_completion_tokens"))
         try:
             return int(raw_value) if raw_value is not None else None
         except (TypeError, ValueError):
@@ -44,10 +53,13 @@ class OpenRouterModelCatalogService:
             if model_id in seen_ids:
                 continue
             seen_ids.add(model_id)
+            active = item.get("active", True)
+            if not active:
+                continue
             normalized.append(
                 ProviderModelCache(
-                    id=f"openrouter::{model_id}",
-                    provider="openrouter",
+                    id=f"groq::{model_id}",
+                    provider="groq",
                     label=model_id,
                     context_limit=self._parse_context_limit(item),
                     raw_json=json.dumps(item),
@@ -60,25 +72,25 @@ class OpenRouterModelCatalogService:
     def _fallback_rows(self, fetched_at: str) -> list[ProviderModelCache]:
         return [
             ProviderModelCache(
-                id=f"openrouter::{model}",
-                provider="openrouter",
+                id=f"groq::{model}",
+                provider="groq",
                 label=model,
                 context_limit=self.app_settings.default_context_limit,
-                raw_json=json.dumps({"id": model, "provider": "openrouter", "fallback": True}),
+                raw_json=json.dumps({"id": model, "provider": "groq", "fallback": True}),
                 fetched_at=fetched_at,
             )
-            for model in self.app_settings.fallback_models
+            for model in GROQ_FALLBACK_MODELS
         ]
 
     def _available_model_labels(self) -> list[str]:
-        cache_labels = [row.label for row in self.repo.list_models() if row.provider == "openrouter"]
+        cache_labels = [row.label for row in self.repo.list_models() if row.provider == "groq"]
         if cache_labels:
             return cache_labels
-        return list(self.app_settings.fallback_models)
+        return list(GROQ_FALLBACK_MODELS)
 
     def _cache_is_fresh(self) -> bool:
-        """Return True if openrouter cache exists and is within TTL."""
-        models = [m for m in self.repo.list_models() if m.provider == "openrouter"]
+        """Return True if groq cache exists and is within TTL."""
+        models = [m for m in self.repo.list_models() if m.provider == "groq"]
         if not models:
             return False
         try:
@@ -88,26 +100,9 @@ class OpenRouterModelCatalogService:
         except (ValueError, TypeError):
             return False
 
-    def ensure_active_model_valid(self) -> None:
-        settings = self.repo.get_settings()
-        if settings is None:
-            return
-        available = set(self._available_model_labels())
-        fallback_model = self.app_settings.default_active_model
-        target_model = settings.active_model
-        if target_model not in available:
-            if fallback_model in available:
-                target_model = fallback_model
-            else:
-                target_model = sorted(available)[0] if available else fallback_model
-        if target_model != settings.active_model:
-            self.repo.set_active_model(target_model, updated_at=self._now())
-            self.repo.commit()
-
     async def sync_models_on_startup(self, *, force_refresh: bool = False) -> list[str]:
-        """Sync models from API when needed. Use cache when fresh unless force_refresh."""
+        """Sync models from Groq API when needed. Use cache when fresh unless force_refresh."""
         if not force_refresh and self._cache_is_fresh():
-            self.ensure_active_model_valid()
             return self._available_model_labels()
 
         fetched_at = self._now()
@@ -115,20 +110,14 @@ class OpenRouterModelCatalogService:
             remote = await self.client.get_models()
             normalized = self._normalize(remote, fetched_at)
             if normalized:
-                self.repo.replace_models_for_provider("openrouter", normalized)
+                self.repo.replace_models_for_provider("groq", normalized)
                 self.repo.commit()
-            elif not any(m.provider == "openrouter" for m in self.repo.list_models()):
-                self.repo.replace_models_for_provider(
-                    "openrouter", self._fallback_rows(fetched_at)
-                )
+            elif not any(m.provider == "groq" for m in self.repo.list_models()):
+                self.repo.replace_models_for_provider("groq", self._fallback_rows(fetched_at))
                 self.repo.commit()
         except Exception:
-            if not any(m.provider == "openrouter" for m in self.repo.list_models()):
-                self.repo.replace_models_for_provider(
-                    "openrouter", self._fallback_rows(fetched_at)
-                )
+            if not any(m.provider == "groq" for m in self.repo.list_models()):
+                self.repo.replace_models_for_provider("groq", self._fallback_rows(fetched_at))
                 self.repo.commit()
 
-        self.ensure_active_model_valid()
         return self._available_model_labels()
-

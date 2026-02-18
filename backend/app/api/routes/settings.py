@@ -10,6 +10,7 @@ from app.schemas.settings import (
     SetApiKeyRequest,
     SetSystemPromptRequest,
     OpenRouterConfigResponse,
+    GroqConfigResponse,
     SetApiKeyResponse,
     SetSystemPromptResponse,
     TestConnectionResponse,
@@ -131,6 +132,63 @@ async def sync_openrouter_models(db: Session = Depends(get_db)):
     try:
         service = SettingsService(db)
         models = await service.sync_openrouter_models()
+        response = SyncModelsResponse(success=True, models=models, count=len(models))
+        return ok(response.model_dump())
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
+    except Exception as exc:
+        return JSONResponse(status_code=500, content=err(f"Sync failed: {exc}").model_dump())
+
+
+# Groq configuration endpoints
+@router.get("/groq")
+def get_groq_config(db: Session = Depends(get_db)):
+    """Get Groq configuration including masked API key and connection status."""
+    try:
+        config = SettingsService(db).get_groq_config()
+        response = GroqConfigResponse(**config)
+        return ok(response.model_dump())
+    except Exception as exc:
+        return JSONResponse(status_code=500, content=err(f"Failed to get config: {exc}").model_dump())
+
+
+@router.put("/groq/api-key")
+async def set_groq_api_key(request: SetApiKeyRequest, db: Session = Depends(get_db)):
+    """Set Groq API key and trigger model sync."""
+    try:
+        service = SettingsService(db)
+        result = service.set_groq_api_key(request.apiKey)
+        try:
+            models = await service.sync_groq_models()
+            result["modelCount"] = len(models)
+        except Exception as sync_error:
+            result["error"] = f"API key saved but model sync failed: {sync_error}"
+        response = SetApiKeyResponse(**result)
+        return ok(response.model_dump())
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
+    except Exception as exc:
+        return JSONResponse(status_code=500, content=err(f"Failed to set API key: {exc}").model_dump())
+
+
+@router.post("/groq/test")
+async def test_groq_connection(db: Session = Depends(get_db)):
+    """Test connection to Groq API using stored API key."""
+    try:
+        service = SettingsService(db)
+        success, error = await service.test_groq_connection()
+        response = TestConnectionResponse(success=success, error=error)
+        return ok(response.model_dump())
+    except Exception as exc:
+        return JSONResponse(status_code=500, content=err(f"Test failed: {exc}").model_dump())
+
+
+@router.post("/groq/sync")
+async def sync_groq_models(db: Session = Depends(get_db)):
+    """Manually trigger Groq model sync."""
+    try:
+        service = SettingsService(db)
+        models = await service.sync_groq_models()
         response = SyncModelsResponse(success=True, models=models, count=len(models))
         return ok(response.model_dump())
     except ValueError as exc:

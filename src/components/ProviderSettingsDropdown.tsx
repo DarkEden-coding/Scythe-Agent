@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
-import { Settings, ChevronDown, Key, Bot, Plug } from 'lucide-react';
+import { Settings, ChevronDown, Key, Bot, Plug, Zap } from 'lucide-react';
 import { cn } from '../utils/cn';
 
-export type ProviderId = 'openrouter';
+export type ProviderId = 'openrouter' | 'groq';
 
 export type SettingsTabId = ProviderId | 'agent' | 'mcp';
 
@@ -14,6 +14,7 @@ interface ProviderOption {
 
 const PROVIDER_OPTIONS: ProviderOption[] = [
   { id: 'openrouter', label: 'OpenRouter', icon: <Key className="w-4 h-4 text-cyan-400" /> },
+  { id: 'groq', label: 'Groq', icon: <Zap className="w-4 h-4 text-amber-400" /> },
   { id: 'mcp', label: 'MCP', icon: <Plug className="w-4 h-4 text-cyan-400" /> },
   { id: 'agent', label: 'System Prompt', icon: <Bot className="w-4 h-4 text-cyan-400" /> },
 ];

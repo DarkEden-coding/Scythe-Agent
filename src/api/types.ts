@@ -358,6 +358,13 @@ export interface OpenRouterConfig {
   modelCount: number;
 }
 
+// 5b. Groq configuration
+export interface GroqConfig {
+  apiKeyMasked: string;
+  connected: boolean;
+  modelCount: number;
+}
+
 export interface SetApiKeyRequest {
   apiKey: string;
 }

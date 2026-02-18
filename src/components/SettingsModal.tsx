@@ -1,14 +1,16 @@
 import { useState, useEffect } from 'react';
-import { Settings, Key, Bot, ChevronRight, FolderOpen, Plug } from 'lucide-react';
+import { Settings, Key, Bot, ChevronRight, FolderOpen, Plug, Zap } from 'lucide-react';
 import { cn } from '@/utils/cn';
 import { Modal } from './Modal';
 import { OpenRouterSettingsPanel } from './settings/OpenRouterSettingsPanel';
+import { GroqSettingsPanel } from './settings/GroqSettingsPanel';
 import { AgentSettingsPanel } from './settings/AgentSettingsPanel';
 import { MCPSettingsPanel } from './settings/MCPSettingsPanel';
 import type { ProviderId, SettingsTabId } from './ProviderSettingsDropdown';
 
 const PROVIDER_TABS: { id: ProviderId | 'mcp'; label: string; icon: React.ReactNode }[] = [
   { id: 'openrouter', label: 'OpenRouter', icon: <Key className="w-4 h-4 text-cyan-400" /> },
+  { id: 'groq', label: 'Groq', icon: <Zap className="w-4 h-4 text-amber-400" /> },
   { id: 'mcp', label: 'MCP', icon: <Plug className="w-4 h-4 text-cyan-400" /> },
 ];
 
@@ -47,6 +49,25 @@ export function SettingsModal({
                 className="text-cyan-400 hover:text-cyan-300 inline-flex items-center gap-1"
               >
                 Read the OpenRouter docs
+              </a>
+            </p>
+          }
+        />
+      );
+    }
+    if (activeTab === 'groq') {
+      return (
+        <GroqSettingsPanel
+          footer={
+            <p className="text-xs text-gray-400">
+              Need help?{' '}
+              <a
+                href="https://console.groq.com/docs"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-amber-400 hover:text-amber-300 inline-flex items-center gap-1"
+              >
+                Read the Groq docs
               </a>
             </p>
           }

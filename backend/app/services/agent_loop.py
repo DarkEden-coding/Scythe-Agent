@@ -59,8 +59,12 @@ class AgentLoop:
         content: str,
         max_iterations: int,
     ) -> None:
-        client = self._api_key_resolver.create_client()
-        if not client or not self._api_key_resolver.resolve():
+        settings = self._settings_service.get_settings()
+        provider = self._settings_repo.get_provider_for_model(settings.model)
+        if not provider:
+            provider = "openrouter"
+        client = self._api_key_resolver.create_client(provider)
+        if not client or not self._api_key_resolver.resolve(provider):
             await self._event_bus.publish(
                 chat_id,
                 {
@@ -69,7 +73,7 @@ class AgentLoop:
                         "message": {
                             "id": generate_id("msg"),
                             "role": "agent",
-                            "content": "No API key configured. Add your OpenRouter API key in settings to get agent responses.",
+                            "content": f"No {provider} API key configured. Add your API key in settings to get agent responses.",
                             "timestamp": utc_now_iso(),
                             "checkpointId": None,
                         }

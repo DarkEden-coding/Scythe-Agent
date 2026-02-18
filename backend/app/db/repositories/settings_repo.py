@@ -20,6 +20,15 @@ class SettingsRepository(BaseRepository):
             self.db.add(model)
         return models
 
+    def replace_models_for_provider(
+        self, provider: str, models: list[ProviderModelCache]
+    ) -> list[ProviderModelCache]:
+        """Replace all cached models for a given provider."""
+        self.db.execute(delete(ProviderModelCache).where(ProviderModelCache.provider == provider))
+        for model in models:
+            self.db.add(model)
+        return models
+
     def set_active_model(self, model: str, updated_at: str) -> Settings:
         settings = self.get_settings()
         if settings is None:
@@ -66,6 +75,30 @@ class SettingsRepository(BaseRepository):
         if settings is None or not settings.openrouter_base_url:
             return "https://openrouter.ai/api/v1"
         return settings.openrouter_base_url
+
+    def set_groq_api_key(self, api_key: str, updated_at: str) -> Settings:
+        """Set the Groq API key (should be encrypted before calling this)."""
+        settings = self.get_settings()
+        if settings is None:
+            raise ValueError("Settings record missing")
+        settings.groq_api_key = api_key
+        settings.updated_at = updated_at
+        return settings
+
+    def get_groq_api_key(self) -> str | None:
+        """Get the Groq API key (encrypted)."""
+        settings = self.get_settings()
+        if settings is None:
+            return None
+        return settings.groq_api_key
+
+    def get_provider_for_model(self, model_label: str) -> str | None:
+        """Return the provider id for a model label, or None if not found."""
+        models = self.list_models()
+        for m in models:
+            if m.label == model_label:
+                return m.provider
+        return None
 
     def get_system_prompt(self) -> str | None:
         """Get custom system prompt from settings, or None to use default."""

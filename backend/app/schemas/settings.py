@@ -60,6 +60,13 @@ class OpenRouterConfigResponse(BaseModel):
     modelCount: int
 
 
+# Groq configuration schemas
+class GroqConfigResponse(BaseModel):
+    apiKeyMasked: str
+    connected: bool
+    modelCount: int
+
+
 class SetApiKeyRequest(BaseModel):
     apiKey: str = Field(min_length=1)
 

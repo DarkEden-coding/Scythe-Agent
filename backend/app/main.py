@@ -31,18 +31,26 @@ async def lifespan(_: FastAPI):
         session.commit()
 
     # Async operations each get their own session
-    # Sync OpenRouter models using DB-stored API key
+    # Sync provider models using DB-stored API keys
     with session_factory() as session:
         from app.db.repositories.settings_repo import SettingsRepository
+        from app.providers.groq.model_catalog import GroqModelCatalogService
         from app.services.api_key_resolver import APIKeyResolver
 
         repo = SettingsRepository(session)
         resolver = APIKeyResolver(repo)
-        client = resolver.create_client()
-        if client:
-            await OpenRouterModelCatalogService(session, client=client).sync_models_on_startup()
+
+        or_client = resolver.create_client("openrouter")
+        if or_client:
+            await OpenRouterModelCatalogService(session, client=or_client).sync_models_on_startup()
         else:
             logger.info("No OpenRouter API key configured - skipping model sync")
+
+        groq_client = resolver.create_client("groq")
+        if groq_client:
+            await GroqModelCatalogService(session, client=groq_client).sync_models_on_startup()
+        else:
+            logger.info("No Groq API key configured - skipping model sync")
 
     with session_factory() as session:
         try:

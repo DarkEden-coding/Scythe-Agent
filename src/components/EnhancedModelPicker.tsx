@@ -21,7 +21,7 @@ interface ModelInfo {
 
 const PROVIDER_TABS = [
   { id: 'openrouter', label: 'OpenRouter' },
-  { id: 'openai-direct', label: 'Direct OpenAI' },
+  { id: 'groq', label: 'Groq' },
 ] as const;
 
 function normalizeForSearch(s: string): string {
@@ -155,7 +155,7 @@ export function EnhancedModelPicker({
   const favoritesForSidebar = useMemo(() => {
     const ordered = favoritesOrder.filter((label) => allModelsMap[label]);
     if (!groupByProvider) return [{ provider: null as string | null, models: ordered }];
-    const byProvider: Record<string, string[]> = { openrouter: [], 'openai-direct': [] };
+    const byProvider: Record<string, string[]> = { openrouter: [], groq: [] };
     for (const label of ordered) {
       const provider = modelToProvider[label] ?? 'openrouter';
       if (!byProvider[provider]) byProvider[provider] = [];
