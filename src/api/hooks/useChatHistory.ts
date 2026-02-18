@@ -160,7 +160,9 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
           prev.map((tc) => (tc.id === toolCallId ? normalizeToolCall(res.data.toolCall) : tc)),
         );
         if (res.data.fileEdits.length) {
-          setFileEdits((prev) => [...prev, ...res.data.fileEdits.map(normalizeFileEdit)]);
+          setFileEdits((prev) =>
+            uniqueById([...prev, ...res.data.fileEdits.map(normalizeFileEdit)]),
+          );
         }
       }
       return res;

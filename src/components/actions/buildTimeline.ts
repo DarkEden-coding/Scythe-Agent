@@ -3,6 +3,7 @@
  * and reasoning blocks.
  */
 
+import { uniqueById } from '@/api/normalizers';
 import type { ToolCall, FileEdit, Checkpoint, ReasoningBlock } from '@/types';
 
 export type TimelineItem =
@@ -10,6 +11,13 @@ export type TimelineItem =
   | { type: 'parallel'; calls: ToolCall[] }
   | { type: 'file'; edit: FileEdit }
   | { type: 'reasoning'; block: ReasoningBlock };
+
+const TYPE_ORDER: Record<TimelineItem['type'], number> = {
+  reasoning: 0,
+  tool: 1,
+  parallel: 2,
+  file: 3,
+};
 
 export interface TimelineSegment {
   checkpoint: Checkpoint;
@@ -22,9 +30,10 @@ export function buildTimeline(
   fileEdits: FileEdit[],
   reasoningBlocks: ReasoningBlock[],
 ): TimelineSegment[] {
+  const dedupedFileEdits = uniqueById(fileEdits);
   return checkpoints.map((checkpoint) => {
     const cpToolCalls = toolCalls.filter((tc) => checkpoint.toolCalls.includes(tc.id));
-    const cpFileEdits = fileEdits.filter((fe) => fe.checkpointId === checkpoint.id);
+    const cpFileEdits = dedupedFileEdits.filter((fe) => fe.checkpointId === checkpoint.id);
     const cpReasoningBlocks = reasoningBlocks.filter((rb) =>
       checkpoint.reasoningBlocks?.includes(rb.id),
     );
@@ -66,7 +75,12 @@ export function buildTimeline(
       });
     });
 
-    allItems.sort((a, b) => a.timestamp - b.timestamp);
+    allItems.sort((a, b) => {
+      const tsA = Number.isFinite(a.timestamp) ? a.timestamp : 0;
+      const tsB = Number.isFinite(b.timestamp) ? b.timestamp : 0;
+      if (tsA !== tsB) return tsA - tsB;
+      return TYPE_ORDER[a.item.type] - TYPE_ORDER[b.item.type];
+    });
 
     return { checkpoint, items: allItems.map((a) => a.item) };
   });

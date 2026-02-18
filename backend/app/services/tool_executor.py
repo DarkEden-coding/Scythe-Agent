@@ -127,6 +127,7 @@ class ToolExecutor:
                         }
                     )
             else:
+                tc_ts = utc_now_iso()
                 self._chat_repo.create_tool_call(
                     tool_call_id=tc_db_id,
                     chat_id=chat_id,
@@ -134,7 +135,7 @@ class ToolExecutor:
                     name=tc_name,
                     status="pending",
                     input_json=tc_args_str,
-                    timestamp=utc_now_iso(),
+                    timestamp=tc_ts,
                 )
                 self._chat_repo.commit()
                 await self._event_bus.publish(
@@ -149,6 +150,7 @@ class ToolExecutor:
                                 "input": tc_input,
                                 "approvalRequired": True,
                                 "checkpointId": checkpoint_id,
+                                "timestamp": tc_ts,
                             }
                         },
                     },
