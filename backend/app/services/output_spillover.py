@@ -49,6 +49,8 @@ def maybe_spill(output: str, project_id: str) -> tuple[str, str | None]:
 {last}
 
 ---
-Recommended: Use the grep search tool on the file first to locate relevant sections, then use the read_file tool with start and end (1-based line numbers) to read those sections."""
+Recommended: Use the grep search tool on the file first to locate relevant sections, then use the read_file tool with start and end (1-based line numbers) to read those sections.
+
+Full output saved to: {abs_path}"""
 
     return summarized, abs_path

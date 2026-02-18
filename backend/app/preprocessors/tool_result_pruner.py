@@ -23,6 +23,11 @@ class ToolResultPrunerPreprocessor:
         for msg in ctx.messages:
             if msg.get("role") == "tool":
                 content = msg.get("content", "")
-                if isinstance(content, str) and len(content) > self._max_chars:
-                    msg["content"] = content[: self._max_chars] + "\n... [truncated]"
+                if not isinstance(content, str) or len(content) <= self._max_chars:
+                    continue
+                # Spillover messages already condensed by output_spillover; do not truncate
+                # or we may lose "Full output saved to: <path>" needed to access middle content
+                if "Full output saved to:" in content:
+                    continue
+                msg["content"] = content[: self._max_chars] + "\n... [truncated]"
         return ctx
