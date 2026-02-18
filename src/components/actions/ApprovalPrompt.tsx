@@ -81,6 +81,22 @@ function getActionPreview(
   };
 }
 
+function parseExecuteCommandParts(cmd: string): { label: string; value: string; key: string }[] {
+  const parts: { label: string; value: string; key: string }[] = [];
+  parts.push({ label: 'Command', value: cmd.slice(0, 80), key: 'command' });
+  const words = cmd.split(/\s+/).filter(Boolean);
+  if (words[0]) parts.push({ label: 'Program', value: words[0], key: 'cmd_program' });
+  const firstArg = words[1];
+  const hasPath = firstArg && (firstArg.includes('/') || firstArg.includes('\\'));
+  if (!hasPath) return parts;
+  const lastSlash = Math.max(firstArg.lastIndexOf('/'), firstArg.lastIndexOf('\\'));
+  const dir = lastSlash >= 0 ? firstArg.slice(0, lastSlash) : '';
+  const base = lastSlash >= 0 ? firstArg.slice(lastSlash + 1) : firstArg;
+  if (dir) parts.push({ label: 'Program + folder', value: `${words[0]} ${dir}`, key: 'cmd_folder' });
+  if (base) parts.push({ label: 'File', value: base, key: 'cmd_file' });
+  return parts;
+}
+
 function parseCommandParts(
   toolName: string,
   input: Record<string, unknown>,
@@ -88,7 +104,7 @@ function parseCommandParts(
   const parts: { label: string; value: string; key: string }[] = [];
   parts.push({ label: 'Tool', value: toolName, key: 'tool' });
   if (input.command) {
-    parts.push({ label: 'Command', value: safeStr(input.command).slice(0, 60), key: 'command' });
+    parts.push(...parseExecuteCommandParts(safeStr(input.command)));
   }
   if (input.cwd) {
     parts.push({ label: 'CWD', value: safeStr(input.cwd), key: 'cwd' });
@@ -117,7 +133,7 @@ function parseCommandParts(
   if (input.replacement) {
     parts.push({ label: 'Replacement', value: safeStr(input.replacement).slice(0, 30) + '...', key: 'replacement' });
   }
-  return parts.slice(0, 6);
+  return parts.slice(0, 10);
 }
 
 function mapPartKeyToField(key: string): AutoApproveRule['field'] {
@@ -125,7 +141,15 @@ function mapPartKeyToField(key: string): AutoApproveRule['field'] {
   if (key === 'path') return 'path';
   if (key === 'ext') return 'extension';
   if (key === 'dir') return 'directory';
-  if (key === 'command' || key === 'pattern' || key === 'cwd') return 'pattern';
+  if (
+    key === 'command' ||
+    key === 'pattern' ||
+    key === 'cwd' ||
+    key === 'cmd_program' ||
+    key === 'cmd_folder' ||
+    key === 'cmd_file'
+  )
+    return 'pattern';
   return 'pattern';
 }
 
