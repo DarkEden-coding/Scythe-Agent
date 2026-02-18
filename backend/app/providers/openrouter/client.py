@@ -238,38 +238,38 @@ class OpenRouterClient:
                                     "delta": rd_content,
                                     "checkpoint_id": None,
                                 }
-
-                            rd_deltas = delta.get("reasoning_details")
-                            if isinstance(rd_deltas, list):
-                                logger.info(
-                                    "OpenRouter stream: reasoning_details chunk, %d items",
-                                    len(rd_deltas),
-                                )
-                                for rd in rd_deltas:
-                                    if not isinstance(rd, dict):
-                                        continue
-                                    idx = rd.get("index", 0)
-                                    rd_type = rd.get("type", "")
-                                    text = rd.get("text") or rd.get("summary") or ""
-                                    if rd.get("type") == "reasoning.encrypted":
-                                        text = "[REDACTED]"
-                                    if not text and rd_type not in (
-                                        "reasoning.encrypted",
-                                    ):
-                                        continue
-                                    bid = rd.get("id") or f"rb-{idx}"
-                                    if idx not in reasoning_accumulated:
-                                        reasoning_accumulated[idx] = {
-                                            "id": bid,
-                                            "content": "",
+                            else:
+                                rd_deltas = delta.get("reasoning_details")
+                                if isinstance(rd_deltas, list):
+                                    logger.info(
+                                        "OpenRouter stream: reasoning_details chunk, %d items",
+                                        len(rd_deltas),
+                                    )
+                                    for rd in rd_deltas:
+                                        if not isinstance(rd, dict):
+                                            continue
+                                        idx = rd.get("index", 0)
+                                        rd_type = rd.get("type", "")
+                                        text = rd.get("text") or rd.get("summary") or ""
+                                        if rd.get("type") == "reasoning.encrypted":
+                                            text = "[REDACTED]"
+                                        if not text and rd_type not in (
+                                            "reasoning.encrypted",
+                                        ):
+                                            continue
+                                        bid = rd.get("id") or f"rb-{idx}"
+                                        if idx not in reasoning_accumulated:
+                                            reasoning_accumulated[idx] = {
+                                                "id": bid,
+                                                "content": "",
+                                            }
+                                        reasoning_accumulated[idx]["content"] += str(text)
+                                        yield {
+                                            "type": "reasoning",
+                                            "reasoning_block_id": bid,
+                                            "delta": str(text),
+                                            "checkpoint_id": None,
                                         }
-                                    reasoning_accumulated[idx]["content"] += str(text)
-                                    yield {
-                                        "type": "reasoning",
-                                        "reasoning_block_id": bid,
-                                        "delta": str(text),
-                                        "checkpoint_id": None,
-                                    }
 
                             tc_deltas = delta.get("tool_calls")
                             if isinstance(tc_deltas, list):
