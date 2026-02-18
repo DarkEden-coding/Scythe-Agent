@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from app.schemas.chat import ToolCallOut
 from app.services.approval_waiter import register_and_wait
 from app.utils.json_helpers import safe_parse_json
@@ -77,31 +79,46 @@ class ToolExecutor:
                 except Exception as exc:
                     tc_row = self._chat_repo.get_tool_call(tc_db_id)
                     err_msg = str(exc)
+                    duration_ms: int | None = None
+                    if tc_row and tc_row.timestamp:
+                        try:
+                            ts = datetime.fromisoformat(
+                                tc_row.timestamp.replace("Z", "+00:00")
+                            )
+                            duration_ms = int(
+                                (datetime.now(timezone.utc) - ts).total_seconds()
+                                * 1000
+                            )
+                        except (ValueError, TypeError):
+                            pass
                     if tc_row and tc_row.status not in ("pending", "running"):
                         err_msg = tc_row.output_text or err_msg
                     elif tc_row:
                         self._chat_repo.set_tool_call_status(
-                            tc_row, status="error", output_text=err_msg
+                            tc_row,
+                            status="error",
+                            output_text=err_msg,
+                            duration_ms=duration_ms,
                         )
                         self._chat_repo.commit()
-                        tool_out = ToolCallOut(
-                            id=tc_db_id,
-                            name=tc_name,
-                            status="error",
-                            input=tc_input or {},
-                            output=err_msg,
-                            timestamp=utc_now_iso(),
-                            duration=None,
-                            isParallel=None,
-                            parallelGroupId=None,
-                        )
-                        await self._event_bus.publish(
-                            chat_id,
-                            {
-                                "type": "tool_call_end",
-                                "payload": {"toolCall": tool_out.model_dump()},
-                            },
-                        )
+                    tool_out = ToolCallOut(
+                        id=tc_db_id,
+                        name=tc_name,
+                        status="error",
+                        input=tc_input or {},
+                        output=err_msg,
+                        timestamp=utc_now_iso(),
+                        duration=duration_ms,
+                        isParallel=None,
+                        parallelGroupId=None,
+                    )
+                    await self._event_bus.publish(
+                        chat_id,
+                        {
+                            "type": "tool_call_end",
+                            "payload": {"toolCall": tool_out.model_dump()},
+                        },
+                    )
                     tool_results.append(
                         {
                             "role": "tool",

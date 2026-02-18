@@ -2,11 +2,11 @@ import { Send } from 'lucide-react';
 import { cn } from '@/utils/cn';
 
 interface MessageInputProps {
-  value: string;
-  onChange: (value: string) => void;
-  onSubmit: () => void;
-  activeChatId: string | null;
-  disabled?: boolean;
+  readonly value: string;
+  readonly onChange: (value: string) => void;
+  readonly onSubmit: () => void;
+  readonly activeChatId: string | null;
+  readonly disabled?: boolean;
 }
 
 export function MessageInput({

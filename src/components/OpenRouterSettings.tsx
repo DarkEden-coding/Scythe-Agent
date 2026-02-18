@@ -179,14 +179,14 @@ export function OpenRouterSettings({ visible, onClose }: OpenRouterSettingsProps
           {/* Error/Success Messages */}
           {(saveError || hookError) && (
             <div className="flex items-center gap-2 px-4 py-3 bg-red-500/10 border border-red-500/20 rounded-lg">
-              <X className="w-4 h-4 text-red-400 flex-shrink-0" />
+              <X className="w-4 h-4 text-red-400 shrink-0" />
               <p className="text-sm text-red-300">{saveError || hookError}</p>
             </div>
           )}
 
           {saveSuccess && (
             <div className="flex items-center gap-2 px-4 py-3 bg-green-500/10 border border-green-500/20 rounded-lg">
-              <Check className="w-4 h-4 text-green-400 flex-shrink-0" />
+              <Check className="w-4 h-4 text-green-400 shrink-0" />
               <p className="text-sm text-green-300">API key saved and models synced successfully!</p>
             </div>
           )}
@@ -201,9 +201,9 @@ export function OpenRouterSettings({ visible, onClose }: OpenRouterSettingsProps
               )}
             >
               {testResult.success ? (
-                <Check className="w-4 h-4 text-green-400 flex-shrink-0" />
+                <Check className="w-4 h-4 text-green-400 shrink-0" />
               ) : (
-                <X className="w-4 h-4 text-red-400 flex-shrink-0" />
+                <X className="w-4 h-4 text-red-400 shrink-0" />
               )}
               <p
                 className={cn(

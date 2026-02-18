@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 from app.utils.ids import generate_id
 from app.utils.time import utc_now_iso
@@ -29,6 +30,56 @@ class LLMStreamer:
         self._chat_repo = chat_repo
         self._event_bus = event_bus
 
+    async def _emit_reasoning_end(
+        self,
+        chat_id: str,
+        checkpoint_id: str,
+        rb_id: str,
+        reasoning_block_ts: str,
+        reasoning_content: list[str],
+    ) -> None:
+        """Emit reasoning_end and persist block when reasoning finishes."""
+        content = "".join(reasoning_content)
+        if not content:
+            return
+        reasoning_content.clear()
+        duration_ms = None
+        try:
+            start_dt = datetime.fromisoformat(
+                reasoning_block_ts.replace("Z", "+00:00")
+            )
+            duration_ms = int(
+                (datetime.now(timezone.utc) - start_dt).total_seconds() * 1000
+            )
+        except (ValueError, TypeError):
+            pass
+        self._chat_repo.create_reasoning_block(
+            reasoning_block_id=rb_id,
+            chat_id=chat_id,
+            checkpoint_id=checkpoint_id,
+            content=content,
+            timestamp=reasoning_block_ts,
+            duration_ms=duration_ms,
+        )
+        block_out = {
+            "id": rb_id,
+            "content": content,
+            "timestamp": reasoning_block_ts,
+            "checkpointId": checkpoint_id,
+            "duration": duration_ms,
+        }
+        await self._event_bus.publish(
+            chat_id,
+            {"type": "reasoning_end", "payload": {"reasoningBlock": block_out}},
+        )
+        self._chat_repo.commit()
+        logger.info(
+            "Emitted reasoning block %s for chat_id=%s checkpoint_id=%s",
+            rb_id,
+            chat_id,
+            checkpoint_id,
+        )
+
     async def stream_completion(
         self,
         *,
@@ -36,17 +87,21 @@ class LLMStreamer:
         model: str,
         messages: list[dict],
         tools: list[dict] | None,
-        reasoning_param: dict,
+        reasoning_param: dict | None,
         chat_id: str,
         msg_id: str,
         ts: str,
         checkpoint_id: str,
+        reasoning_block_id: str | None = None,
     ) -> StreamResult:
         response_chunks: list[str] = []
         tool_calls_from_stream: list[dict] = []
         finish_reason = "stop"
         finish_content = ""
-        reasoning_blocks_accumulated: dict[str, str] = {}
+        rb_id = reasoning_block_id or generate_id("rb")
+        reasoning_content: list[str] = []
+        reasoning_started = False
+        reasoning_block_ts = ts
 
         async for ev in client.create_chat_completion_stream(
             model=model,
@@ -57,6 +112,11 @@ class LLMStreamer:
             reasoning=reasoning_param,
         ):
             if ev.get("type") == "content":
+                if reasoning_started and reasoning_content:
+                    await self._emit_reasoning_end(
+                        chat_id, checkpoint_id, rb_id, reasoning_block_ts, reasoning_content
+                    )
+                    reasoning_started = False
                 delta = ev.get("delta", "")
                 response_chunks.append(delta)
                 await self._event_bus.publish(
@@ -67,18 +127,19 @@ class LLMStreamer:
                     },
                 )
             elif ev.get("type") == "reasoning":
-                rb_id = ev.get("reasoning_block_id", "")
                 delta_text = ev.get("delta", "")
-                if rb_id and delta_text:
-                    is_first = rb_id not in reasoning_blocks_accumulated
+                if delta_text:
+                    is_first = not reasoning_started
                     if is_first:
-                        reasoning_blocks_accumulated[rb_id] = ""
-                    reasoning_blocks_accumulated[rb_id] += delta_text
+                        rb_id = generate_id("rb")
+                        reasoning_block_ts = utc_now_iso()
+                    reasoning_started = True
+                    reasoning_content.append(delta_text)
                     if is_first:
                         block_out = {
                             "id": rb_id,
-                            "content": reasoning_blocks_accumulated[rb_id],
-                            "timestamp": ts,
+                            "content": "".join(reasoning_content),
+                            "timestamp": reasoning_block_ts,
                             "checkpointId": checkpoint_id,
                         }
                         await self._event_bus.publish(
@@ -100,48 +161,29 @@ class LLMStreamer:
                             },
                         )
             elif ev.get("type") == "tool_calls":
+                if reasoning_started and reasoning_content:
+                    await self._emit_reasoning_end(
+                        chat_id, checkpoint_id, rb_id, reasoning_block_ts, reasoning_content
+                    )
+                    reasoning_started = False
                 tool_calls_from_stream = ev.get("tool_calls", [])
             elif ev.get("type") == "finish":
                 finish_reason = ev.get("reason", "stop")
                 finish_content = ev.get("content", "")
-                for rb_id, content in reasoning_blocks_accumulated.items():
-                    if not content:
-                        continue
-                    db_rb_id = generate_id("rb")
-                    self._chat_repo.create_reasoning_block(
-                        reasoning_block_id=db_rb_id,
-                        chat_id=chat_id,
-                        checkpoint_id=checkpoint_id,
-                        content=content,
-                        timestamp=ts,
-                        duration_ms=None,
-                    )
-                    block_out = {
-                        "id": rb_id,
-                        "content": content,
-                        "timestamp": ts,
-                        "checkpointId": checkpoint_id,
-                    }
-                    await self._event_bus.publish(
-                        chat_id,
-                        {"type": "reasoning_end", "payload": {"reasoningBlock": block_out}},
-                    )
-                if reasoning_blocks_accumulated:
-                    self._chat_repo.commit()
-                    logger.info(
-                        "Emitted %d reasoning blocks for chat_id=%s checkpoint_id=%s",
-                        len(reasoning_blocks_accumulated),
-                        chat_id,
-                        checkpoint_id,
+                if reasoning_started and reasoning_content:
+                    await self._emit_reasoning_end(
+                        chat_id, checkpoint_id, rb_id, reasoning_block_ts, reasoning_content
                     )
 
         response_text = (
             "".join(response_chunks).strip() if response_chunks else ""
         )
+        content = "".join(reasoning_content)
+        reasoning_blocks = {rb_id: content} if content else {}
         return StreamResult(
             text=response_text,
             tool_calls=tool_calls_from_stream,
-            reasoning_blocks=reasoning_blocks_accumulated,
+            reasoning_blocks=reasoning_blocks,
             finish_reason=finish_reason,
             finish_content=finish_content,
         )

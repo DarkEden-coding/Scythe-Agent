@@ -14,9 +14,10 @@ export const normalizeMessage = (m: Message): Message => ({
   timestamp: toDate(m.timestamp),
 });
 
-export const normalizeToolCall = (tc: ToolCall): ToolCall => ({
+export const normalizeToolCall = (tc: ToolCall & { duration_ms?: number }): ToolCall => ({
   ...tc,
   timestamp: toDate(tc.timestamp),
+  duration: tc.duration ?? tc.duration_ms ?? undefined,
 });
 
 export const normalizeFileEdit = (fe: FileEdit): FileEdit => ({

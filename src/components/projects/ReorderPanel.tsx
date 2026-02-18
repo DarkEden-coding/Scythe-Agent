@@ -3,24 +3,24 @@ import type { Project } from '@/types';
 import { cn } from '@/utils/cn';
 
 interface ReorderPanelProps {
-  projects: Project[];
-  dragProjectIndex: number | null;
-  dragOverProjectIndex: number | null;
-  dragChatKey: { projectId: string; chatIndex: number } | null;
-  dragOverChatIndex: number | null;
-  reorderExpandedProject: string | null;
-  onProjectDragStart: (e: React.DragEvent, index: number) => void;
-  onProjectDragEnd: (e: React.DragEvent) => void;
-  onProjectDrop: (e: React.DragEvent, dropIndex: number) => void;
-  onProjectDragOver: (e: React.DragEvent, index: number) => void;
-  onProjectDragLeave: () => void;
-  onChatDragStart: (e: React.DragEvent, projectId: string, chatIndex: number) => void;
-  onChatDragEnd: (e: React.DragEvent) => void;
-  onChatDragOver: (e: React.DragEvent, chatIndex: number) => void;
-  onChatDrop: (e: React.DragEvent, projectId: string, dropIndex: number) => void;
-  onToggleReorderExpand: (projectId: string) => void;
-  onMoveProject: (index: number, direction: 'up' | 'down') => void;
-  onMoveChat: (projectId: string, chatIndex: number, direction: 'up' | 'down') => void;
+  readonly projects: Project[];
+  readonly dragProjectIndex: number | null;
+  readonly dragOverProjectIndex: number | null;
+  readonly dragChatKey: { projectId: string; chatIndex: number } | null;
+  readonly dragOverChatIndex: number | null;
+  readonly reorderExpandedProject: string | null;
+  readonly onProjectDragStart: (e: React.DragEvent, index: number) => void;
+  readonly onProjectDragEnd: (e: React.DragEvent) => void;
+  readonly onProjectDrop: (e: React.DragEvent, dropIndex: number) => void;
+  readonly onProjectDragOver: (e: React.DragEvent, index: number) => void;
+  readonly onProjectDragLeave: () => void;
+  readonly onChatDragStart: (e: React.DragEvent, projectId: string, chatIndex: number) => void;
+  readonly onChatDragEnd: (e: React.DragEvent) => void;
+  readonly onChatDragOver: (e: React.DragEvent, chatIndex: number) => void;
+  readonly onChatDrop: (e: React.DragEvent, projectId: string, dropIndex: number) => void;
+  readonly onToggleReorderExpand: (projectId: string) => void;
+  readonly onMoveProject: (index: number, direction: 'up' | 'down') => void;
+  readonly onMoveChat: (projectId: string, chatIndex: number, direction: 'up' | 'down') => void;
 }
 
 export function ReorderPanel({
@@ -63,7 +63,12 @@ export function ReorderPanel({
           )}
         >
           <div className="flex items-center gap-2 px-3 py-2.5 group">
-            <div className="cursor-grab active:cursor-grabbing p-0.5 rounded hover:bg-gray-700/50 transition-colors">
+            <div
+              role="button"
+              tabIndex={0}
+              aria-label="Drag to reorder project"
+              className="cursor-grab active:cursor-grabbing p-0.5 rounded hover:bg-gray-700/50 transition-colors"
+            >
               <GripVertical className="w-3.5 h-3.5 text-gray-500 hover:text-aqua-400 transition-colors" />
             </div>
             <div className="flex items-center justify-center w-6 h-6 bg-gray-800 rounded-md border border-gray-700/50">
@@ -73,7 +78,7 @@ export function ReorderPanel({
               <span className="text-sm font-medium text-gray-200 truncate block">{project.name}</span>
               <span className="text-[10px] text-gray-500 font-mono truncate block">{project.path}</span>
             </div>
-            <div className="flex items-center gap-0.5 flex-shrink-0">
+            <div className="flex items-center gap-0.5 shrink-0">
               {project.chats.length > 0 && (
                 <button
                   onClick={() => onToggleReorderExpand(project.id)}
@@ -121,12 +126,17 @@ export function ReorderPanel({
                     dragChatKey?.projectId === project.id && dragChatKey?.chatIndex === ci && 'opacity-40',
                   )}
                 >
-                  <div className="cursor-grab active:cursor-grabbing p-0.5 rounded hover:bg-gray-700/50 transition-colors">
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    aria-label="Drag to reorder chat"
+                    className="cursor-grab active:cursor-grabbing p-0.5 rounded hover:bg-gray-700/50 transition-colors"
+                  >
                     <GripVertical className="w-3 h-3 text-gray-500 hover:text-aqua-400 transition-colors" />
                   </div>
-                  <MessageSquare className="w-3 h-3 text-gray-500 flex-shrink-0" />
+                  <MessageSquare className="w-3 h-3 text-gray-500 shrink-0" />
                   <span className="text-xs text-gray-300 truncate flex-1">{chat.title}</span>
-                  <div className="flex items-center gap-0.5 flex-shrink-0">
+                  <div className="flex items-center gap-0.5 shrink-0">
                     <button
                       onClick={() => onMoveChat(project.id, ci, 'up')}
                       disabled={ci === 0}

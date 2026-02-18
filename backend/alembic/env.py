@@ -7,21 +7,7 @@ from sqlalchemy import engine_from_config, pool
 
 from app.config.settings import get_settings
 from app.db.base import Base
-from app.db.models import (
-    AutoApproveRule,
-    Chat,
-    Checkpoint,
-    ContextItem,
-    FileEdit,
-    MCPServer,
-    MCPToolCache,
-    Message,
-    Project,
-    ProviderModelCache,
-    ReasoningBlock,
-    Settings,
-    ToolCall,
-)
+import app.db.models  # noqa: F401 - required for Base.metadata discovery
 
 config = context.config
 if config.config_file_name is not None:

@@ -9,6 +9,7 @@ class ToolFileEdit:
     file_path: str
     action: str
     diff: str | None = None
+    original_content: str | None = None
 
 
 @dataclass

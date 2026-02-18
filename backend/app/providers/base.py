@@ -15,6 +15,16 @@ class LLMProvider(Protocol):
         temperature: float = 0.0,
     ) -> str: ...
 
+    def count_tokens(self, text: str, model: str) -> int | None:
+        """
+        Count tokens in text for the given model.
+
+        Returns:
+            Token count, or None if this provider does not support token counting.
+            Callers should fall back to tiktoken or another estimator when None.
+        """
+        return None  # Default: not supported
+
 
 class ModelCatalogProvider(Protocol):
     """Abstract interface for model listing."""

@@ -31,6 +31,8 @@ import type {
   RevertToCheckpointResponse,
   RevertFileRequest,
   RevertFileResponse,
+  EditMessageRequest,
+  EditMessageResponse,
   CreateProjectRequest,
   CreateProjectResponse,
   UpdateProjectRequest,
@@ -416,11 +418,21 @@ export class ApiClient {
     return this.request('POST', `/chat/${req.chatId}/revert-file/${req.fileEditId}`);
   }
 
+  /** Edit a user message — reverts to the message's checkpoint and re-runs the agent. */
+  async editMessage(req: EditMessageRequest): Promise<ApiResponse<EditMessageResponse>> {
+    return this.request('PUT', `/chat/${req.chatId}/messages/${req.messageId}`, { content: req.content });
+  }
+
   /* ── Data fetching (backend → frontend) ──────────────────────── */
 
   /** Fetch complete chat history and all associated agent activity. */
   async getChatHistory(chatId: string): Promise<ApiResponse<GetChatHistoryResponse>> {
     return this.request('GET', `/chat/${chatId}/history`, undefined, `history-${chatId}`);
+  }
+
+  /** Fetch debug dump (prompts, assembled messages, full history) for the conversation. */
+  async getChatDebug(chatId: string): Promise<ApiResponse<Record<string, unknown>>> {
+    return this.request('GET', `/chat/${chatId}/debug`, undefined, `debug-${chatId}`);
   }
 
   /** Fetch all projects and their chats. */

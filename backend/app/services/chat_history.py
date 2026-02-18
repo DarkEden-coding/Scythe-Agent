@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from app.db.repositories.chat_repo import ChatRepository
+from app.db.repositories.project_repo import ProjectRepository
 from app.schemas.chat import (
     CheckpointOut,
     ContextItemOut,
@@ -12,7 +13,9 @@ from app.schemas.chat import (
     ReasoningBlockOut,
     ToolCallOut,
 )
+from app.services.context_builder import build_context_items
 from app.services.settings_service import SettingsService
+from app.services.token_counter import TokenCounter
 from app.utils.json_helpers import safe_parse_json
 from app.utils.mappers import map_file_action_for_ui, map_role_for_ui
 
@@ -20,8 +23,14 @@ from app.utils.mappers import map_file_action_for_ui, map_role_for_ui
 class ChatHistoryAssembler:
     """Assembles GetChatHistoryResponse from chat data."""
 
-    def __init__(self, chat_repo: ChatRepository, settings_service: SettingsService) -> None:
+    def __init__(
+        self,
+        chat_repo: ChatRepository,
+        project_repo: ProjectRepository,
+        settings_service: SettingsService,
+    ) -> None:
         self._chat_repo = chat_repo
+        self._project_repo = project_repo
         self._settings_service = settings_service
 
     def assemble(self, chat_id: str) -> GetChatHistoryResponse:
@@ -110,12 +119,15 @@ class ChatHistoryAssembler:
             for r in raw_reasoning_blocks
         ]
 
-        context_items = [
-            ContextItemOut(id=c.id, type=c.type, name=c.label, tokens=c.tokens)
-            for c in self._chat_repo.list_context_items(chat_id)
-        ]
-
         settings = self._settings_service.get_settings()
+        token_counter = TokenCounter(model=settings.model)
+        context_items = build_context_items(
+            chat_id=chat_id,
+            chat_repo=self._chat_repo,
+            project_repo=self._project_repo,
+            token_counter=token_counter,
+        )
+
         return GetChatHistoryResponse(
             chatId=chat_id,
             messages=messages,

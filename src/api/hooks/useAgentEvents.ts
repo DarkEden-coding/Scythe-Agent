@@ -1,27 +1,38 @@
 /**
- * Subscribes to the real-time agent event stream for a given chat.
+ * Subscribes to the real-time agent event stream for one or more chats.
  * Calls `onEvent` for each received event.
- * Skips subscription when chatId is invalid.
+ * Subscribes to all valid chat IDs so agent_done for background chats is received.
  */
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { api as defaultApi, ApiClient } from '@/api/client';
 import { isValidChatId } from '@/api/normalizers';
 import type { AgentEvent } from '@/api/types';
 
 export function useAgentEvents(
-  chatId: string | null | undefined,
+  chatIds: Iterable<string | null | undefined>,
   onEvent: (event: AgentEvent) => void,
   client: ApiClient = defaultApi,
 ) {
   const onEventRef = useRef(onEvent);
   onEventRef.current = onEvent;
 
+  const ids = useMemo(
+    () =>
+      [...new Set([...chatIds].filter((id): id is string => isValidChatId(id)))].sort(
+        (a, b) => a.localeCompare(b),
+      ),
+    [chatIds],
+  );
+  const depsKey = ids.join(',');
+
   useEffect(() => {
-    if (!isValidChatId(chatId)) return () => {};
-    const unsubscribe = client.subscribeToAgentEvents(chatId, (event) => {
-      onEventRef.current(event);
-    });
-    return unsubscribe;
-  }, [chatId, client]);
+    if (ids.length === 0) return () => {};
+    const unsubscribes = ids.map((id) =>
+      client.subscribeToAgentEvents(id, (event) => {
+        onEventRef.current(event);
+      }),
+    );
+    return () => unsubscribes.forEach((u) => u());
+  }, [depsKey, client]);
 }

@@ -112,3 +112,11 @@ class RevertToCheckpointResponse(BaseModel):
 class RevertFileResponse(BaseModel):
     removedFileEditId: str
     fileEdits: list[FileEditOut]
+
+
+class EditMessageRequest(BaseModel):
+    content: str = Field(min_length=1, max_length=100_000)
+
+
+class EditMessageResponse(BaseModel):
+    revertedHistory: RevertToCheckpointResponse

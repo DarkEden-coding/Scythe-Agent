@@ -23,22 +23,33 @@ def resolve_path(
     project_root: str | None = None,
 ) -> Path:
     """
-    Resolve a path relative to the project root, with security checks.
+    Resolve an absolute path with security checks. Only absolute paths accepted.
 
     Args:
-        raw_path: User-provided path (relative or absolute).
-        project_root: Project root directory. If provided, relative paths are
-            resolved against it. If None, paths resolve against CWD.
+        raw_path: User-provided path; must be absolute.
+        project_root: Project root directory. If provided, path must be within
+            it. Used to validate access scope.
 
     Returns:
-        Resolved absolute Path. Raises ValueError if path is restricted.
+        Resolved absolute Path. Raises ValueError if path is restricted or
+        not absolute.
     """
-    base = Path(project_root).resolve() if project_root else Path.cwd()
     target = Path(raw_path).expanduser()
     if not target.is_absolute():
-        target = (base / target).resolve()
-    else:
-        target = target.resolve()
+        raise ValueError(
+            "Path must be absolute. Use the project root path from the project "
+            "overview (e.g. /path/to/project/src/file.py)."
+        )
+    target = target.resolve()
+    if project_root:
+        base = Path(project_root).resolve()
+        try:
+            target.relative_to(base)
+        except ValueError:
+            raise ValueError(
+                f"Path {raw_path} is outside the project root. "
+                f"Only paths under {base} are allowed."
+            )
     for prefix in _BLOCKED_PREFIXES:
         if str(target).startswith(prefix):
             raise ValueError(f"Access denied: {raw_path} is in a restricted directory")

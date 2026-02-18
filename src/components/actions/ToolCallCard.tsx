@@ -16,6 +16,12 @@ import {
 import type { ToolCall } from '@/types';
 import { cn } from '@/utils/cn';
 
+function safeStr(v: unknown): string {
+  if (typeof v === 'string') return v;
+  if (v == null) return '';
+  return typeof v === 'object' ? JSON.stringify(v).slice(0, 50) : JSON.stringify(v);
+}
+
 export const toolIcons: Record<string, React.ReactNode> = {
   read_file: <FileCode className="w-3.5 h-3.5" />,
   create_file: <Plus className="w-3.5 h-3.5" />,
@@ -36,11 +42,10 @@ const statusIcons: Record<string, React.ReactNode> = {
 export { statusIcons };
 
 interface ToolCallCardProps {
-  call: ToolCall;
-  isInParallel?: boolean;
-  isExpanded: boolean;
-  onToggle: () => void;
-  formatDuration: (ms: number) => string;
+  readonly call: ToolCall;
+  readonly isInParallel?: boolean;
+  readonly isExpanded: boolean;
+  readonly onToggle: () => void;
 }
 
 export function ToolCallCard({
@@ -48,17 +53,18 @@ export function ToolCallCard({
   isInParallel = false,
   isExpanded,
   onToggle,
-  formatDuration,
 }: ToolCallCardProps) {
-  const pathHint = call.input?.path
-    ? `${call.input.path}`
-    : call.input?.packages
-      ? `[${(call.input.packages as string[]).length} pkgs]`
-      : null;
+  let pathHint: string | null = null;
+  if (call.input?.path) pathHint = safeStr(call.input.path);
+  else if (call.input?.packages) pathHint = `[${(call.input.packages as string[]).length} pkgs]`;
+  if (pathHint === '0') pathHint = null;
+
+  const outputLines = (call.output ?? '').split('\n').length;
 
   return (
-    <div className="flex flex-col items-center">
-      <div
+    <div className="flex flex-col items-center animate-fade-in-subtle">
+      <button
+        type="button"
         className={cn(
           'inline-flex items-center gap-1.5 rounded-lg overflow-hidden transition-colors cursor-pointer',
           isInParallel
@@ -68,24 +74,36 @@ export function ToolCallCard({
         onClick={onToggle}
       >
         <div className="inline-flex items-center gap-1.5 px-2 py-1.5">
-          <span className="text-gray-600 flex-shrink-0">
+          <span className="text-gray-600 shrink-0">
             {isExpanded ? <ChevronDown className="w-2.5 h-2.5" /> : <ChevronRight className="w-2.5 h-2.5" />}
           </span>
-          <span className="text-aqua-400 flex-shrink-0">
+          <span className="text-aqua-400 shrink-0">
             {toolIcons[call.name] || <FileCode className="w-3.5 h-3.5" />}
           </span>
           <span className="text-[11px] text-gray-300 font-mono whitespace-nowrap">{call.name}</span>
           {pathHint && call.name !== 'build_project' && call.name !== 'list_files' && (
             <span className="text-[10px] text-gray-600 font-mono whitespace-nowrap">{pathHint}</span>
           )}
-          {call.duration && (
+          {(call.status === 'completed' || call.status === 'error') && outputLines > 0 && (
             <span className="text-[10px] text-gray-600 font-mono whitespace-nowrap">
-              {formatDuration(call.duration)}
+              lines: {outputLines}
             </span>
           )}
-          <span className="flex-shrink-0">{statusIcons[call.status]}</span>
+          {call.status === 'running' && (
+            <span className="shrink-0 text-aqua-400" title="In progress">
+              <Loader2 className="w-3 h-3 animate-spin" />
+            </span>
+          )}
+          {(call.status === 'completed' || call.status === 'error') && typeof call.duration === 'number' && (
+            <span className="text-[10px] text-gray-600 font-mono whitespace-nowrap" title="Latency">
+              {call.duration}ms
+            </span>
+          )}
+          {(call.status === 'pending' || call.status === 'completed' || call.status === 'error') && (
+            <span className="shrink-0">{statusIcons[call.status]}</span>
+          )}
         </div>
-      </div>
+      </button>
 
       {call.status === 'error' && call.output && (
         <div className="mt-1 w-full max-w-full rounded-lg border border-red-500/40 bg-red-950/30 overflow-hidden">

@@ -10,7 +10,7 @@ _MAX_ENTRIES = 1000
 
 class ListFilesTool:
     name = "list_files"
-    description = "List files in a directory. Use paths relative to the project root."
+    description = "List files in a directory. path must be an absolute path (e.g. /path/to/project). Omit to list project root."
     input_schema = {
         "type": "object",
         "properties": {
@@ -22,10 +22,16 @@ class ListFilesTool:
     async def run(
         self, payload: dict, *, project_root: str | None = None
     ) -> ToolResult:
+        path_raw = payload.get("path") or ""
+        if not path_raw or path_raw.strip() == ".":
+            if not project_root:
+                return ToolResult(
+                    output="path is required when no project is selected; use an absolute path.",
+                    file_edits=[],
+                )
+            path_raw = str(Path(project_root).resolve())
         try:
-            base = resolve_path(
-                payload.get("path", ".") or ".", project_root=project_root
-            )
+            base = resolve_path(path_raw.strip(), project_root=project_root)
         except ValueError as exc:
             return ToolResult(output=str(exc), file_edits=[])
         if not base.exists() or not base.is_dir():

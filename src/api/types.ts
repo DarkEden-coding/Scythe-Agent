@@ -129,6 +129,17 @@ export interface RevertFileResponse {
   fileEdits: FileEdit[];
 }
 
+// 7. Edit message
+export interface EditMessageRequest {
+  chatId: string;
+  messageId: string;
+  content: string;
+}
+
+export interface EditMessageResponse {
+  revertedHistory: RevertToCheckpointResponse;
+}
+
 // 7. Project and chat management
 export interface CreateProjectRequest {
   name: string;
@@ -243,6 +254,7 @@ export type AgentEventType =
   | 'context_update'
   | 'chat_title_updated'
   | 'agent_done'
+  | 'message_edited'
   | 'error';
 
 export interface AgentEvent {

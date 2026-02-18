@@ -10,7 +10,7 @@ from app.api.routes.filesystem import router as filesystem_router
 from app.api.routes.projects import router as projects_router
 from app.api.routes.settings import router as settings_router
 from app.config.settings import get_settings
-from app.db.seed import seed_demo_data
+from app.db.seed import seed_app_data
 from app.db.session import get_engine, get_sessionmaker
 from app.mcp.client_manager import get_mcp_client_manager
 from app.middleware.error_handler import ServiceError, catch_all_handler, service_error_handler
@@ -25,7 +25,7 @@ async def lifespan(_: FastAPI):
     # Schema managed by Alembic; sync DB work in its own session block
     session_factory = get_sessionmaker()
     with session_factory() as session:
-        seed_demo_data(session)
+        seed_app_data(session)
         session.commit()
 
     # Async operations each get their own session

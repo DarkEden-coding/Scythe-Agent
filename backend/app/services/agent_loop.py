@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 
+import httpx
+
 from app.preprocessors.auto_compaction import AutoCompactionPreprocessor
 from app.preprocessors.pipeline import PreprocessorPipeline
 from app.preprocessors.system_prompt import SystemPromptPreprocessor
@@ -109,26 +111,22 @@ class AgentLoop:
         streamer = LLMStreamer(self._chat_repo, self._event_bus)
         executor = ToolExecutor(self._chat_repo, self._approval_svc, self._event_bus)
 
-        msg_id = generate_id("msg")
-        ts = utc_now_iso()
-        message_out = MessageOut(
-            id=msg_id,
-            role="agent",
-            content="",
-            timestamp=ts,
-            checkpointId=None,
-        )
-        await self._event_bus.publish(
-            chat_id,
-            {"type": "message", "payload": {"message": message_out.model_dump()}},
-        )
-
         iteration = 0
         reasoning_param = {"effort": "medium"}
-        response_chunks: list[str] = []
 
         while iteration < max_iterations:
             iteration += 1
+            msg_id = generate_id("msg")
+            reasoning_block_id = generate_id("rb")
+            ts = utc_now_iso()
+            message_out = MessageOut(
+                id=msg_id,
+                role="agent",
+                content="",
+                timestamp=ts,
+                checkpointId=None,
+            )
+
             ctx = PreprocessorContext(
                 chat_id=chat_id,
                 messages=list(openrouter_messages),
@@ -138,25 +136,46 @@ class AgentLoop:
             ctx = await pipeline.run(ctx, client)
             openrouter_messages = ctx.messages
 
-            result = await streamer.stream_completion(
-                client=client,
-                model=settings.model,
-                messages=openrouter_messages,
-                tools=tools if tools else None,
-                reasoning_param=reasoning_param,
-                chat_id=chat_id,
-                msg_id=msg_id,
-                ts=ts,
-                checkpoint_id=checkpoint_id,
-            )
-            response_chunks.append(result.text)
-            response_text = result.text
-
-            if result.finish_reason == "stop" or not result.tool_calls:
-                final_text = (
-                    (response_text or result.finish_content or "").strip()
-                    or "(No response generated)"
+            rp = reasoning_param
+            try:
+                result = await streamer.stream_completion(
+                    client=client,
+                    model=settings.model,
+                    messages=openrouter_messages,
+                    tools=tools if tools else None,
+                    reasoning_param=rp,
+                    chat_id=chat_id,
+                    msg_id=msg_id,
+                    ts=ts,
+                    checkpoint_id=checkpoint_id,
+                    reasoning_block_id=reasoning_block_id,
                 )
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 400 and rp:
+                    logger.warning(
+                        "OpenRouter 400 with reasoning, retrying without reasoning for model=%s",
+                        settings.model,
+                    )
+                    rp = None
+                    result = await streamer.stream_completion(
+                        client=client,
+                        model=settings.model,
+                        messages=openrouter_messages,
+                        tools=tools if tools else None,
+                        reasoning_param=rp,
+                        chat_id=chat_id,
+                        msg_id=msg_id,
+                        ts=ts,
+                        checkpoint_id=checkpoint_id,
+                        reasoning_block_id=reasoning_block_id,
+                    )
+                else:
+                    raise
+            response_text = result.text
+            has_content = bool((response_text or result.finish_content or "").strip())
+
+            if has_content:
+                final_text = (response_text or result.finish_content or "").strip()
                 self._finalize_message(
                     chat_id, msg_id, ts, final_text, chat_model, message_out
                 )
@@ -164,6 +183,8 @@ class AgentLoop:
                     chat_id,
                     {"type": "message", "payload": {"message": message_out.model_dump()}},
                 )
+
+            if result.finish_reason == "stop" or not result.tool_calls:
                 await self._event_bus.publish(
                     chat_id,
                     {"type": "agent_done", "payload": {"checkpointId": checkpoint_id}},
@@ -195,16 +216,6 @@ class AgentLoop:
             for tr in tool_results:
                 openrouter_messages.append(tr)
 
-        final_text = (
-            "".join(response_chunks).strip() if response_chunks else ""
-        ) or "(Agent reached max iterations)"
-        self._finalize_message(
-            chat_id, msg_id, ts, final_text, chat_model, message_out
-        )
-        await self._event_bus.publish(
-            chat_id,
-            {"type": "message", "payload": {"message": message_out.model_dump()}},
-        )
         await self._event_bus.publish(
             chat_id,
             {"type": "agent_done", "payload": {"checkpointId": checkpoint_id}},

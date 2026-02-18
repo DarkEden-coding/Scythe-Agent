@@ -1,0 +1,7 @@
+{
+  "include": ["app", "alembic", "tests"],
+  "venvPath": ".",
+  "venv": ".venv",
+  "pythonVersion": "3.11",
+  "reportMissingImports": "warning"
+}

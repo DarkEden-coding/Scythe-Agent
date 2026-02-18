@@ -10,26 +10,26 @@ export function useHashTab<T extends string>(
   validTabs: readonly T[] = [defaultTab] as unknown as readonly T[],
 ): [T, (tab: T) => void] {
   const parseHash = useCallback((): T => {
-    const hash = window.location.hash.slice(1);
+    const hash = (globalThis as Window & typeof globalThis).location.hash.slice(1);
     if (validTabs.includes(hash as T)) return hash as T;
     return defaultTab;
   }, [defaultTab, validTabs]);
 
-  const [activeTab, setActiveTabState] = useState<T>(parseHash);
+  const [activeTab, setActiveTab] = useState<T>(parseHash);
 
   useEffect(() => {
-    const handleHashChange = () => setActiveTabState(parseHash());
-    window.addEventListener('hashchange', handleHashChange);
-    return () => window.removeEventListener('hashchange', handleHashChange);
+    const handleHashChange = () => setActiveTab(parseHash());
+    globalThis.addEventListener('hashchange', handleHashChange);
+    return () => globalThis.removeEventListener('hashchange', handleHashChange);
   }, [parseHash]);
 
-  const setActiveTab = useCallback(
+  const setActiveTabWithHash = useCallback(
     (tab: T) => {
-      window.location.hash = tab;
-      setActiveTabState(tab);
+      (globalThis as Window & typeof globalThis).location.hash = tab;
+      setActiveTab(tab);
     },
     [],
   );
 
-  return [activeTab, setActiveTab];
+  return [activeTab, setActiveTabWithHash];
 }

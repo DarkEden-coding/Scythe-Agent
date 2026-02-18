@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from sqlalchemy.orm import Session
 
 from app.db.repositories.chat_repo import ChatRepository
+from app.db.repositories.project_repo import ProjectRepository
 from app.schemas.chat import FileEditOut, RevertFileResponse, RevertToCheckpointResponse
 from app.services.chat_history import ChatHistoryAssembler
 from app.services.settings_service import SettingsService
@@ -13,7 +16,7 @@ class RevertService:
     def __init__(self, db: Session):
         self.repo = ChatRepository(db)
         self._assembler = ChatHistoryAssembler(
-            self.repo, SettingsService(db)
+            self.repo, ProjectRepository(db), SettingsService(db)
         )
 
     def revert_to_checkpoint(self, chat_id: str, checkpoint_id: str) -> RevertToCheckpointResponse:
@@ -25,6 +28,23 @@ class RevertService:
         if checkpoint is None or checkpoint.chat_id != chat_id:
             raise ValueError(f"Checkpoint not found: {checkpoint_id}")
 
+        # Restore files from snapshots (reverse chronological so last changes are undone first)
+        snapshots = self.repo.list_file_snapshots_after_checkpoint(
+            chat_id, checkpoint.timestamp, checkpoint_id
+        )
+        for snapshot in snapshots:
+            path = Path(snapshot.file_path)
+            if snapshot.content is None:
+                # File was created by the agent — delete it
+                path.unlink(missing_ok=True)
+            else:
+                # File was modified — restore original content
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(snapshot.content, encoding="utf-8")
+
+        self.repo.delete_file_snapshots_after_checkpoint(
+            chat_id, checkpoint.timestamp, checkpoint_id
+        )
         self.repo.delete_after_checkpoint(
             chat_id=chat_id,
             cutoff_timestamp=checkpoint.timestamp,
@@ -46,6 +66,17 @@ class RevertService:
         edit = self.repo.get_file_edit(file_edit_id)
         if edit is None or edit.chat_id != chat_id:
             raise ValueError(f"File edit not found: {file_edit_id}")
+
+        # Restore file from snapshot if available
+        snapshot = self.repo.get_file_snapshot_by_edit(file_edit_id)
+        if snapshot is not None:
+            path = Path(snapshot.file_path)
+            if snapshot.content is None:
+                path.unlink(missing_ok=True)
+            else:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(snapshot.content, encoding="utf-8")
+            self.repo.delete_file_snapshot(snapshot)
 
         self.repo.delete_file_edit(edit)
         self.repo.commit()

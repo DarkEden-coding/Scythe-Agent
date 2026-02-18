@@ -51,8 +51,8 @@ def add_project_overview_3_levels(
         return list(messages)
     root_str = str(root)
     overview = (
-        f"Project root: {root_str}\n\n"
-        "All file paths in tool calls (read_file, edit_file, list_files, execute_command cwd) must be relative to this root.\n\n"
+        f"Project root (absolute path): {root_str}\n\n"
+        "All paths in tool calls (read_file, edit_file, list_files, execute_command cwd) must be absolute paths under this root (e.g. {root_str}/src/main.py). Never use relative paths.\n\n"
         "Project structure (first 3 directory levels):\n\n" + "\n".join(lines)
     )
     block = {"role": "system", "content": overview}

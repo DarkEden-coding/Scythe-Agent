@@ -9,7 +9,7 @@ from app.tools.path_utils import resolve_path
 
 class EditFileTool:
     name = "edit_file"
-    description = "Write content to a file. Use paths relative to the project root."
+    description = "Write content to a file. path must be an absolute path (e.g. /path/to/project/src/main.py)."
     input_schema = {
         "type": "object",
         "required": ["path", "content"],
@@ -51,5 +51,5 @@ class EditFileTool:
             )
             diff = "".join(diff_lines[:100])
 
-        file_edit = ToolFileEdit(file_path=str(target), action=action, diff=diff)
+        file_edit = ToolFileEdit(file_path=str(target), action=action, diff=diff, original_content=previous)
         return ToolResult(output=f"{action} {target}", file_edits=[file_edit])

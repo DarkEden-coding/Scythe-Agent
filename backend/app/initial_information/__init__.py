@@ -1,8 +1,10 @@
 """Initial information: functions that augment chat messages with context."""
 
+from collections.abc import Callable
+
 from app.initial_information.project_overview import add_project_overview_3_levels
 
-_ENHANCERS: list[callable] = [add_project_overview_3_levels]
+_ENHANCERS: list[Callable[..., list[dict]]] = [add_project_overview_3_levels]
 
 
 def apply_initial_information(

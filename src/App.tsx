@@ -7,8 +7,7 @@ import { EnhancedModelPicker } from './components/EnhancedModelPicker';
 import { OpenRouterSettings } from './components/OpenRouterSettings';
 import { useToast } from './hooks/useToast';
 import { useChatHistory, useProjects, useSettings, useAgentEvents } from './api';
-import type { AgentEvent } from './api';
-import type { AutoApproveRule } from './api';
+import type { AgentEvent, AutoApproveRule } from './api';
 
 export function App() {
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
@@ -67,7 +66,7 @@ export function App() {
     [activeChatId, chat, projectsApi, removeProcessing],
   );
 
-  useAgentEvents(activeChatId, handleAgentEvent);
+  useAgentEvents([activeChatId, ...processingChats], handleAgentEvent);
 
   // ── Actions that go through the API ────────────────────────────
 
@@ -84,7 +83,6 @@ export function App() {
         next.delete(chatIdToProcess);
         return next;
       });
-      return;
     }
   };
 
@@ -114,14 +112,22 @@ export function App() {
     else showToast(`Error: ${res.error}`);
   };
 
-  const handleSummarizeContext = async () => {
-    const res = await chat.summarizeContext();
-    if (res.ok) showToast('Context summarized successfully');
-    else showToast(`Error: ${res.error}`);
-  };
-
-  const handleRemoveContextItem = (itemId: string) => {
-    chat.removeContextItem(itemId);
+  const handleEditMessage = (messageId: string, newContent: string) => {
+    if (!window.confirm('This will revert all changes after this message and re-run the agent with the new content. Continue?')) {
+      return;
+    }
+    setProcessingChats((prev) => new Set(prev).add(activeChatId!));
+    chat.editMessage(messageId, newContent).then((res) => {
+      if (res.ok) showToast('Message updated — re-running agent');
+      else {
+        showToast(`Error: ${res.error}`);
+        setProcessingChats((prev) => {
+          const next = new Set(prev);
+          if (activeChatId) next.delete(activeChatId);
+          return next;
+        });
+      }
+    });
   };
 
   // Keyboard shortcuts
@@ -139,8 +145,8 @@ export function App() {
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    globalThis.addEventListener('keydown', handleKeyDown);
+    return () => globalThis.removeEventListener('keydown', handleKeyDown);
   }, []);
 
   const handleSwitchChat = (chatId: string) => {
@@ -214,16 +220,16 @@ export function App() {
   };
 
   const currentProject =
-    activeChatId != null
-      ? projects.find((p) => p.chats.some((c) => c.id === activeChatId))
-      : undefined;
+    activeChatId == null
+      ? undefined
+      : projects.find((p) => p.chats.some((c) => c.id === activeChatId));
   const currentProjectChats = [...(currentProject?.chats ?? [])].sort((a, b) => {
     if (a.isPinned && !b.isPinned) return -1;
     if (!a.isPinned && b.isPinned) return 1;
     return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
   });
 
-  if (chat.loading || projectsLoading) {
+  if (projectsLoading) {
     return (
       <div className="h-screen w-screen bg-gray-950 flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
@@ -258,11 +264,10 @@ export function App() {
           <ChatPanel
             messages={chat.messages}
             checkpoints={chat.checkpoints}
+            chatLoading={chat.loading}
             onRevert={handleRevertToCheckpoint}
             contextItems={chat.contextItems}
             maxTokens={chat.maxTokens}
-            onSummarize={handleSummarizeContext}
-            onRemoveContextItem={handleRemoveContextItem}
             onSendMessage={handleSendMessage}
             projects={projects}
             activeChatId={activeChatId}
@@ -276,6 +281,7 @@ export function App() {
             onReorderProjects={handleReorderProjects}
             onReorderChats={handleReorderChats}
             onDeleteProject={handleDeleteProject}
+            onEditMessage={activeChatId != null ? handleEditMessage : undefined}
           />
         }
         rightPanel={
@@ -284,6 +290,7 @@ export function App() {
             fileEdits={chat.fileEdits}
             checkpoints={chat.checkpoints}
             reasoningBlocks={chat.reasoningBlocks}
+            streamingReasoningBlockIds={chat.streamingReasoningBlockIds}
             onRevertFile={handleRevertFile}
             onRevertCheckpoint={handleRevertToCheckpoint}
             onApproveCommand={handleApproveCommand}

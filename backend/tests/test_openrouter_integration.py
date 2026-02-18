@@ -26,7 +26,7 @@ def test_model_catalog_fetch_success_writes_cache() -> None:
             ]
 
     with get_sessionmaker()() as session:
-        service = OpenRouterModelCatalogService(session, client=_Client())
+        service = OpenRouterModelCatalogService(session, client=_Client())  # type: ignore[arg-type]
         available = asyncio.run(service.sync_models_on_startup())
         assert available == ["a-model", "z-model"]
         cached = service.repo.list_models()
@@ -41,7 +41,7 @@ def test_model_catalog_fetch_failure_uses_cache_then_fallback() -> None:
             raise RuntimeError("provider unavailable")
 
     with get_sessionmaker()() as session:
-        service = OpenRouterModelCatalogService(session, client=_ClientFail())
+        service = OpenRouterModelCatalogService(session, client=_ClientFail())  # type: ignore[arg-type]
         service.repo.replace_models(service._normalize([{"id": "cached-model", "context_length": 2048}], service._now()))
         service.repo.commit()
         available_cached = asyncio.run(service.sync_models_on_startup())

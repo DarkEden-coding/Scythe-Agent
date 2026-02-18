@@ -5,19 +5,23 @@ import { formatRelativeTime } from '@/utils/formatTime';
 import { cn } from '@/utils/cn';
 
 interface ProjectRowProps {
-  project: Project;
-  isExpanded: boolean;
-  activeChatId: string | null;
-  hoveredChatId: string | null;
-  onToggle: (projectId: string) => void;
-  onSelectChat: (chatId: string) => void;
-  onMouseEnterChat: (chatId: string) => void;
-  onMouseLeaveChat: () => void;
-  onCreateChat?: (projectId: string) => void;
-  onRenameChat?: (chatId: string, title: string) => Promise<void> | void;
-  onPinChat?: (chatId: string, isPinned: boolean) => Promise<void> | void;
-  onDeleteChat?: (chatId: string) => Promise<void> | void;
-  onDeleteProject?: (projectId: string) => Promise<void> | void;
+  readonly project: Project;
+  readonly isExpanded: boolean;
+  readonly activeChatId: string | null;
+  readonly hoveredChatId: string | null;
+  readonly selectedChatId: string | null;
+  readonly editMenuChatId: string | null;
+  readonly onToggle: (projectId: string) => void;
+  readonly onSelectChat: (chatId: string) => void;
+  readonly onMouseEnterChat: (chatId: string) => void;
+  readonly onMouseLeaveChat: () => void;
+  readonly onEditMenuClose: () => void;
+  readonly onCreateChat?: (projectId: string) => void;
+  readonly onRenameChat?: (chatId: string, title: string) => Promise<void> | void;
+  readonly onPinChat?: (chatId: string, isPinned: boolean) => Promise<void> | void;
+  readonly onDeleteChat?: (chatId: string) => Promise<void> | void;
+  readonly onRequestDeleteChat?: (chat: import('@/types').ProjectChat) => void;
+  readonly onDeleteProject?: (projectId: string) => Promise<void> | void;
 }
 
 export function ProjectRow({
@@ -25,21 +29,33 @@ export function ProjectRow({
   isExpanded,
   activeChatId,
   hoveredChatId,
+  selectedChatId,
+  editMenuChatId,
   onToggle,
   onSelectChat,
   onMouseEnterChat,
   onMouseLeaveChat,
+  onEditMenuClose,
   onCreateChat,
   onRenameChat,
   onPinChat,
   onDeleteChat,
+  onRequestDeleteChat,
   onDeleteProject,
 }: ProjectRowProps) {
   return (
     <div key={project.id} className="rounded-xl overflow-visible">
-      <button
+      <div
+        role="button"
+        tabIndex={0}
         onClick={() => onToggle(project.id)}
-        className="w-full flex items-center gap-2.5 px-3 py-2.5 hover:bg-gray-800/60 rounded-xl transition-colors group"
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onToggle(project.id);
+          }
+        }}
+        className="w-full flex items-center gap-2.5 px-3 py-2.5 hover:bg-gray-800/60 rounded-xl transition-colors group cursor-pointer"
       >
         <ChevronRight
           className={cn('w-3.5 h-3.5 text-gray-500 transition-transform duration-200', isExpanded && 'rotate-90')}
@@ -51,7 +67,7 @@ export function ProjectRow({
           <div className="text-sm font-medium text-gray-200 truncate">{project.name}</div>
           <div className="text-[10px] text-gray-500 font-mono truncate">{project.path}</div>
         </div>
-        <div className="flex items-center gap-1.5 flex-shrink-0">
+        <div className="flex items-center gap-1.5 shrink-0">
           <span className="text-[10px] text-gray-500 bg-gray-800/80 px-1.5 py-0.5 rounded-md">
             {project.chats.length}
           </span>
@@ -63,7 +79,7 @@ export function ProjectRow({
               type="button"
               onClick={async (e) => {
                 e.stopPropagation();
-                if (!window.confirm(`Delete project "${project.name}"? This will remove all chats in this project.`))
+                if (!globalThis.confirm(`Delete project "${project.name}"? This will remove all chats in this project.`))
                   return;
                 await onDeleteProject(project.id);
               }}
@@ -74,7 +90,7 @@ export function ProjectRow({
             </button>
           )}
         </div>
-      </button>
+      </div>
       {isExpanded && (
         <div className="ml-4 mr-1 mb-1 space-y-0.5">
           {project.chats.map((chat) => (
@@ -83,13 +99,17 @@ export function ProjectRow({
               chat={chat}
               isActive={chat.id === activeChatId}
               isHovered={chat.id === hoveredChatId}
+              isSelected={chat.id === hoveredChatId || chat.id === selectedChatId}
+              editMenuOpen={chat.id === editMenuChatId}
               onSelect={() => onSelectChat(chat.id)}
               onMouseEnter={() => onMouseEnterChat(chat.id)}
               onMouseLeave={onMouseLeaveChat}
+              onEditMenuClose={onEditMenuClose}
               formatRelativeTime={formatRelativeTime}
               onRename={onRenameChat}
               onPin={onPinChat}
               onDelete={onDeleteChat}
+              onRequestDelete={onRequestDeleteChat}
             />
           ))}
           <button

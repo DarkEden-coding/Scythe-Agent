@@ -3,6 +3,7 @@ from app.db.models.chat import Chat
 from app.db.models.checkpoint import Checkpoint
 from app.db.models.context_item import ContextItem
 from app.db.models.file_edit import FileEdit
+from app.db.models.file_snapshot import FileSnapshot
 from app.db.models.mcp_server import MCPServer
 from app.db.models.mcp_tool_cache import MCPToolCache
 from app.db.models.message import Message

@@ -7,7 +7,7 @@ from app.tools.path_utils import resolve_path
 class ReadFileTool:
     name = "read_file"
     description = (
-        "Read a file from the project. Use paths relative to the project root."
+        "Read a file from the project. path must be an absolute path (e.g. /path/to/project/src/main.py)."
     )
     input_schema = {
         "type": "object",

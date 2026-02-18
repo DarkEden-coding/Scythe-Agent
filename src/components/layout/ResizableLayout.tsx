@@ -1,10 +1,10 @@
 import { useCallback, useRef, useEffect } from 'react';
 
 interface ResizableLayoutProps {
-  chatWidth: number;
-  onChatWidthChange: (width: number) => void;
-  leftPanel: React.ReactNode;
-  rightPanel: React.ReactNode;
+  readonly chatWidth: number;
+  readonly onChatWidthChange: (width: number) => void;
+  readonly leftPanel: React.ReactNode;
+  readonly rightPanel: React.ReactNode;
 }
 
 export function ResizableLayout({
@@ -41,11 +41,11 @@ export function ResizableLayout({
   }, []);
 
   useEffect(() => {
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
+    globalThis.addEventListener('mousemove', handleMouseMove);
+    globalThis.addEventListener('mouseup', handleMouseUp);
     return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
+      globalThis.removeEventListener('mousemove', handleMouseMove);
+      globalThis.removeEventListener('mouseup', handleMouseUp);
     };
   }, [handleMouseMove, handleMouseUp]);
 
@@ -55,8 +55,18 @@ export function ResizableLayout({
         {leftPanel}
       </div>
       <div
-        className="resize-handle group flex items-center justify-center w-3 flex-shrink-0 cursor-col-resize z-10"
+        role="separator"
+        aria-orientation="vertical"
+        tabIndex={0}
+        className="resize-handle group flex items-center justify-center w-3 shrink-0 cursor-col-resize z-10"
         onMouseDown={handleMouseDown}
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+            e.preventDefault();
+            const delta = e.key === 'ArrowLeft' ? -2 : 2;
+            onChatWidthChange(Math.min(Math.max(chatWidth + delta, 25), 75));
+          }
+        }}
       >
         <div className="w-[3px] h-12 rounded-full bg-gray-700/50 group-hover:bg-aqua-400/50 group-active:bg-aqua-400/80 transition-colors" />
       </div>

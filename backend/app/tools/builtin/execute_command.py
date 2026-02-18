@@ -4,6 +4,7 @@ import asyncio
 from pathlib import Path
 
 from app.tools.contracts import ToolResult
+from app.tools.path_utils import resolve_path
 
 _BLOCKED_PATTERNS = [
     "rm -rf /",
@@ -26,7 +27,7 @@ _MAX_OUTPUT_BYTES = 100 * 1024  # 100KB
 class ExecuteCommandTool:
     name = "execute_command"
     description = (
-        "Execute a local command. cwd is relative to project root when provided."
+        "Execute a local command. cwd must be an absolute path when provided (e.g. /path/to/project)."
     )
     input_schema = {
         "type": "object",
@@ -51,13 +52,14 @@ class ExecuteCommandTool:
         if not command:
             return ToolResult(output="Missing command", file_edits=[])
 
-        base = Path(project_root).resolve() if project_root else Path.cwd()
         cwd = None
         if cwd_raw:
-            p = Path(cwd_raw).expanduser()
-            cwd = str((base / p).resolve() if not p.is_absolute() else p.resolve())
+            try:
+                cwd = str(resolve_path(cwd_raw.strip(), project_root=project_root))
+            except ValueError as exc:
+                return ToolResult(output=str(exc), file_edits=[])
         elif project_root:
-            cwd = str(base)
+            cwd = str(Path(project_root).resolve())
 
         # Check blocklist
         cmd_lower = command.lower()

@@ -16,6 +16,7 @@ from app.utils.auto_approve import matches_auto_approve_rules
 from app.utils.json_helpers import safe_parse_json
 from app.services.event_bus import EventBus, get_event_bus
 from app.tools.registry import ToolRegistry, get_tool_registry
+from app.utils.ids import generate_id
 
 
 class ApprovalService:
@@ -49,12 +50,12 @@ class ApprovalService:
 
         self.chat_repo.set_tool_call_status(tool_call, status="running")
         self.chat_repo.commit()
+        tc_payload = self._tool_call_out(tool_call).model_dump()
+        if tool_call.checkpoint_id:
+            tc_payload["checkpointId"] = tool_call.checkpoint_id
         await self.event_bus.publish(
             chat_id,
-            {
-                "type": "tool_call_start",
-                "payload": {"toolCall": self._tool_call_out(tool_call).model_dump()},
-            },
+            {"type": "tool_call_start", "payload": {"toolCall": tc_payload}},
         )
 
         start = datetime.now(timezone.utc)
@@ -73,14 +74,25 @@ class ApprovalService:
             result = await tool.run(payload, project_root=project_root)
 
             for idx, edit in enumerate(result.file_edits):
+                edit_ts = utc_now_iso()
+                file_edit_id = f"fe-{tool_call.id}-{idx}"
                 row = self.chat_repo.create_file_edit(
-                    file_edit_id=f"fe-{tool_call.id}-{idx}",
+                    file_edit_id=file_edit_id,
                     chat_id=chat_id,
                     checkpoint_id=tool_call.checkpoint_id or "",
                     file_path=edit.file_path,
                     action=edit.action,
                     diff=edit.diff,
-                    timestamp=utc_now_iso(),
+                    timestamp=edit_ts,
+                )
+                self.chat_repo.create_file_snapshot(
+                    snapshot_id=generate_id("snap"),
+                    chat_id=chat_id,
+                    checkpoint_id=tool_call.checkpoint_id or None,
+                    file_edit_id=file_edit_id,
+                    file_path=edit.file_path,
+                    content=edit.original_content,
+                    timestamp=edit_ts,
                 )
                 file_edits.append(
                     FileEditOut(
@@ -111,8 +123,14 @@ class ApprovalService:
             )
             self.chat_repo.commit()
         except Exception as exc:
+            duration_ms = int(
+                (datetime.now(timezone.utc) - start).total_seconds() * 1000
+            )
             self.chat_repo.set_tool_call_status(
-                tool_call, status="error", output_text=str(exc)
+                tool_call,
+                status="error",
+                output_text=str(exc),
+                duration_ms=duration_ms,
             )
             self.chat_repo.commit()
             await self.event_bus.publish(
@@ -128,9 +146,12 @@ class ApprovalService:
             )
 
         tool_out = self._tool_call_out(tool_call)
+        tc_payload = tool_out.model_dump()
+        if tool_call.checkpoint_id:
+            tc_payload["checkpointId"] = tool_call.checkpoint_id
         await self.event_bus.publish(
             chat_id,
-            {"type": "tool_call_end", "payload": {"toolCall": tool_out.model_dump()}},
+            {"type": "tool_call_end", "payload": {"toolCall": tc_payload}},
         )
         return tool_out, file_edits
 
@@ -150,9 +171,12 @@ class ApprovalService:
         self.chat_repo.commit()
 
         tool_out = self._tool_call_out(tool_call)
+        tc_payload = tool_out.model_dump()
+        if tool_call.checkpoint_id:
+            tc_payload["checkpointId"] = tool_call.checkpoint_id
         await self.event_bus.publish(
             chat_id,
-            {"type": "tool_call_end", "payload": {"toolCall": tool_out.model_dump()}},
+            {"type": "tool_call_end", "payload": {"toolCall": tc_payload}},
         )
         return tool_out
 

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Layers } from 'lucide-react';
 import { ToolCall, FileEdit, Checkpoint, ReasoningBlock } from '../types';
 import { Timeline } from './actions/Timeline';
@@ -6,16 +6,17 @@ import { ApprovalPrompt } from './actions/ApprovalPrompt';
 import type { AutoApproveRule } from '../api';
 
 interface ActionsPanelProps {
-  toolCalls: ToolCall[];
-  fileEdits: FileEdit[];
-  checkpoints: Checkpoint[];
-  reasoningBlocks: ReasoningBlock[];
-  onRevertFile: (fileEditId: string) => void;
-  onRevertCheckpoint: (checkpointId: string) => void;
-  onApproveCommand?: (toolCallId: string) => void;
-  onRejectCommand?: (toolCallId: string) => void;
-  autoApproveRules?: AutoApproveRule[];
-  onUpdateAutoApproveRules?: (rules: Omit<AutoApproveRule, 'id' | 'createdAt'>[]) => Promise<void> | void;
+  readonly toolCalls: ToolCall[];
+  readonly fileEdits: FileEdit[];
+  readonly checkpoints: Checkpoint[];
+  readonly reasoningBlocks: ReasoningBlock[];
+  readonly streamingReasoningBlockIds?: Set<string>;
+  readonly onRevertFile: (fileEditId: string) => void;
+  readonly onRevertCheckpoint: (checkpointId: string) => void;
+  readonly onApproveCommand?: (toolCallId: string) => void;
+  readonly onRejectCommand?: (toolCallId: string) => void;
+  readonly autoApproveRules?: AutoApproveRule[];
+  readonly onUpdateAutoApproveRules?: (rules: Omit<AutoApproveRule, 'id' | 'createdAt'>[]) => Promise<void> | void;
 }
 
 export function ActionsPanel({
@@ -23,6 +24,7 @@ export function ActionsPanel({
   fileEdits,
   checkpoints,
   reasoningBlocks,
+  streamingReasoningBlockIds = new Set(),
   onRevertFile,
   onRevertCheckpoint,
   onApproveCommand,
@@ -33,9 +35,22 @@ export function ActionsPanel({
   const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set());
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set(fileEdits.map((fe) => fe.id)));
   const [expandedReasoning, setExpandedReasoning] = useState<Set<string>>(new Set());
-  const [expandedThinkingGroups, setExpandedThinkingGroups] = useState<Set<string>>(new Set());
   const [collapsedCheckpoints, setCollapsedCheckpoints] = useState<Set<string>>(new Set());
   const [expandedParallelGroups, setExpandedParallelGroups] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    setExpandedReasoning((prev) => {
+      const next = new Set(prev);
+      reasoningBlocks.forEach((rb) => {
+        if (streamingReasoningBlockIds.has(rb.id)) {
+          next.add(rb.id);
+        } else {
+          next.delete(rb.id);
+        }
+      });
+      return next;
+    });
+  }, [streamingReasoningBlockIds]);
 
   const toggleTool = (toolId: string) => {
     const next = new Set(expandedTools);
@@ -54,12 +69,6 @@ export function ActionsPanel({
     if (next.has(blockId)) next.delete(blockId);
     else next.add(blockId);
     setExpandedReasoning(next);
-  };
-  const toggleThinkingGroup = (checkpointId: string) => {
-    const next = new Set(expandedThinkingGroups);
-    if (next.has(checkpointId)) next.delete(checkpointId);
-    else next.add(checkpointId);
-    setExpandedThinkingGroups(next);
   };
   const toggleCheckpointCollapse = (cpId: string) => {
     const next = new Set(collapsedCheckpoints);
@@ -87,7 +96,7 @@ export function ActionsPanel({
 
   return (
     <div className="flex flex-col h-full bg-gray-900 rounded-2xl shadow-xl shadow-black/30 border border-gray-700/40 overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700/40 bg-gray-850 flex-shrink-0">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700/40 bg-gray-850 shrink-0">
         <div className="flex items-center gap-2">
           <Layers className="w-4 h-4 text-aqua-400" />
           <h2 className="font-semibold text-gray-200 text-sm">Agent Activity</h2>
@@ -106,16 +115,15 @@ export function ActionsPanel({
         toolCalls={toolCalls}
         fileEdits={fileEdits}
         reasoningBlocks={reasoningBlocks}
+        streamingReasoningBlockIds={streamingReasoningBlockIds}
         expandedTools={expandedTools}
         expandedFiles={expandedFiles}
         expandedReasoning={expandedReasoning}
-        expandedThinkingGroups={expandedThinkingGroups}
         collapsedCheckpoints={collapsedCheckpoints}
         expandedParallelGroups={expandedParallelGroups}
         onToggleTool={toggleTool}
         onToggleFile={toggleFile}
         onToggleReasoning={toggleReasoning}
-        onToggleThinkingGroup={toggleThinkingGroup}
         onToggleCheckpointCollapse={toggleCheckpointCollapse}
         onToggleParallelGroup={toggleParallelGroup}
         onRevertFile={onRevertFile}

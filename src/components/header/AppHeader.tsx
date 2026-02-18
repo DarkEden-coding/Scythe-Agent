@@ -4,18 +4,18 @@ import { ProviderSettingsDropdown, type ProviderId } from '@/components/Provider
 import type { ProjectChat } from '@/types';
 
 interface AppHeaderProps {
-  currentProjectChats: ProjectChat[];
-  activeChatId: string | null;
-  processingChats: Set<string>;
-  currentProjectId?: string;
-  onSwitchChat: (chatId: string) => void;
-  onReorderChats: (projectId: string, chatIds: string[]) => Promise<void> | void;
-  onOpenModelPicker: () => void;
-  onPrefetchSettings: () => void;
-  currentModel: string;
-  onSelectSettingsProvider: (id: ProviderId | null) => void;
-  projectsLoading?: boolean;
-  chatLoading?: boolean;
+  readonly currentProjectChats: ProjectChat[];
+  readonly activeChatId: string | null;
+  readonly processingChats: Set<string>;
+  readonly currentProjectId?: string;
+  readonly onSwitchChat: (chatId: string) => void;
+  readonly onReorderChats: (projectId: string, chatIds: string[]) => Promise<void> | void;
+  readonly onOpenModelPicker: () => void;
+  readonly onPrefetchSettings: () => void;
+  readonly currentModel: string;
+  readonly onSelectSettingsProvider: (id: ProviderId | null) => void;
+  readonly projectsLoading?: boolean;
+  readonly chatLoading?: boolean;
 }
 
 export function AppHeader({
@@ -35,10 +35,10 @@ export function AppHeader({
   return (
     <header className="flex items-center justify-between gap-3 px-5 py-2.5 bg-gray-900/80 border-b border-gray-700/30 min-h-0">
       <div className="flex items-center gap-3 min-w-0 flex-1">
-        <div className="flex items-center justify-center w-8 h-8 bg-gradient-to-br from-aqua-400 to-aqua-600 rounded-xl shadow-lg shadow-aqua-500/20 flex-shrink-0">
+        <div className="flex items-center justify-center w-8 h-8 bg-linear-to-br from-aqua-400 to-aqua-600 rounded-xl shadow-lg shadow-aqua-500/20 shrink-0">
           <Bot className="w-4.5 h-4.5 text-gray-950" />
         </div>
-        <h1 className="text-sm font-semibold text-gray-200 flex-shrink-0">Agentic Coder</h1>
+        <h1 className="text-sm font-semibold text-gray-200 shrink-0">Agentic Coder</h1>
         <div className="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden">
           <ChatTabBar
             chats={currentProjectChats}
@@ -53,7 +53,7 @@ export function AppHeader({
         </div>
       </div>
 
-      <div className="flex items-center gap-2 flex-shrink-0">
+      <div className="flex items-center gap-2 shrink-0">
         <button
           onClick={onOpenModelPicker}
           onMouseEnter={onPrefetchSettings}

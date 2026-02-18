@@ -1,14 +1,14 @@
 import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { FileCode, MessageSquare, Terminal, FileText, Sparkles, X, ChevronDown, Brain } from 'lucide-react';
+import { FileCode, MessageSquare, Terminal, FileText, ChevronDown, Bug } from 'lucide-react';
 import { ContextItem } from '../types';
 import { cn } from '../utils/cn';
+import { api } from '../api';
 
 interface ContextDropdownProps {
-  contextItems: ContextItem[];
-  maxTokens: number;
-  onSummarize: () => void;
-  onRemoveItem: (itemId: string) => void;
+  readonly contextItems: ContextItem[];
+  readonly maxTokens: number;
+  readonly chatId?: string | null;
 }
 
 const typeIcons: Record<string, React.ReactNode> = {
@@ -25,58 +25,110 @@ const typeColors: Record<string, string> = {
   summary: 'text-amber-300 bg-amber-500/10 border border-amber-500/20',
 };
 
-function DonutChart({ used, max }: { used: number; max: number }) {
-  const percentage = Math.min((used / max) * 100, 100);
-  const radius = 32;
-  const strokeWidth = 7;
-  const normalizedRadius = radius - strokeWidth / 2;
-  const circumference = normalizedRadius * 2 * Math.PI;
-  const strokeDashoffset = circumference - (percentage / 100) * circumference;
+const PIE_COLORS: Record<string, string> = {
+  file: '#22d3d8',
+  conversation: '#2dd4bf',
+  tool_output: '#14b8a6',
+  summary: '#f59e0b',
+};
 
-  const getColor = () => {
-    if (percentage > 90) return '#ef4444';
-    if (percentage > 70) return '#f59e0b';
-    return '#22d3d8';
-  };
+function PieChart({
+  segments,
+}: Readonly<{
+  segments: { type: string; tokens: number }[];
+}>) {
+  const total = segments.reduce((s, seg) => s + seg.tokens, 0);
+  if (total === 0) {
+    return (
+      <div className="w-16 h-16 rounded-full bg-gray-800 flex items-center justify-center shrink-0">
+        <span className="text-[10px] text-gray-500">—</span>
+      </div>
+    );
+  }
+  const cx = 32;
+  const cy = 32;
+  const r = 28;
+  const tau = 2 * Math.PI;
+  let acc = -Math.PI / 2;
+  const paths = segments.map((seg, i) => {
+    const pct = seg.tokens / total;
+    const start = acc;
+    acc += pct * tau;
+    const x1 = cx + r * Math.cos(start);
+    const y1 = cy + r * Math.sin(start);
+    const x2 = cx + r * Math.cos(acc);
+    const y2 = cy + r * Math.sin(acc);
+    const large = pct > 0.5 ? 1 : 0;
+    const d = `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`;
+    return (
+      <path
+        key={seg.type}
+        d={d}
+        fill={PIE_COLORS[seg.type] ?? PIE_COLORS.file}
+        opacity={0.9}
+      />
+    );
+  });
 
   return (
-    <div className="relative flex items-center justify-center">
-      <svg width={radius * 2} height={radius * 2} className="-rotate-90">
-        {/* Background circle */}
-        <circle
-          stroke="#2a2a3a"
-          fill="transparent"
-          strokeWidth={strokeWidth}
-          r={normalizedRadius}
-          cx={radius}
-          cy={radius}
-        />
-        {/* Progress circle */}
-        <circle
-          stroke={getColor()}
-          fill="transparent"
-          strokeWidth={strokeWidth}
-          strokeLinecap="round"
-          strokeDasharray={`${circumference} ${circumference}`}
-          strokeDashoffset={strokeDashoffset}
-          r={normalizedRadius}
-          cx={radius}
-          cy={radius}
-          className="transition-all duration-500"
-        />
-      </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="text-[10px] font-bold text-gray-200">{Math.round(percentage)}%</span>
-      </div>
-    </div>
+    <svg width={64} height={64} viewBox="0 0 64 64" className="shrink-0">
+      {paths}
+    </svg>
   );
 }
+
+function UsageRing({ percentage, stroke }: { percentage: number; stroke: string }) {
+  const r = 8;
+  const strokeWidth = 2.5;
+  const norm = r - strokeWidth / 2;
+  const circ = norm * 2 * Math.PI;
+  const dash = circ - (Math.min(percentage, 100) / 100) * circ;
+  return (
+    <svg width={20} height={20} className="-rotate-90 shrink-0">
+      <circle
+        cx={10}
+        cy={10}
+        r={norm}
+        fill="none"
+        stroke="#2a2a3a"
+        strokeWidth={strokeWidth}
+      />
+      <circle
+        cx={10}
+        cy={10}
+        r={norm}
+        fill="none"
+        stroke={stroke}
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+        strokeDasharray={circ}
+        strokeDashoffset={dash}
+        className="transition-all duration-300"
+      />
+    </svg>
+  );
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+
+const typeLabels: Record<string, string> = {
+  file: 'Files',
+  conversation: 'Conversation',
+  tool_output: 'Tool Outputs',
+  summary: 'Summaries',
+};
 
 export function ContextDropdown({
   contextItems,
   maxTokens,
-  onSummarize,
-  onRemoveItem,
+  chatId,
 }: ContextDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [position, setPosition] = useState({ top: 0, left: 0 });
@@ -86,11 +138,25 @@ export function ContextDropdown({
   const totalTokens = contextItems.reduce((sum, item) => sum + item.tokens, 0);
   const usagePercentage = Math.min((totalTokens / maxTokens) * 100, 100);
 
-  const getUsageColor = () => {
-    if (usagePercentage > 90) return 'text-red-400';
-    if (usagePercentage > 70) return 'text-amber-400';
-    return 'text-aqua-400';
+  const getUsageStroke = () => {
+    if (usagePercentage > 90) return '#ef4444';
+    if (usagePercentage > 70) return '#f59e0b';
+    return '#22d3d8';
   };
+
+  const groupedByType = contextItems.reduce<Record<string, { count: number; tokens: number }>>((acc, item) => {
+    if (!acc[item.type]) acc[item.type] = { count: 0, tokens: 0 };
+    acc[item.type].count++;
+    acc[item.type].tokens += item.tokens;
+    return acc;
+  }, {});
+
+  const pieSegments = Object.entries(groupedByType)
+    .map(([type, data]) => ({ type, tokens: data.tokens }))
+    .filter((s) => s.tokens > 0)
+    .sort((a, b) => b.tokens - a.tokens);
+
+  const top5Items = [...contextItems].sort((a, b) => b.tokens - a.tokens).slice(0, 5);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -123,21 +189,6 @@ export function ContextDropdown({
     };
   }, [isOpen]);
 
-  // Group items by type for the legend
-  const groupedByType = contextItems.reduce<Record<string, { count: number; tokens: number }>>((acc, item) => {
-    if (!acc[item.type]) acc[item.type] = { count: 0, tokens: 0 };
-    acc[item.type].count++;
-    acc[item.type].tokens += item.tokens;
-    return acc;
-  }, {});
-
-  const typeLabels: Record<string, string> = {
-    file: 'Files',
-    conversation: 'Conversation',
-    tool_output: 'Tool Outputs',
-    summary: 'Summaries',
-  };
-
   const dropdownPanel = isOpen && (
     <div
       ref={dropdownRef}
@@ -145,67 +196,72 @@ export function ContextDropdown({
       style={{ top: position.top, left: position.left }}
     >
       <div className="bg-gray-850 border border-gray-700/60 rounded-2xl shadow-2xl shadow-black/40 overflow-hidden">
-        {/* Header with chart */}
         <div className="p-4 border-b border-gray-700/40">
           <div className="flex items-start gap-4">
-            <DonutChart used={totalTokens} max={maxTokens} />
+            <PieChart segments={pieSegments} />
             <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-medium text-gray-300">Context Window</span>
-                <button
-                  onClick={onSummarize}
-                  className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium text-aqua-400 hover:text-aqua-300 bg-aqua-500/10 hover:bg-aqua-500/15 rounded-md border border-aqua-500/20 transition-colors"
-                >
-                  <Sparkles className="w-2.5 h-2.5" />
-                  Summarize
-                </button>
-              </div>
-              {/* Type breakdown */}
-              <div className="space-y-1">
-                {Object.entries(groupedByType).map(([type, data]) => (
-                  <div key={type} className="flex items-center justify-between text-[10px]">
+              <span className="text-xs font-medium text-gray-300">Context by category</span>
+              <div className="mt-2 space-y-1">
+                {pieSegments.map((seg, i) => (
+                  <div key={seg.type} className="flex items-center justify-between text-[10px]">
                     <div className="flex items-center gap-1.5">
-                      <span className={cn(
-                        'w-1.5 h-1.5 rounded-full',
-                        type === 'file' && 'bg-cyan-400',
-                        type === 'conversation' && 'bg-aqua-400',
-                        type === 'tool_output' && 'bg-teal-400',
-                        type === 'summary' && 'bg-amber-400',
-                      )} />
-                      <span className="text-gray-400">{typeLabels[type]}</span>
-                      <span className="text-gray-600">({data.count})</span>
+                      <span
+                        className="w-1.5 h-1.5 rounded-full shrink-0"
+                        style={{ backgroundColor: PIE_COLORS[seg.type] ?? PIE_COLORS.file }}
+                      />
+                      <span className="text-gray-400">{typeLabels[seg.type]}</span>
                     </div>
-                    <span className="text-gray-500 font-mono">{data.tokens.toLocaleString()}</span>
+                    <span className="text-gray-500 font-mono">{seg.tokens.toLocaleString()}</span>
                   </div>
                 ))}
+                {pieSegments.length === 0 && (
+                  <span className="text-[10px] text-gray-500">No context yet</span>
+                )}
               </div>
             </div>
           </div>
         </div>
 
-        {/* Context Items */}
-        <div className="p-3 max-h-52 overflow-y-auto">
-          <div className="flex flex-wrap gap-1.5">
-            {contextItems.map((item) => (
+        <div className="p-3">
+          <span className="text-[10px] font-medium text-gray-400 block mb-2">Top 5 by tokens</span>
+          <div className="space-y-1">
+            {top5Items.map((item) => (
               <div
                 key={item.id}
                 className={cn(
-                  'flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] group transition-colors',
+                  'flex items-center gap-2 px-2 py-1.5 rounded-lg text-[11px]',
                   typeColors[item.type]
                 )}
               >
                 {typeIcons[item.type]}
-                <span className="max-w-[110px] truncate">{item.name}</span>
-                <span className="text-gray-500 font-mono text-[10px]">{item.tokens}</span>
-                <button
-                  onClick={() => onRemoveItem(item.id)}
-                  className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-black/20 rounded transition-opacity"
-                >
-                  <X className="w-2.5 h-2.5" />
-                </button>
+                <span className="flex-1 min-w-0 truncate">{item.name}</span>
+                <span className="text-gray-500 font-mono text-[10px] shrink-0">{item.tokens.toLocaleString()}</span>
               </div>
             ))}
+            {top5Items.length === 0 && (
+              <span className="text-[10px] text-gray-500">—</span>
+            )}
           </div>
+
+          {chatId && (
+            <div className="mt-3 pt-3 border-t border-gray-700/40">
+              <button
+                type="button"
+                onClick={async () => {
+                  const res = await api.getChatDebug(chatId);
+                  if (!res.ok || !res.data) return;
+                  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Chat Debug - ${chatId}</title><style>body{background:#1a1a24;color:#e5e7eb;font-family:ui-monospace,monospace;padding:1.5rem;margin:0;font-size:13px;line-height:1.5}pre{white-space:pre-wrap;word-wrap:break-word;margin:0}</style></head><body><pre>${escapeHtml(JSON.stringify(res.data, null, 2))}</pre></body></html>`;
+                  const blob = new Blob([html], { type: 'text/html' });
+                  window.open(URL.createObjectURL(blob), '_blank', 'noopener');
+                }}
+                className="flex items-center gap-1.5 w-full px-2 py-1.5 rounded-lg text-[11px] text-gray-400 hover:bg-gray-700/50 hover:text-aqua-400 transition-colors"
+                title="Open debug JSON in new tab"
+              >
+                <Bug className="w-3 h-3" />
+                View API debug
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -216,6 +272,7 @@ export function ContextDropdown({
       {/* Trigger Button */}
       <button
         ref={triggerRef}
+        title={`${totalTokens.toLocaleString()} / ${(maxTokens / 1000).toFixed(0)}k tokens`}
         onClick={() => {
           if (!isOpen && triggerRef.current) {
             const rect = triggerRef.current.getBoundingClientRect();
@@ -224,16 +281,12 @@ export function ContextDropdown({
           setIsOpen(!isOpen);
         }}
         className={cn(
-          'flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-all',
+          'flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-sm transition-all',
           'bg-gray-800/60 hover:bg-gray-750 border border-gray-700/50',
           isOpen && 'bg-gray-750 border-aqua-500/30'
         )}
       >
-        <Brain className={cn('w-3.5 h-3.5', getUsageColor())} />
-        <span className="text-gray-300 text-xs">
-          <span className={cn('font-medium', getUsageColor())}>{totalTokens.toLocaleString()}</span>
-          <span className="text-gray-500"> / {(maxTokens / 1000).toFixed(0)}k</span>
-        </span>
+        <UsageRing percentage={usagePercentage} stroke={getUsageStroke()} />
         <ChevronDown className={cn(
           'w-3 h-3 text-gray-500 transition-transform duration-200',
           isOpen && 'rotate-180'

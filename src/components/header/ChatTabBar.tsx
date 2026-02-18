@@ -3,14 +3,14 @@ import { GripVertical, Check, Loader2 } from 'lucide-react';
 import type { ProjectChat } from '@/types';
 
 interface ChatTabBarProps {
-  chats: ProjectChat[];
-  activeChatId: string | null;
-  processingChats: Set<string>;
-  onSwitchChat: (chatId: string) => void;
-  onReorderChats: (projectId: string, chatIds: string[]) => Promise<void> | void;
-  projectId: string;
-  projectsLoading?: boolean;
-  chatLoading?: boolean;
+  readonly chats: ProjectChat[];
+  readonly activeChatId: string | null;
+  readonly processingChats: Set<string>;
+  readonly onSwitchChat: (chatId: string) => void;
+  readonly onReorderChats: (projectId: string, chatIds: string[]) => Promise<void> | void;
+  readonly projectId: string;
+  readonly projectsLoading?: boolean;
+  readonly chatLoading?: boolean;
 }
 
 export function ChatTabBar({
@@ -77,9 +77,12 @@ export function ChatTabBar({
   return (
     <div className="flex items-center gap-0 min-w-0 flex-1 rounded-lg border border-gray-700/50 bg-gray-800/40 px-2 py-1.5">
       {canScrollLeft && chats.length > 0 && (
-        <span className="flex-shrink-0 text-gray-500 text-xs">…</span>
+        <span className="shrink-0 text-gray-500 text-xs">…</span>
       )}
-      <div ref={headerChatsRef} className="flex items-center gap-2 overflow-x-auto overflow-y-hidden pb-1.5">
+      <div
+        ref={headerChatsRef}
+        className={`flex items-center gap-2 overflow-x-auto overflow-y-hidden ${canScrollLeft || canScrollRight ? 'pb-1.5' : ''}`}
+      >
         {chats.map((c, ci) => {
           const processing = processingChats.has(c.id);
           const isDragging = dragHeaderChatIndex === ci;
@@ -107,7 +110,7 @@ export function ChatTabBar({
                 handleHeaderChatDrop(ci);
               }}
               onClick={() => onSwitchChat(c.id)}
-              className={`flex items-center gap-1.5 flex-shrink-0 px-2 py-1 rounded text-xs transition-colors whitespace-nowrap cursor-grab active:cursor-grabbing ${
+              className={`flex items-center gap-1.5 shrink-0 px-2 py-1 rounded text-xs transition-colors whitespace-nowrap cursor-grab active:cursor-grabbing ${
                 c.id === activeChatId
                   ? 'bg-aqua-500/30 text-aqua-200 border border-aqua-400/40'
                   : 'bg-gray-800/50 text-gray-400 border border-gray-700/40 hover:bg-gray-750 hover:text-gray-300'
@@ -129,7 +132,7 @@ export function ChatTabBar({
         })}
       </div>
       {canScrollRight && chats.length > 0 && (
-        <span className="flex-shrink-0 text-gray-500 text-xs">…</span>
+        <span className="shrink-0 text-gray-500 text-xs">…</span>
       )}
     </div>
   );

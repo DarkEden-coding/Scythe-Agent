@@ -8,16 +8,22 @@ from app.schemas.filesystem import FsChildOut, FsChildrenResponse
 class FilesystemService:
     def __init__(self) -> None:
         settings = get_settings()
-        configured_roots = [Path(value).expanduser().resolve() for value in getattr(settings, "fs_allowed_roots", []) if value]
+        configured_roots = [
+            Path(value).expanduser().resolve()
+            for value in getattr(settings, "fs_allowed_roots", [])
+            if value
+        ]
 
         if configured_roots:
             self.allowed_roots = configured_roots
+            self.restrict_to_roots = True
         else:
-            repo_root = Path(__file__).resolve().parents[3]
-            self.allowed_roots = [repo_root]
+            self.allowed_roots = [Path.home().resolve()]
+            self.restrict_to_roots = False
 
     def _is_within_allowed_roots(self, path: Path) -> bool:
-        # Resolve both the Path object and use os.path.realpath to catch symlink escapes
+        if not self.restrict_to_roots:
+            return True
         resolved = path.resolve()
         real = Path(os.path.realpath(str(path)))
         for root in self.allowed_roots:
@@ -69,7 +75,7 @@ class FilesystemService:
             )
 
         parent = target.parent.resolve() if target.parent != target else None
-        if parent is not None and not self._is_within_allowed_roots(parent):
+        if parent is not None and self.restrict_to_roots and not self._is_within_allowed_roots(parent):
             parent = None
 
         return FsChildrenResponse(

@@ -13,8 +13,10 @@ from app.preprocessors.system_prompt import DEFAULT_SYSTEM_PROMPT
 from app.tools.openrouter_format import get_openrouter_tools
 from app.schemas.chat import (
     CheckpointOut,
+    EditMessageResponse,
     GetChatHistoryResponse,
     MessageOut,
+    RevertToCheckpointResponse,
     SendMessageResponse,
 )
 from app.services.agent_loop import AgentLoop
@@ -22,12 +24,16 @@ from app.services.api_key_resolver import APIKeyResolver
 from app.services.chat_history import ChatHistoryAssembler
 from app.services.approval_service import ApprovalService
 from app.services.event_bus import EventBus, get_event_bus
+from app.services.revert_service import RevertService
 from app.services.settings_service import SettingsService
 from app.utils.ids import generate_id
 from app.utils.mappers import map_role_for_ui
 from app.utils.time import utc_now_iso
 
 logger = logging.getLogger(__name__)
+
+# Maps chat_id → running agent asyncio.Task (for cancellation on edit)
+_running_tasks: dict[str, asyncio.Task] = {}
 
 
 class ChatService:
@@ -184,8 +190,100 @@ class ChatService:
                     {"type": "agent_done", "payload": {"checkpointId": checkpoint_id}},
                 )
 
-        _ = asyncio.create_task(_runtime_pass())
+        task = asyncio.create_task(_runtime_pass())
+        _running_tasks[chat_id] = task
+
+        def _on_done(t: asyncio.Task) -> None:
+            _running_tasks.pop(chat_id, None)
+
+        task.add_done_callback(_on_done)
+
+    async def edit_message(self, chat_id: str, message_id: str, content: str) -> EditMessageResponse:
+        message = self.repo.get_message(message_id)
+        if message is None or message.chat_id != chat_id:
+            raise ValueError(f"Message not found: {message_id}")
+        if message.role != "user":
+            raise ValueError("Only user messages can be edited")
+
+        checkpoint = self.repo.get_checkpoint_by_message(message_id)
+        if checkpoint is None:
+            raise ValueError(f"No checkpoint found for message: {message_id}")
+
+        # Cancel any running agent task for this chat
+        existing_task = _running_tasks.pop(chat_id, None)
+        if existing_task is not None and not existing_task.done():
+            existing_task.cancel()
+            try:
+                await existing_task
+            except (asyncio.CancelledError, Exception):
+                pass
+
+        # Revert filesystem + DB to this checkpoint
+        revert_svc = RevertService(self.repo.db)
+        reverted = revert_svc.revert_to_checkpoint(chat_id, checkpoint.id)
+
+        # Update message content and checkpoint label in-place
+        message = self.repo.get_message(message_id)
+        if message is not None:
+            message.content = content
+        cp = self.repo.get_checkpoint(checkpoint.id)
+        if cp is not None:
+            cp.label = f"User message: {content[:48]}"
+        self.repo.commit()
+
+        # Publish message_edited event so frontend can update state
+        await self.event_bus.publish(
+            chat_id,
+            {
+                "type": "message_edited",
+                "payload": {
+                    "revertedHistory": reverted.model_dump(),
+                    "messageId": message_id,
+                    "content": content,
+                },
+            },
+        )
+
+        self._schedule_runtime(
+            chat_id=chat_id,
+            checkpoint_id=checkpoint.id,
+            content=content,
+        )
+        return EditMessageResponse(revertedHistory=reverted)
 
     def get_chat_history(self, chat_id: str) -> GetChatHistoryResponse:
-        assembler = ChatHistoryAssembler(self.repo, self.settings_service)
+        project_repo = ProjectRepository(self.repo.db)
+        assembler = ChatHistoryAssembler(
+            self.repo, project_repo, self.settings_service
+        )
         return assembler.assemble(chat_id)
+
+    def get_chat_debug(self, chat_id: str) -> dict:
+        """Assemble a debug dump of prompts and API payload for the current conversation."""
+        history = self.get_chat_history(chat_id)
+        chat = self.repo.get_chat(chat_id)
+        if chat is None:
+            raise ValueError(f"Chat not found: {chat_id}")
+
+        project_repo = ProjectRepository(self.repo.db)
+        project_model = project_repo.get_project(chat.project_id)
+        project_path = project_model.path if project_model else None
+
+        messages = self.repo.list_messages(chat_id)
+        openrouter_messages = [
+            {"role": "assistant" if m.role == "assistant" else "user", "content": m.content}
+            for m in messages
+        ]
+        openrouter_messages = apply_initial_information(
+            openrouter_messages, project_path=project_path
+        )
+        openrouter_messages.insert(0, {"role": "system", "content": DEFAULT_SYSTEM_PROMPT})
+
+        return {
+            "chatId": chat_id,
+            "model": history.model,
+            "contextLimit": history.maxTokens,
+            "systemPrompt": DEFAULT_SYSTEM_PROMPT,
+            "assembledMessages": openrouter_messages,
+            "history": history.model_dump(),
+        }

@@ -1,8 +1,8 @@
 import { cn } from '@/utils/cn';
 
 interface DiffPreviewProps {
-  diff?: string;
-  action: string;
+  readonly diff?: string;
+  readonly action: string;
 }
 
 export function DiffPreview({ diff, action }: DiffPreviewProps) {
@@ -15,8 +15,7 @@ export function DiffPreview({ diff, action }: DiffPreviewProps) {
       <div className="max-h-[220px] overflow-y-auto">
         {lines.map((line, i) => {
           let bgClass = '';
-          let textClass = 'text-gray-500';
-
+          let textClass: string;
           if (line.startsWith('+')) {
             bgClass = 'bg-emerald-500/8';
             textClass = 'text-emerald-300/90';
@@ -31,12 +30,16 @@ export function DiffPreview({ diff, action }: DiffPreviewProps) {
             if (action === 'create') bgClass = 'bg-emerald-500/5';
           }
 
-          const prefix = line.startsWith('+') ? '+' : line.startsWith('-') ? '-' : line.startsWith('@@') ? '@' : ' ';
+          let prefix: string;
+          if (line.startsWith('+')) prefix = '+';
+          else if (line.startsWith('-')) prefix = '-';
+          else if (line.startsWith('@@')) prefix = '@';
+          else prefix = ' ';
           const content = line.startsWith('+') || line.startsWith('-') ? line.slice(1) : line;
 
           return (
-            <div key={i} className={cn('flex', bgClass)}>
-              <span className={cn('w-5 flex-shrink-0 text-center select-none opacity-50', textClass)}>
+            <div key={`${i}-${line.slice(0, 30)}`} className={cn('flex', bgClass)}>
+              <span className={cn('w-5 shrink-0 text-center select-none opacity-50', textClass)}>
                 {prefix === ' ' ? '' : prefix}
               </span>
               <span className={cn('flex-1 px-2 py-px whitespace-pre', textClass)}>

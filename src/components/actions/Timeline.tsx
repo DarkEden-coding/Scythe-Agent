@@ -1,31 +1,95 @@
 import { ChevronDown, ChevronRight, GitBranch, RotateCcw } from 'lucide-react';
 import type { ToolCall, FileEdit, Checkpoint, ReasoningBlock } from '@/types';
-import { buildTimeline, formatDuration } from './buildTimeline';
+import { buildTimeline, type TimelineItem } from './buildTimeline';
 import { ToolCallCard, statusIcons } from './ToolCallCard';
 import { FileEditCard } from './FileEditCard';
 import { ReasoningBlockView } from './ReasoningBlockView';
-import { ThinkingGroup } from './ThinkingGroup';
 import { cn } from '@/utils/cn';
 
+function getTimelineItemKey(item: TimelineItem, idx: number): string {
+  if (item.type === 'tool') return item.call.id;
+  if (item.type === 'file') return item.edit.id;
+  if (item.type === 'reasoning') return item.block.id;
+  return `parallel-${idx}`;
+}
+
+interface ParallelGroupBlockProps {
+  readonly groupKey: string;
+  readonly calls: ToolCall[];
+  readonly isExpanded: boolean;
+  readonly onToggle: () => void;
+  readonly expandedTools: Set<string>;
+  readonly onToggleTool: (id: string) => void;
+}
+
+function ParallelGroupBlock({
+  groupKey: _groupKey,
+  calls,
+  isExpanded,
+  onToggle,
+  expandedTools,
+  onToggleTool,
+}: ParallelGroupBlockProps) {
+  return (
+    <div className="flex justify-center">
+      <div className="inline-flex flex-col border border-aqua-500/15 rounded-xl overflow-hidden bg-aqua-500/3">
+        <button
+          type="button"
+          onClick={onToggle}
+          className="flex items-center gap-2 px-2.5 py-1.5 hover:bg-aqua-500/5 transition-colors"
+        >
+          <span className="text-aqua-400/60 shrink-0">
+            {isExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+          </span>
+          <GitBranch className="w-3 h-3 text-aqua-400/70" />
+          <span className="text-[10px] text-aqua-400/70 font-medium whitespace-nowrap">
+            Parallel · {calls.length} calls
+          </span>
+          <div className="flex items-center gap-1 ml-1">
+            {calls.map((c) => (
+              <span key={c.id} className="shrink-0">
+                {statusIcons[c.status]}
+              </span>
+            ))}
+          </div>
+        </button>
+        {isExpanded && (
+          <div className="px-2 pb-2 space-y-1 border-t border-aqua-500/10">
+            <div className="h-1" />
+            {calls.map((call) => (
+              <ToolCallCard
+                key={call.id}
+                call={call}
+                isInParallel
+                isExpanded={expandedTools.has(call.id)}
+                onToggle={() => onToggleTool(call.id)}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 interface TimelineProps {
-  checkpoints: Checkpoint[];
-  toolCalls: ToolCall[];
-  fileEdits: FileEdit[];
-  reasoningBlocks: ReasoningBlock[];
-  expandedTools: Set<string>;
-  expandedFiles: Set<string>;
-  expandedReasoning: Set<string>;
-  expandedThinkingGroups: Set<string>;
-  collapsedCheckpoints: Set<string>;
-  expandedParallelGroups: Set<string>;
-  onToggleTool: (id: string) => void;
-  onToggleFile: (id: string) => void;
-  onToggleReasoning: (id: string) => void;
-  onToggleThinkingGroup: (checkpointId: string) => void;
-  onToggleCheckpointCollapse: (id: string) => void;
-  onToggleParallelGroup: (groupKey: string, calls: ToolCall[]) => void;
-  onRevertFile: (fileEditId: string) => void;
-  onRevertCheckpoint: (checkpointId: string) => void;
+  readonly checkpoints: Checkpoint[];
+  readonly toolCalls: ToolCall[];
+  readonly fileEdits: FileEdit[];
+  readonly reasoningBlocks: ReasoningBlock[];
+  readonly streamingReasoningBlockIds?: Set<string>;
+  readonly expandedTools: Set<string>;
+  readonly expandedFiles: Set<string>;
+  readonly expandedReasoning: Set<string>;
+  readonly collapsedCheckpoints: Set<string>;
+  readonly expandedParallelGroups: Set<string>;
+  readonly onToggleTool: (id: string) => void;
+  readonly onToggleFile: (id: string) => void;
+  readonly onToggleReasoning: (id: string) => void;
+  readonly onToggleCheckpointCollapse: (id: string) => void;
+  readonly onToggleParallelGroup: (groupKey: string, calls: ToolCall[]) => void;
+  readonly onRevertFile: (fileEditId: string) => void;
+  readonly onRevertCheckpoint: (checkpointId: string) => void;
 }
 
 export function Timeline({
@@ -33,16 +97,15 @@ export function Timeline({
   toolCalls,
   fileEdits,
   reasoningBlocks,
+  streamingReasoningBlockIds = new Set(),
   expandedTools,
   expandedFiles,
   expandedReasoning,
-  expandedThinkingGroups,
   collapsedCheckpoints,
   expandedParallelGroups,
   onToggleTool,
   onToggleFile,
   onToggleReasoning,
-  onToggleThinkingGroup,
   onToggleCheckpointCollapse,
   onToggleParallelGroup,
   onRevertFile,
@@ -79,7 +142,7 @@ export function Timeline({
               </button>
               <button
                 onClick={() => onRevertCheckpoint(checkpoint.id)}
-                className="inline-flex items-center gap-1 px-2 py-1 text-[10px] text-amber-400/80 hover:text-amber-300 hover:bg-gray-800 rounded-lg border border-gray-700/30 transition-colors flex-shrink-0"
+                className="inline-flex items-center gap-1 px-2 py-1 text-[10px] text-amber-400/80 hover:text-amber-300 hover:bg-gray-800 rounded-lg border border-gray-700/30 transition-colors shrink-0"
                 title="Revert all changes from this checkpoint"
               >
                 <RotateCcw className="w-2.5 h-2.5" />
@@ -94,16 +157,7 @@ export function Timeline({
                   const showConnector = prevItem !== null;
                   const isTypeTransition = prevItem !== null && prevItem.type !== item.type;
 
-                  const key =
-                    item.type === 'tool'
-                      ? item.call.id
-                      : item.type === 'file'
-                        ? item.edit.id
-                        : item.type === 'reasoning'
-                          ? item.block.id
-                          : item.type === 'reasoning_group'
-                            ? `thinking-${item.checkpointId}`
-                            : `parallel-${idx}`;
+                  const key = getTimelineItemKey(item, idx);
 
                   return (
                     <div key={key}>
@@ -113,7 +167,7 @@ export function Timeline({
                             className={cn(
                               'h-4',
                               isTypeTransition
-                                ? 'w-px bg-gradient-to-b from-gray-700/60 via-gray-600/40 to-gray-700/60'
+                                ? 'w-px bg-linear-to-b from-gray-700/60 via-gray-600/40 to-gray-700/60'
                                 : 'w-px bg-gray-700/30',
                             )}
                           />
@@ -121,23 +175,14 @@ export function Timeline({
                       )}
 
                       {item.type === 'reasoning' && (
-                        <ReasoningBlockView
-                          block={item.block}
-                          isExpanded={expandedReasoning.has(item.block.id)}
-                          onToggle={() => onToggleReasoning(item.block.id)}
-                          formatDuration={formatDuration}
-                        />
-                      )}
-                      {item.type === 'reasoning_group' && (
-                        <ThinkingGroup
-                          checkpointId={item.checkpointId}
-                          blocks={item.blocks}
-                          isExpanded={expandedThinkingGroups.has(item.checkpointId)}
-                          expandedBlockIds={expandedReasoning}
-                          onToggleGroup={() => onToggleThinkingGroup(item.checkpointId)}
-                          onToggleBlock={onToggleReasoning}
-                          formatDuration={formatDuration}
-                        />
+                        <div className="flex justify-center">
+                          <ReasoningBlockView
+                            block={item.block}
+                            isExpanded={expandedReasoning.has(item.block.id)}
+                            isStreaming={streamingReasoningBlockIds.has(item.block.id)}
+                            onToggle={() => onToggleReasoning(item.block.id)}
+                          />
+                        </div>
                       )}
                       {item.type === 'tool' && (
                         <div className="flex justify-center">
@@ -145,58 +190,19 @@ export function Timeline({
                             call={item.call}
                             isExpanded={expandedTools.has(item.call.id)}
                             onToggle={() => onToggleTool(item.call.id)}
-                            formatDuration={formatDuration}
                           />
                         </div>
                       )}
-                      {item.type === 'parallel' && (() => {
-                        const groupKey = `parallel-${checkpoint.id}-${idx}`;
-                        const isGroupExpanded = expandedParallelGroups.has(groupKey);
-                        return (
-                          <div className="flex justify-center">
-                            <div className="inline-flex flex-col border border-aqua-500/15 rounded-xl overflow-hidden bg-aqua-500/3">
-                              <button
-                                onClick={() => onToggleParallelGroup(groupKey, item.calls)}
-                                className="flex items-center gap-2 px-2.5 py-1.5 hover:bg-aqua-500/5 transition-colors"
-                              >
-                                <span className="text-aqua-400/60 flex-shrink-0">
-                                  {isGroupExpanded ? (
-                                    <ChevronDown className="w-3 h-3" />
-                                  ) : (
-                                    <ChevronRight className="w-3 h-3" />
-                                  )}
-                                </span>
-                                <GitBranch className="w-3 h-3 text-aqua-400/70" />
-                                <span className="text-[10px] text-aqua-400/70 font-medium whitespace-nowrap">
-                                  Parallel · {item.calls.length} calls
-                                </span>
-                                <div className="flex items-center gap-1 ml-1">
-                                  {item.calls.map((c) => (
-                                    <span key={c.id} className="flex-shrink-0">
-                                      {statusIcons[c.status]}
-                                    </span>
-                                  ))}
-                                </div>
-                              </button>
-                              {isGroupExpanded && (
-                                <div className="px-2 pb-2 space-y-1 border-t border-aqua-500/10">
-                                  <div className="h-1" />
-                                  {item.calls.map((call) => (
-                                    <ToolCallCard
-                                      key={call.id}
-                                      call={call}
-                                      isInParallel
-                                      isExpanded={expandedTools.has(call.id)}
-                                      onToggle={() => onToggleTool(call.id)}
-                                      formatDuration={formatDuration}
-                                    />
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })()}
+                      {item.type === 'parallel' && (
+                        <ParallelGroupBlock
+                          groupKey={`parallel-${checkpoint.id}-${idx}`}
+                          calls={item.calls}
+                          isExpanded={expandedParallelGroups.has(`parallel-${checkpoint.id}-${idx}`)}
+                          onToggle={() => onToggleParallelGroup(`parallel-${checkpoint.id}-${idx}`, item.calls)}
+                          expandedTools={expandedTools}
+                          onToggleTool={onToggleTool}
+                        />
+                      )}
                       {item.type === 'file' && (
                         <div>
                           <FileEditCard

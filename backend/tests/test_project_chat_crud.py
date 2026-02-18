@@ -44,6 +44,7 @@ def test_fs_children_contract_and_guard(client) -> None:
         child = data["children"][0]
         assert {"name", "path", "kind", "hasChildren"} <= set(child.keys())
 
-    outside = client.get("/api/fs/children", params={"path": "/etc"})
-    outside_body = outside.json()
-    assert outside_body["ok"] is False
+    any_path = client.get("/api/fs/children", params={"path": "/etc"})
+    any_body = any_path.json()
+    assert any_body["ok"] is True
+    assert "path" in any_body["data"] and "children" in any_body["data"]

@@ -2,11 +2,12 @@ import { RotateCcw, Bot, MessageSquare } from 'lucide-react';
 import type { Message, Checkpoint } from '@/types';
 import { MessageBubble } from './MessageBubble';
 interface MessageListProps {
-  messages: Message[];
-  activeChatId: string | null;
-  isProcessing: boolean;
-  onRevert: (checkpointId: string) => void;
-  getCheckpointForMessage: (messageId: string) => Checkpoint | undefined;
+  readonly messages: Message[];
+  readonly activeChatId: string | null;
+  readonly isProcessing: boolean;
+  readonly onRevert: (checkpointId: string) => void;
+  readonly onEditMessage?: (messageId: string, newContent: string) => void;
+  readonly getCheckpointForMessage: (messageId: string) => Checkpoint | undefined;
 }
 
 export function MessageList({
@@ -14,6 +15,7 @@ export function MessageList({
   activeChatId,
   isProcessing,
   onRevert,
+  onEditMessage,
   getCheckpointForMessage,
 }: MessageListProps) {
   if (!activeChatId) {
@@ -49,13 +51,13 @@ export function MessageList({
                 <div className="flex-1 h-px bg-gray-700/50" />
               </div>
             )}
-            <MessageBubble message={message} />
+            <MessageBubble message={message} onEdit={onEditMessage} isProcessing={isProcessing} />
           </div>
         );
       })}
       {isProcessing && (
         <div className="flex gap-3 pt-2">
-          <div className="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center bg-gray-750 border border-gray-600/50 shadow-md">
+          <div className="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center bg-gray-750 border border-gray-600/50 shadow-md">
             <Bot className="w-3.5 h-3.5 text-aqua-400" />
           </div>
           <div className="flex items-center gap-2.5 px-4 py-2.5 bg-gray-800 rounded-2xl rounded-bl-md border border-gray-700/40 shadow-md">

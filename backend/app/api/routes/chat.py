@@ -6,6 +6,7 @@ from app.api.deps import get_db
 from app.api.envelope import err, ok
 from app.schemas.chat import (
     ApproveCommandRequest,
+    EditMessageRequest,
     RejectCommandRequest,
     SendMessageRequest,
 )
@@ -31,6 +32,19 @@ def get_chat_history(chat_id: str, db: Session = Depends(get_db)):
         )
 
 
+@router.get("/{chat_id}/debug")
+def get_chat_debug(chat_id: str, db: Session = Depends(get_db)):
+    try:
+        data = ChatService(db).get_chat_debug(chat_id)
+        return ok(data)
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
+    except Exception:
+        return JSONResponse(
+            status_code=500, content=err("Internal server error").model_dump()
+        )
+
+
 @router.post("/{chat_id}/messages")
 async def send_message(
     chat_id: str, request: SendMessageRequest, db: Session = Depends(get_db)
@@ -38,6 +52,23 @@ async def send_message(
     try:
         data = await ChatService(db).send_message(
             chat_id=chat_id, content=request.content
+        )
+        return ok(data.model_dump())
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
+    except Exception:
+        return JSONResponse(
+            status_code=500, content=err("Internal server error").model_dump()
+        )
+
+
+@router.put("/{chat_id}/messages/{message_id}")
+async def edit_message(
+    chat_id: str, message_id: str, request: EditMessageRequest, db: Session = Depends(get_db)
+):
+    try:
+        data = await ChatService(db).edit_message(
+            chat_id=chat_id, message_id=message_id, content=request.content
         )
         return ok(data.model_dump())
     except ValueError as exc:

@@ -1,20 +1,21 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Search, Folder, MessageSquare, GripVertical, Check } from 'lucide-react';
 import type { Project } from '@/types';
 import { ProjectRow } from './ProjectRow';
 import { ReorderPanel } from './ReorderPanel';
 
 interface ProjectsTabProps {
-  projects: Project[];
-  activeChatId: string | null;
-  onSelectChat: (chatId: string) => void;
-  onCreateChat?: (projectId: string, title?: string) => Promise<void> | void;
-  onRenameChat?: (chatId: string, title: string) => Promise<void> | void;
-  onPinChat?: (chatId: string, isPinned: boolean) => Promise<void> | void;
-  onDeleteChat?: (chatId: string) => Promise<void> | void;
-  onReorderProjects?: (projectIds: string[]) => Promise<void> | void;
-  onReorderChats?: (projectId: string, chatIds: string[]) => Promise<void> | void;
-  onDeleteProject?: (projectId: string) => Promise<void> | void;
+  readonly projects: Project[];
+  readonly activeChatId: string | null;
+  readonly onSelectChat: (chatId: string) => void;
+  readonly onCreateChat?: (projectId: string, title?: string) => Promise<void> | void;
+  readonly onRenameChat?: (chatId: string, title: string) => Promise<void> | void;
+  readonly onPinChat?: (chatId: string, isPinned: boolean) => Promise<void> | void;
+  readonly onDeleteChat?: (chatId: string) => Promise<void> | void;
+  readonly onRequestDeleteChat?: (chat: import('@/types').ProjectChat) => void;
+  readonly onReorderProjects?: (projectIds: string[]) => Promise<void> | void;
+  readonly onReorderChats?: (projectId: string, chatIds: string[]) => Promise<void> | void;
+  readonly onDeleteProject?: (projectId: string) => Promise<void> | void;
 }
 
 export function ProjectsTab({
@@ -25,6 +26,7 @@ export function ProjectsTab({
   onRenameChat,
   onPinChat,
   onDeleteChat,
+  onRequestDeleteChat,
   onReorderProjects,
   onReorderChats,
   onDeleteProject,
@@ -32,7 +34,10 @@ export function ProjectsTab({
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
   const [hoveredChatId, setHoveredChatId] = useState<string | null>(null);
+  const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
+  const [editMenuChatId, setEditMenuChatId] = useState<string | null>(null);
   const [reorderMode, setReorderMode] = useState(false);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [reorderExpandedProject, setReorderExpandedProject] = useState<string | null>(null);
   const [dragProjectIndex, setDragProjectIndex] = useState<number | null>(null);
   const [dragOverProjectIndex, setDragOverProjectIndex] = useState<number | null>(null);
@@ -44,13 +49,6 @@ export function ProjectsTab({
       setExpandedProjects(new Set(projects.map((p) => p.id)));
     }
   }, [projects.length, expandedProjects.size]);
-
-  const toggleProject = (projectId: string) => {
-    const next = new Set(expandedProjects);
-    if (next.has(projectId)) next.delete(projectId);
-    else next.add(projectId);
-    setExpandedProjects(next);
-  };
 
   const filteredProjects = searchQuery
     ? projects
@@ -68,6 +66,109 @@ export function ProjectsTab({
         })
         .filter(Boolean) as Project[]
     : projects;
+
+  const visibleChats = filteredProjects
+    .filter((p) => searchQuery !== '' || expandedProjects.has(p.id))
+    .flatMap((p) => p.chats);
+
+  useEffect(() => {
+    const chats = filteredProjects
+      .filter((p) => searchQuery !== '' || expandedProjects.has(p.id))
+      .flatMap((p) => p.chats);
+    if (!chats.length) return;
+    const inList = (id: string) => chats.some((c) => c.id === id);
+    setSelectedChatId((prev) => {
+      if (activeChatId != null && inList(activeChatId)) return activeChatId;
+      if (prev == null || !inList(prev)) return chats[0].id;
+      return prev;
+    });
+  }, [activeChatId, filteredProjects, expandedProjects, searchQuery]);
+
+  const handleMouseEnterChat = useCallback((chatId: string) => {
+    setHoveredChatId(chatId);
+  }, []);
+
+  useEffect(() => {
+    if (selectedChatId) {
+      document.getElementById(`chat-${selectedChatId}`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+  }, [selectedChatId]);
+
+  useEffect(() => {
+    if (reorderMode || editMenuChatId != null) return;
+    const projectForChat = (chatId: string) =>
+      filteredProjects.find((p) => p.chats.some((c) => c.id === chatId));
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const input = scrollContainerRef.current?.querySelector('input:focus');
+      if (input) return;
+
+      if (document.activeElement?.closest('[role="dialog"]')) return;
+
+      let idx = visibleChats.findIndex((c) => c.id === selectedChatId);
+      if (idx < 0 && visibleChats.length) {
+        const fallback =
+          (activeChatId && visibleChats.find((c) => c.id === activeChatId)) || visibleChats[0];
+        setSelectedChatId(fallback.id);
+        idx = visibleChats.findIndex((c) => c.id === fallback.id);
+        if (idx < 0) return;
+      }
+
+      const movePrev = () => {
+        e.preventDefault();
+        if (idx > 0) setSelectedChatId(visibleChats[idx - 1].id);
+      };
+      const moveNext = () => {
+        e.preventDefault();
+        if (idx < visibleChats.length - 1) setSelectedChatId(visibleChats[idx + 1].id);
+      };
+      const moveFirstInProject = () => {
+        e.preventDefault();
+        const project = projectForChat(selectedChatId ?? '');
+        if (project?.chats.length) setSelectedChatId(project.chats[0].id);
+      };
+      const moveLastInProject = () => {
+        e.preventDefault();
+        const lastChat = projectForChat(selectedChatId ?? '')?.chats.at(-1);
+        if (lastChat) setSelectedChatId(lastChat.id);
+      };
+
+      if (e.key === 'ArrowDown' && !e.shiftKey) moveNext();
+      else if (e.key === 'ArrowUp' && !e.shiftKey) movePrev();
+      else if (e.key === 'ArrowUp' && e.shiftKey) moveFirstInProject();
+      else if (e.key === 'ArrowDown' && e.shiftKey) moveLastInProject();
+      else if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        if (selectedChatId) onSelectChat(selectedChatId);
+      } else if (e.key === 'Enter' && e.shiftKey) {
+        e.preventDefault();
+        if (selectedChatId) setEditMenuChatId(selectedChatId);
+      } else if (e.key === 'Delete' || e.key === 'Backspace') {
+        e.preventDefault();
+        if (selectedChatId) {
+          const chat = visibleChats.find((c) => c.id === selectedChatId);
+          if (chat) onRequestDeleteChat?.(chat);
+        }
+      }
+    };
+    globalThis.addEventListener('keydown', handleKeyDown);
+    return () => globalThis.removeEventListener('keydown', handleKeyDown);
+  }, [
+    reorderMode,
+    editMenuChatId,
+    visibleChats,
+    selectedChatId,
+    activeChatId,
+    filteredProjects,
+    onSelectChat,
+    onRequestDeleteChat,
+  ]);
+
+  const toggleProject = (projectId: string) => {
+    const next = new Set(expandedProjects);
+    if (next.has(projectId)) next.delete(projectId);
+    else next.add(projectId);
+    setExpandedProjects(next);
+  };
 
   const totalChats = projects.reduce((sum, p) => sum + p.chats.length, 0);
 
@@ -113,7 +214,7 @@ export function ProjectsTab({
 
   const handleChatDrop = async (_e: React.DragEvent, projectId: string, dropIndex: number) => {
     const project = projects.find((p) => p.id === projectId);
-    if (!project || !dragChatKey || dragChatKey.projectId !== projectId || dragChatKey.chatIndex === dropIndex)
+    if (!project || !dragChatKey?.projectId || dragChatKey.projectId !== projectId || dragChatKey.chatIndex === dropIndex)
       return;
     const ids = project.chats.map((c) => c.id);
     const [removed] = ids.splice(dragChatKey.chatIndex, 1);
@@ -129,8 +230,7 @@ export function ProjectsTab({
   };
 
   return (
-    <>
-      <div className="flex-1 overflow-y-auto flex flex-col">
+    <div ref={scrollContainerRef} className="flex-1 overflow-y-auto flex flex-col">
         {!reorderMode && (
           <div className="p-3 border-b border-gray-700/30">
             <div className="relative">
@@ -173,14 +273,18 @@ export function ProjectsTab({
                   isExpanded={isExpanded}
                   activeChatId={activeChatId}
                   hoveredChatId={hoveredChatId}
+                  selectedChatId={selectedChatId}
+                  editMenuChatId={editMenuChatId}
                   onToggle={toggleProject}
                   onSelectChat={onSelectChat}
-                  onMouseEnterChat={setHoveredChatId}
+                  onMouseEnterChat={handleMouseEnterChat}
                   onMouseLeaveChat={() => setHoveredChatId(null)}
+                  onEditMenuClose={() => setEditMenuChatId(null)}
                   onCreateChat={onCreateChat}
                   onRenameChat={onRenameChat}
                   onPinChat={onPinChat}
                   onDeleteChat={onDeleteChat}
+                  onRequestDeleteChat={onRequestDeleteChat}
                   onDeleteProject={onDeleteProject}
                 />
               );
@@ -242,21 +346,20 @@ export function ProjectsTab({
                 {totalChats} chats
               </span>
             </div>
-            {!reorderMode ? (
+            {reorderMode ? (
+              <button onClick={exitReorderMode} className="text-aqua-400 hover:text-aqua-300 transition-colors text-[11px]">
+                Done
+              </button>
+            ) : (
               <button
                 onClick={() => setReorderMode(true)}
                 className="text-gray-500 hover:text-gray-300 transition-colors text-[11px]"
               >
                 Re-order
               </button>
-            ) : (
-              <button onClick={exitReorderMode} className="text-aqua-400 hover:text-aqua-300 transition-colors text-[11px]">
-                Done
-              </button>
             )}
           </div>
         </div>
       </div>
-    </>
   );
 }

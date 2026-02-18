@@ -42,5 +42,5 @@ pytest
 ## Notes
 
 - DB defaults to SQLite file `backend/agentic.db`.
-- On startup, the app performs idempotent seed initialization for demo data.
+- On startup, the app performs idempotent seed initialization for settings and configuration.
 - Domain values stay API-reference aligned (`assistant`, `created/modified/deleted`) and are mapped to UI-compatible response values in serializer utilities.

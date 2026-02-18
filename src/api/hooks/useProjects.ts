@@ -102,11 +102,13 @@ export function useProjects(client: ApiClient = defaultApi) {
     async (chatId: string) => {
       const res = await client.deleteChat({ chatId });
       if (res.ok) {
-        await refresh();
+        setProjects((prev) =>
+          prev.map((p) => ({ ...p, chats: p.chats.filter((c) => c.id !== chatId) })),
+        );
       }
       return res;
     },
-    [client, refresh],
+    [client],
   );
 
   const reorderProjects = useCallback(

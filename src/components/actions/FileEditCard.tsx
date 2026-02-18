@@ -4,31 +4,37 @@ import { DiffPreview } from './DiffPreview';
 import { cn } from '@/utils/cn';
 
 interface FileEditCardProps {
-  edit: FileEdit;
-  isExpanded: boolean;
-  onToggle: () => void;
-  onRevert: () => void;
+  readonly edit: FileEdit;
+  readonly isExpanded: boolean;
+  readonly onToggle: () => void;
+  readonly onRevert: () => void;
+}
+
+function getActionLabel(action: FileEdit['action']): string {
+  if (action === 'create') return 'Created';
+  if (action === 'edit') return 'Modified';
+  return 'Deleted';
+}
+
+function getActionColor(action: FileEdit['action']): string {
+  if (action === 'create') return 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20';
+  if (action === 'edit') return 'text-aqua-400 bg-aqua-500/10 border-aqua-500/20';
+  return 'text-red-400 bg-red-500/10 border-red-500/20';
 }
 
 export function FileEditCard({ edit, isExpanded, onToggle, onRevert }: FileEditCardProps) {
-  const actionLabel =
-    edit.action === 'create' ? 'Created' : edit.action === 'edit' ? 'Modified' : 'Deleted';
-  const actionColor =
-    edit.action === 'create'
-      ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20'
-      : edit.action === 'edit'
-        ? 'text-aqua-400 bg-aqua-500/10 border-aqua-500/20'
-        : 'text-red-400 bg-red-500/10 border-red-500/20';
+  const actionLabel = getActionLabel(edit.action);
+  const actionColor = getActionColor(edit.action);
 
   return (
     <div className="rounded-xl overflow-hidden bg-gray-800/50 border border-gray-700/30 shadow-sm w-full">
       <div className="flex items-center gap-2 px-3 py-2 hover:bg-gray-750/30 transition-colors">
-        <button onClick={onToggle} className="text-gray-600 hover:text-gray-400 flex-shrink-0">
+        <button onClick={onToggle} className="text-gray-600 hover:text-gray-400 shrink-0">
           {isExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
         </button>
         <span
           className={cn(
-            'w-5 h-5 flex items-center justify-center rounded-md text-xs flex-shrink-0',
+            'w-5 h-5 flex items-center justify-center rounded-md text-xs shrink-0',
             edit.action === 'create' && 'bg-emerald-500/15 text-emerald-400',
             edit.action === 'edit' && 'bg-aqua-500/15 text-aqua-400',
             edit.action === 'delete' && 'bg-red-500/15 text-red-400',
@@ -43,7 +49,7 @@ export function FileEditCard({ edit, isExpanded, onToggle, onRevert }: FileEditC
         </span>
         <span
           className={cn(
-            'text-[10px] px-1.5 py-0.5 rounded border font-medium whitespace-nowrap flex-shrink-0',
+            'text-[10px] px-1.5 py-0.5 rounded border font-medium whitespace-nowrap shrink-0',
             actionColor,
           )}
         >
@@ -51,7 +57,7 @@ export function FileEditCard({ edit, isExpanded, onToggle, onRevert }: FileEditC
         </span>
         <button
           onClick={onRevert}
-          className="p-1 text-gray-600 hover:text-amber-400 hover:bg-gray-700/50 rounded-md transition-colors flex-shrink-0"
+          className="p-1 text-gray-600 hover:text-amber-400 hover:bg-gray-700/50 rounded-md transition-colors shrink-0"
           title="Revert this file edit"
         >
           <RotateCcw className="w-3 h-3" />

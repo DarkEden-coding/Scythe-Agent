@@ -8,6 +8,7 @@ from app.db.models.chat import Chat
 from app.db.models.checkpoint import Checkpoint
 from app.db.models.context_item import ContextItem
 from app.db.models.file_edit import FileEdit
+from app.db.models.file_snapshot import FileSnapshot
 from app.db.models.message import Message
 from app.db.models.reasoning_block import ReasoningBlock
 from app.db.models.tool_call import ToolCall
@@ -83,6 +84,22 @@ class ChatRepository(BaseRepository):
             .order_by(ContextItem.id.asc())
         )
         return list(self.db.scalars(stmt).all())
+
+    def replace_context_items(
+        self, chat_id: str, items: list[tuple[str, str, str, int]]
+    ) -> None:
+        """Replace all context items with (id, type, label, tokens) tuples."""
+        self.db.execute(delete(ContextItem).where(ContextItem.chat_id == chat_id))
+        for item_id, item_type, label, tokens in items:
+            self.db.add(
+                ContextItem(
+                    id=item_id,
+                    chat_id=chat_id,
+                    type=item_type,
+                    label=label,
+                    tokens=tokens,
+                )
+            )
 
     def create_message(
         self,
@@ -221,6 +238,77 @@ class ChatRepository(BaseRepository):
         self.db.add(block)
         return block
 
+    def get_checkpoint_by_message(self, message_id: str) -> Checkpoint | None:
+        stmt = select(Checkpoint).where(Checkpoint.message_id == message_id)
+        return self.db.scalars(stmt).first()
+
+    def create_file_snapshot(
+        self,
+        *,
+        snapshot_id: str,
+        chat_id: str,
+        checkpoint_id: str | None,
+        file_edit_id: str | None,
+        file_path: str,
+        content: str | None,
+        timestamp: str,
+    ) -> FileSnapshot:
+        snapshot = FileSnapshot(
+            id=snapshot_id,
+            chat_id=chat_id,
+            checkpoint_id=checkpoint_id,
+            file_edit_id=file_edit_id,
+            file_path=file_path,
+            content=content,
+            timestamp=timestamp,
+        )
+        self.db.add(snapshot)
+        return snapshot
+
+    def get_file_snapshot_by_edit(self, file_edit_id: str) -> FileSnapshot | None:
+        stmt = select(FileSnapshot).where(FileSnapshot.file_edit_id == file_edit_id)
+        return self.db.scalars(stmt).first()
+
+    def list_file_snapshots_after_checkpoint(
+        self, chat_id: str, cutoff_ts: str, checkpoint_id: str
+    ) -> list[FileSnapshot]:
+        cutoff = _normalize_ts(cutoff_ts)
+        stmt = (
+            select(FileSnapshot)
+            .where(
+                FileSnapshot.chat_id == chat_id,
+                or_(
+                    FileSnapshot.timestamp > cutoff,
+                    and_(
+                        FileSnapshot.timestamp == cutoff,
+                        or_(FileSnapshot.checkpoint_id.is_(None), FileSnapshot.checkpoint_id != checkpoint_id),
+                    ),
+                ),
+            )
+            .order_by(FileSnapshot.timestamp.desc())
+        )
+        return list(self.db.scalars(stmt).all())
+
+    def delete_file_snapshots_after_checkpoint(
+        self, chat_id: str, cutoff_ts: str, checkpoint_id: str
+    ) -> None:
+        cutoff = _normalize_ts(cutoff_ts)
+        self.db.execute(
+            delete(FileSnapshot).where(
+                FileSnapshot.chat_id == chat_id,
+                or_(
+                    FileSnapshot.timestamp > cutoff,
+                    and_(
+                        FileSnapshot.timestamp == cutoff,
+                        or_(FileSnapshot.checkpoint_id.is_(None), FileSnapshot.checkpoint_id != checkpoint_id),
+                    ),
+                ),
+            )
+        )
+
+    def delete_file_snapshot(self, snapshot: FileSnapshot) -> None:
+        self.db.delete(snapshot)
+
     def delete_file_edit(self, file_edit: FileEdit) -> None:
         self.db.delete(file_edit)
 
@@ -237,7 +325,7 @@ class ChatRepository(BaseRepository):
                     Message.timestamp > cutoff,
                     and_(
                         Message.timestamp == cutoff,
-                        Message.checkpoint_id != checkpoint_id,
+                        or_(Message.checkpoint_id.is_(None), Message.checkpoint_id != checkpoint_id),
                     ),
                 ),
             )
@@ -249,7 +337,7 @@ class ChatRepository(BaseRepository):
                     ToolCall.timestamp > cutoff,
                     and_(
                         ToolCall.timestamp == cutoff,
-                        ToolCall.checkpoint_id != checkpoint_id,
+                        or_(ToolCall.checkpoint_id.is_(None), ToolCall.checkpoint_id != checkpoint_id),
                     ),
                 ),
             )
@@ -261,7 +349,7 @@ class ChatRepository(BaseRepository):
                     FileEdit.timestamp > cutoff,
                     and_(
                         FileEdit.timestamp == cutoff,
-                        FileEdit.checkpoint_id != checkpoint_id,
+                        or_(FileEdit.checkpoint_id.is_(None), FileEdit.checkpoint_id != checkpoint_id),
                     ),
                 ),
             )
@@ -273,7 +361,7 @@ class ChatRepository(BaseRepository):
                     ReasoningBlock.timestamp > cutoff,
                     and_(
                         ReasoningBlock.timestamp == cutoff,
-                        ReasoningBlock.checkpoint_id != checkpoint_id,
+                        or_(ReasoningBlock.checkpoint_id.is_(None), ReasoningBlock.checkpoint_id != checkpoint_id),
                     ),
                 ),
             )

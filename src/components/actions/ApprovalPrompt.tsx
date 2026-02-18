@@ -5,6 +5,12 @@ import type { AutoApproveRule } from '@/api';
 import { toolIcons } from './ToolCallCard';
 import { cn } from '@/utils/cn';
 
+function safeStr(v: unknown): string {
+  if (typeof v === 'string') return v;
+  if (v == null) return '';
+  return typeof v === 'object' ? JSON.stringify(v).slice(0, 50) : JSON.stringify(v);
+}
+
 function parseCommandParts(
   toolName: string,
   input: Record<string, unknown>,
@@ -12,12 +18,13 @@ function parseCommandParts(
   const parts: { label: string; value: string; key: string }[] = [];
   parts.push({ label: 'Tool', value: toolName, key: 'tool' });
   if (input.path) {
-    parts.push({ label: 'Path', value: String(input.path), key: 'path' });
-    const ext = String(input.path).split('.').pop();
+    const pathStr = safeStr(input.path);
+    parts.push({ label: 'Path', value: pathStr, key: 'path' });
+    const ext = pathStr.split('.').pop();
     if (ext) {
       parts.push({ label: 'Extension', value: `.${ext}`, key: 'ext' });
     }
-    const dir = String(input.path).split('/').slice(0, -1).join('/');
+    const dir = pathStr.split('/').slice(0, -1).join('/');
     if (dir) {
       parts.push({ label: 'Directory', value: dir, key: 'dir' });
     }
@@ -26,10 +33,10 @@ function parseCommandParts(
     parts.push({ label: 'Packages', value: (input.packages as string[]).join(', '), key: 'packages' });
   }
   if (input.context) {
-    parts.push({ label: 'Context', value: String(input.context).slice(0, 30) + '...', key: 'context' });
+    parts.push({ label: 'Context', value: safeStr(input.context).slice(0, 30) + '...', key: 'context' });
   }
   if (input.replacement) {
-    parts.push({ label: 'Replacement', value: String(input.replacement).slice(0, 30) + '...', key: 'replacement' });
+    parts.push({ label: 'Replacement', value: safeStr(input.replacement).slice(0, 30) + '...', key: 'replacement' });
   }
   return parts.slice(0, 5);
 }
@@ -43,11 +50,11 @@ function mapPartKeyToField(key: string): AutoApproveRule['field'] {
 }
 
 interface ApprovalPromptProps {
-  pendingApproval: ToolCall;
-  autoApproveRules: AutoApproveRule[];
-  onApprove: (toolCallId: string) => void;
-  onReject: (toolCallId: string) => void;
-  onUpdateAutoApproveRules?: (rules: Omit<AutoApproveRule, 'id' | 'createdAt'>[]) => Promise<void> | void;
+  readonly pendingApproval: ToolCall;
+  readonly autoApproveRules: AutoApproveRule[];
+  readonly onApprove: (toolCallId: string) => void;
+  readonly onReject: (toolCallId: string) => void;
+  readonly onUpdateAutoApproveRules?: (rules: Omit<AutoApproveRule, 'id' | 'createdAt'>[]) => Promise<void> | void;
 }
 
 export function ApprovalPrompt({
@@ -86,7 +93,7 @@ export function ApprovalPrompt({
   const commandParts = parseCommandParts(pendingApproval.name, pendingApproval.input);
 
   return (
-    <div className="flex-shrink-0 border-t border-gray-700/40 bg-gray-850 p-3">
+    <div className="shrink-0 border-t border-gray-700/40 bg-gray-850 p-3">
       <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 overflow-hidden shadow-lg">
         <div className="flex items-center gap-2 px-3 py-2 bg-amber-500/10 border-b border-amber-500/20">
           <div className="w-5 h-5 rounded-md bg-amber-500/20 flex items-center justify-center">
@@ -103,7 +110,7 @@ export function ApprovalPrompt({
             </span>
             <span className="text-xs font-mono text-gray-300">{pendingApproval.name}</span>
             <span className="text-[10px] text-gray-600 font-mono">
-              {String(pendingApproval.input.path ?? '')}
+              {safeStr(pendingApproval.input?.path)}
             </span>
           </div>
 
@@ -136,7 +143,7 @@ export function ApprovalPrompt({
                   >
                     <span
                       className={cn(
-                        'w-3 h-3 rounded-sm flex items-center justify-center flex-shrink-0 transition-colors',
+                        'w-3 h-3 rounded-sm flex items-center justify-center shrink-0 transition-colors',
                         isAutoApproved ? 'bg-emerald-500/30' : 'bg-gray-700/50',
                       )}
                     >

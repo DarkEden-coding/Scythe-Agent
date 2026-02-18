@@ -9,8 +9,7 @@ export type TimelineItem =
   | { type: 'tool'; call: ToolCall }
   | { type: 'parallel'; calls: ToolCall[] }
   | { type: 'file'; edit: FileEdit }
-  | { type: 'reasoning'; block: ReasoningBlock }
-  | { type: 'reasoning_group'; checkpointId: string; blocks: ReasoningBlock[] };
+  | { type: 'reasoning'; block: ReasoningBlock };
 
 export interface TimelineSegment {
   checkpoint: Checkpoint;
@@ -60,21 +59,15 @@ export function buildTimeline(
       allItems.push({ timestamp: fe.timestamp.getTime(), item: { type: 'file', edit: fe } });
     });
 
-    if (cpReasoningBlocks.length > 0) {
-      const ts = Math.min(...cpReasoningBlocks.map((rb) => rb.timestamp.getTime()));
+    cpReasoningBlocks.forEach((rb) => {
       allItems.push({
-        timestamp: ts,
-        item: { type: 'reasoning_group', checkpointId: checkpoint.id, blocks: cpReasoningBlocks },
+        timestamp: rb.timestamp.getTime(),
+        item: { type: 'reasoning', block: rb },
       });
-    }
+    });
 
     allItems.sort((a, b) => a.timestamp - b.timestamp);
 
     return { checkpoint, items: allItems.map((a) => a.item) };
   });
-}
-
-export function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  return `${(ms / 1000).toFixed(1)}s`;
 }
