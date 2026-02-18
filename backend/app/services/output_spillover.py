@@ -40,14 +40,15 @@ def maybe_spill(output: str, project_id: str) -> tuple[str, str | None]:
     last = "\n".join(lines[-PREVIEW_LINES:])
     abs_path = str(out_path.resolve())
 
-    summarized = f"""{first}
+    summarized = f"""You are being shown the first {PREVIEW_LINES} and last {PREVIEW_LINES} lines of this output ({total} lines total). Full output saved to: {abs_path}
 
-... [output truncated: {total} lines total; full output saved] ...
+{first}
+
+... [truncated] ...
 
 {last}
 
 ---
-Full output saved to: {abs_path}
-Use the read_file tool with start and end (1-based line numbers) to read specific sections."""
+Recommended: Use the grep search tool on the file first to locate relevant sections, then use the read_file tool with start and end (1-based line numbers) to read those sections."""
 
     return summarized, abs_path

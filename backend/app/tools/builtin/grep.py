@@ -22,8 +22,10 @@ def _resolve_search_path(
         base = resolve_path(path_raw.strip(), project_root=project_root)
     except ValueError as exc:
         return None, str(exc)
-    if not base.exists() or not base.is_dir():
-        return None, f"Directory not found: {base}"
+    if not base.exists():
+        return None, f"Path not found: {base}"
+    if not base.is_dir() and not base.is_file():
+        return None, f"Path is neither a file nor directory: {base}"
     return base, None
 
 
@@ -57,7 +59,7 @@ class GrepTool:
     name = "grep"
     description = (
         "Search for a pattern in files using ripgrep. "
-        "path must be absolute when provided (e.g. /path/to/project). "
+        "path must be absolute when provided (file or directory). "
         "Omit path to search project root. Supports regex patterns."
     )
     input_schema = {
@@ -65,7 +67,7 @@ class GrepTool:
         "required": ["pattern"],
         "properties": {
             "pattern": {"type": "string", "description": "Search pattern (regex)"},
-            "path": {"type": "string", "description": "Directory to search in"},
+            "path": {"type": "string", "description": "File or directory to search in"},
             "case_insensitive": {"type": "boolean", "description": "Ignore case", "default": False},
             "type": {"type": "string", "description": "File type filter (e.g. py, ts, js)"},
             "files_only": {"type": "boolean", "description": "Only return matching file paths", "default": False},
