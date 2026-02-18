@@ -16,6 +16,7 @@ class ToolFileEdit:
 class ToolResult:
     output: str
     file_edits: list[ToolFileEdit]
+    ok: bool = True
 
 
 class Tool(Protocol):

@@ -50,14 +50,14 @@ class ExecuteCommandTool:
         cwd_raw = payload.get("cwd") or None
         timeout = min(int(payload.get("timeout", 30)), 120)
         if not command:
-            return ToolResult(output="Missing command", file_edits=[])
+            return ToolResult(output="Missing command", file_edits=[], ok=False)
 
         cwd = None
         if cwd_raw:
             try:
                 cwd = str(resolve_path(cwd_raw.strip(), project_root=project_root))
             except ValueError as exc:
-                return ToolResult(output=str(exc), file_edits=[])
+                return ToolResult(output=str(exc), file_edits=[], ok=False)
         elif project_root:
             cwd = str(Path(project_root).resolve())
 
@@ -68,6 +68,7 @@ class ExecuteCommandTool:
                 return ToolResult(
                     output=f"Blocked: command matches restricted pattern '{pattern}'",
                     file_edits=[],
+                    ok=False,
                 )
 
         try:
@@ -81,10 +82,12 @@ class ExecuteCommandTool:
         except asyncio.TimeoutError:
             proc.kill()
             return ToolResult(
-                output=f"Command timed out after {timeout}s", file_edits=[]
+                output=f"Command timed out after {timeout}s",
+                file_edits=[],
+                ok=False,
             )
         except Exception as exc:
-            return ToolResult(output=f"Command failed: {exc}", file_edits=[])
+            return ToolResult(output=f"Command failed: {exc}", file_edits=[], ok=False)
 
         out = (
             (stdout or b"")[:_MAX_OUTPUT_BYTES]

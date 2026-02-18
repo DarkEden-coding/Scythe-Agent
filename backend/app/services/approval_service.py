@@ -127,7 +127,7 @@ class ApprovalService:
             )
             self.chat_repo.set_tool_call_status(
                 tool_call,
-                status="completed",
+                status="error" if not result.ok else "completed",
                 output_text=output_to_store,
                 duration_ms=duration_ms,
                 output_file_path=output_file_path,

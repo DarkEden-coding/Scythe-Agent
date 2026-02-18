@@ -106,16 +106,16 @@ class EditFileTool:
         try:
             target = resolve_path(payload.get("path", ""), project_root=project_root)
         except ValueError as exc:
-            return ToolResult(output=str(exc), file_edits=[])
+            return ToolResult(output=str(exc), file_edits=[], ok=False)
 
         search = str(payload.get("search", ""))
         replace = str(payload.get("replace", ""))
 
         if not search:
-            return ToolResult(output="search must be non-empty", file_edits=[])
+            return ToolResult(output="search must be non-empty", file_edits=[], ok=False)
 
         if not target.exists():
-            return ToolResult(output=f"File not found: {target}", file_edits=[])
+            return ToolResult(output=f"File not found: {target}", file_edits=[], ok=False)
 
         content = target.read_text(encoding="utf-8")
         used_fuzzy = False
@@ -129,6 +129,7 @@ class EditFileTool:
             return ToolResult(
                 output="Search string not found (exact or fuzzy match).",
                 file_edits=[],
+                ok=False,
             )
 
         new_content, edit_start, edit_end = result

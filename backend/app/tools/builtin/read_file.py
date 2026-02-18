@@ -28,9 +28,9 @@ class ReadFileTool:
         try:
             path = resolve_path(payload.get("path", ""), project_root=project_root)
         except ValueError as exc:
-            return ToolResult(output=str(exc), file_edits=[])
+            return ToolResult(output=str(exc), file_edits=[], ok=False)
         if not path.exists() or not path.is_file():
-            return ToolResult(output=f"File not found: {path}", file_edits=[])
+            return ToolResult(output=f"File not found: {path}", file_edits=[], ok=False)
 
         start_val = payload.get("start")
         end_val = payload.get("end")
@@ -47,11 +47,13 @@ class ReadFileTool:
                 return ToolResult(
                     output="start and end must be integers (1-based line numbers).",
                     file_edits=[],
+                    ok=False,
                 )
             if start_idx < 1 or end_idx < 1:
                 return ToolResult(
                     output="start and end must be >= 1 (1-based line numbers).",
                     file_edits=[],
+                    ok=False,
                 )
             start_idx = min(start_idx, len(lines))
             end_idx = min(end_idx, len(lines))

@@ -84,17 +84,18 @@ class GrepTool:
             return ToolResult(
                 output="ripgrep (rg) is not installed. Install it to use the grep tool.",
                 file_edits=[],
+                ok=False,
             )
 
         pattern = str(payload.get("pattern", "")).strip()
         if not pattern:
-            return ToolResult(output="Missing pattern", file_edits=[])
+            return ToolResult(output="Missing pattern", file_edits=[], ok=False)
 
         base, err = _resolve_search_path(
             payload.get("path") or "", project_root
         )
         if err or base is None:
-            return ToolResult(output=err or "Invalid path", file_edits=[])
+            return ToolResult(output=err or "Invalid path", file_edits=[], ok=False)
 
         args = _build_rg_args(payload, pattern, base)
         try:
@@ -105,9 +106,9 @@ class GrepTool:
             )
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=60)
         except asyncio.TimeoutError:
-            return ToolResult(output="Grep timed out after 60s", file_edits=[])
+            return ToolResult(output="Grep timed out after 60s", file_edits=[], ok=False)
         except Exception as exc:
-            return ToolResult(output=f"Grep failed: {exc}", file_edits=[])
+            return ToolResult(output=f"Grep failed: {exc}", file_edits=[], ok=False)
 
         output = _interpret_grep_result(
             proc.returncode if proc.returncode is not None else 1,

@@ -68,14 +68,15 @@ class ListFilesTool:
                 return ToolResult(
                     output="path is required when no project is selected; use an absolute path.",
                     file_edits=[],
+                    ok=False,
                 )
             path_raw = str(Path(project_root).resolve())
         try:
             base = resolve_path(path_raw.strip(), project_root=project_root)
         except ValueError as exc:
-            return ToolResult(output=str(exc), file_edits=[])
+            return ToolResult(output=str(exc), file_edits=[], ok=False)
         if not base.exists() or not base.is_dir():
-            return ToolResult(output=f"Directory not found: {base}", file_edits=[])
+            return ToolResult(output=f"Directory not found: {base}", file_edits=[], ok=False)
 
         if bool(payload.get("recursive", False)):
             items = _walk_with_depth_and_ignore(base, _MAX_DEPTH, _MAX_ENTRIES)
