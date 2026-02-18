@@ -12,7 +12,6 @@ from app.schemas.settings import (
     OpenRouterConfigResponse,
     GroqConfigResponse,
     SetApiKeyResponse,
-    SetSystemPromptResponse,
     TestConnectionResponse,
     SyncModelsResponse,
 )
@@ -29,7 +28,9 @@ def get_settings(db: Session = Depends(get_db)):
     except ValueError as exc:
         return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
     except Exception:
-        return JSONResponse(status_code=500, content=err("Internal server error").model_dump())
+        return JSONResponse(
+            status_code=500, content=err("Internal server error").model_dump()
+        )
 
 
 @router.get("/auto-approve")
@@ -40,7 +41,9 @@ def get_auto_approve(db: Session = Depends(get_db)):
     except ValueError as exc:
         return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
     except Exception:
-        return JSONResponse(status_code=500, content=err("Internal server error").model_dump())
+        return JSONResponse(
+            status_code=500, content=err("Internal server error").model_dump()
+        )
 
 
 @router.put("/auto-approve")
@@ -51,7 +54,9 @@ def set_auto_approve(request: SetAutoApproveRequest, db: Session = Depends(get_d
     except ValueError as exc:
         return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
     except Exception:
-        return JSONResponse(status_code=500, content=err("Internal server error").model_dump())
+        return JSONResponse(
+            status_code=500, content=err("Internal server error").model_dump()
+        )
 
 
 @router.put("/system-prompt")
@@ -63,7 +68,9 @@ def set_system_prompt(request: SetSystemPromptRequest, db: Session = Depends(get
     except ValueError as exc:
         return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
     except Exception:
-        return JSONResponse(status_code=500, content=err("Internal server error").model_dump())
+        return JSONResponse(
+            status_code=500, content=err("Internal server error").model_dump()
+        )
 
 
 @router.put("/model")
@@ -74,7 +81,9 @@ def set_model(request: SetModelRequest, db: Session = Depends(get_db)):
     except ValueError as exc:
         return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
     except Exception:
-        return JSONResponse(status_code=500, content=err("Internal server error").model_dump())
+        return JSONResponse(
+            status_code=500, content=err("Internal server error").model_dump()
+        )
 
 
 # OpenRouter configuration endpoints
@@ -86,11 +95,15 @@ def get_openrouter_config(db: Session = Depends(get_db)):
         response = OpenRouterConfigResponse(**config)
         return ok(response.model_dump())
     except Exception as exc:
-        return JSONResponse(status_code=500, content=err(f"Failed to get config: {exc}").model_dump())
+        return JSONResponse(
+            status_code=500, content=err(f"Failed to get config: {exc}").model_dump()
+        )
 
 
 @router.put("/openrouter/api-key")
-async def set_openrouter_api_key(request: SetApiKeyRequest, db: Session = Depends(get_db)):
+async def set_openrouter_api_key(
+    request: SetApiKeyRequest, db: Session = Depends(get_db)
+):
     """Set OpenRouter API key and trigger model sync."""
     try:
         service = SettingsService(db)
@@ -111,7 +124,9 @@ async def set_openrouter_api_key(request: SetApiKeyRequest, db: Session = Depend
     except ValueError as exc:
         return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
     except Exception as exc:
-        return JSONResponse(status_code=500, content=err(f"Failed to set API key: {exc}").model_dump())
+        return JSONResponse(
+            status_code=500, content=err(f"Failed to set API key: {exc}").model_dump()
+        )
 
 
 @router.post("/openrouter/test")
@@ -123,7 +138,9 @@ async def test_openrouter_connection(db: Session = Depends(get_db)):
         response = TestConnectionResponse(success=success, error=error)
         return ok(response.model_dump())
     except Exception as exc:
-        return JSONResponse(status_code=500, content=err(f"Test failed: {exc}").model_dump())
+        return JSONResponse(
+            status_code=500, content=err(f"Test failed: {exc}").model_dump()
+        )
 
 
 @router.post("/openrouter/sync")
@@ -137,7 +154,9 @@ async def sync_openrouter_models(db: Session = Depends(get_db)):
     except ValueError as exc:
         return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
     except Exception as exc:
-        return JSONResponse(status_code=500, content=err(f"Sync failed: {exc}").model_dump())
+        return JSONResponse(
+            status_code=500, content=err(f"Sync failed: {exc}").model_dump()
+        )
 
 
 # Groq configuration endpoints
@@ -149,7 +168,9 @@ def get_groq_config(db: Session = Depends(get_db)):
         response = GroqConfigResponse(**config)
         return ok(response.model_dump())
     except Exception as exc:
-        return JSONResponse(status_code=500, content=err(f"Failed to get config: {exc}").model_dump())
+        return JSONResponse(
+            status_code=500, content=err(f"Failed to get config: {exc}").model_dump()
+        )
 
 
 @router.put("/groq/api-key")
@@ -168,7 +189,9 @@ async def set_groq_api_key(request: SetApiKeyRequest, db: Session = Depends(get_
     except ValueError as exc:
         return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
     except Exception as exc:
-        return JSONResponse(status_code=500, content=err(f"Failed to set API key: {exc}").model_dump())
+        return JSONResponse(
+            status_code=500, content=err(f"Failed to set API key: {exc}").model_dump()
+        )
 
 
 @router.post("/groq/test")
@@ -180,7 +203,9 @@ async def test_groq_connection(db: Session = Depends(get_db)):
         response = TestConnectionResponse(success=success, error=error)
         return ok(response.model_dump())
     except Exception as exc:
-        return JSONResponse(status_code=500, content=err(f"Test failed: {exc}").model_dump())
+        return JSONResponse(
+            status_code=500, content=err(f"Test failed: {exc}").model_dump()
+        )
 
 
 @router.post("/groq/sync")
@@ -194,4 +219,6 @@ async def sync_groq_models(db: Session = Depends(get_db)):
     except ValueError as exc:
         return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
     except Exception as exc:
-        return JSONResponse(status_code=500, content=err(f"Sync failed: {exc}").model_dump())
+        return JSONResponse(
+            status_code=500, content=err(f"Sync failed: {exc}").model_dump()
+        )

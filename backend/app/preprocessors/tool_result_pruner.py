@@ -25,9 +25,5 @@ class ToolResultPrunerPreprocessor:
                 content = msg.get("content", "")
                 if not isinstance(content, str) or len(content) <= self._max_chars:
                     continue
-                # Spillover messages already condensed by output_spillover; do not truncate
-                # or we may lose "Full output saved to: <path>" needed to access middle content
-                if "Full output saved to:" in content:
-                    continue
                 msg["content"] = content[: self._max_chars] + "\n... [truncated]"
         return ctx

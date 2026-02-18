@@ -53,20 +53,29 @@ class ChatHistoryAssembler:
         raw_file_edits = self._chat_repo.list_file_edits(chat_id)
         raw_reasoning_blocks = self._chat_repo.list_reasoning_blocks(chat_id)
 
-        tool_calls = [
-            ToolCallOut(
-                id=t.id,
-                name=t.name,
-                status=t.status,
-                input=safe_parse_json(t.input_json),
-                output=t.output_text,
-                timestamp=t.timestamp,
-                duration=t.duration_ms,
-                isParallel=bool(t.parallel) if t.parallel is not None else None,
-                parallelGroupId=t.parallel_group,
+        tool_calls = []
+        for t in raw_tool_calls:
+            spill = None
+            if t.output_file_path:
+                spill = (
+                    f"The preceding tool output was truncated. "
+                    f"Full output saved to: {t.output_file_path}. "
+                    f"Use grep to locate relevant sections, then read_file with start/end (1-based) to read them."
+                )
+            tool_calls.append(
+                ToolCallOut(
+                    id=t.id,
+                    name=t.name,
+                    status=t.status,
+                    input=safe_parse_json(t.input_json),
+                    output=t.output_text,
+                    timestamp=t.timestamp,
+                    duration=t.duration_ms,
+                    isParallel=bool(t.parallel) if t.parallel is not None else None,
+                    parallelGroupId=t.parallel_group,
+                    spillInstruction=spill,
+                )
             )
-            for t in raw_tool_calls
-        ]
 
         file_edits = [
             FileEditOut(

@@ -19,6 +19,7 @@ class ToolCallOut(BaseModel):
     duration: int | None = None
     isParallel: bool | None = None
     parallelGroupId: str | None = None
+    spillInstruction: str | None = None
 
 
 class FileEditOut(BaseModel):

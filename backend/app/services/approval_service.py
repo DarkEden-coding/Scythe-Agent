@@ -88,10 +88,10 @@ class ApprovalService:
             output_to_store = result.output
             output_file_path = None
             if chat:
-                spill_content, spill_path = maybe_spill(
+                preview, spill_path, _ = maybe_spill(
                     result.output, chat.project_id
                 )
-                output_to_store = spill_content
+                output_to_store = preview
                 output_file_path = spill_path
 
             for idx, edit in enumerate(result.file_edits):
@@ -203,6 +203,13 @@ class ApprovalService:
         return tool_out
 
     def _tool_call_out(self, tool_call) -> ToolCallOut:
+        spill_instruction = None
+        if tool_call.output_file_path:
+            spill_instruction = (
+                f"The preceding tool output was truncated. "
+                f"Full output saved to: {tool_call.output_file_path}. "
+                f"Use grep to locate relevant sections, then read_file with start/end (1-based) to read them."
+            )
         return ToolCallOut(
             id=tool_call.id,
             name=tool_call.name,
@@ -215,4 +222,5 @@ class ApprovalService:
             if tool_call.parallel is not None
             else None,
             parallelGroupId=tool_call.parallel_group,
+            spillInstruction=spill_instruction,
         )

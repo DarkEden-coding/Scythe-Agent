@@ -13,16 +13,17 @@ LARGE_OUTPUT_LINE_THRESHOLD = 1000
 PREVIEW_LINES = 50
 
 
-def maybe_spill(output: str, project_id: str) -> tuple[str, str | None]:
+def maybe_spill(output: str, project_id: str) -> tuple[str, str | None, str | None]:
     """
-    If output exceeds threshold lines, spill to file and return summarized content.
+    If output exceeds threshold lines, spill to file and return preview + instruction.
 
     Returns:
-        (content_for_agent, full_file_path | None). If no spill, path is None.
+        (preview_content, full_file_path | None, spill_instruction | None).
+        If no spill, path and instruction are None.
     """
     lines = output.splitlines()
     if len(lines) <= LARGE_OUTPUT_LINE_THRESHOLD:
-        return output, None
+        return output, None, None
 
     base_dir = get_tool_outputs_root() / "projects" / project_id
     output_uuid = uuid.uuid4().hex
@@ -33,24 +34,22 @@ def maybe_spill(output: str, project_id: str) -> tuple[str, str | None]:
         out_path.write_text(output, encoding="utf-8")
     except OSError as exc:
         logger.warning("Failed to spill tool output to %s: %s", out_path, exc)
-        return output, None
+        return output, None, None
 
     total = len(lines)
     first = "\n".join(lines[:PREVIEW_LINES])
     last = "\n".join(lines[-PREVIEW_LINES:])
     abs_path = str(out_path.resolve())
 
-    summarized = f"""You are being shown the first {PREVIEW_LINES} and last {PREVIEW_LINES} lines of this output ({total} lines total). Full output saved to: {abs_path}
+    preview = f"""{first}
 
-{first}
+... [truncated; {total} lines total] ...
 
-... [truncated] ...
+{last}"""
 
-{last}
-
----
-Recommended: Use the grep search tool on the file first to locate relevant sections, then use the read_file tool with start and end (1-based line numbers) to read those sections.
-
-Full output saved to: {abs_path}"""
-
-    return summarized, abs_path
+    instruction = (
+        f"The preceding tool output was truncated ({total} lines). "
+        f"Full output saved to: {abs_path}. "
+        f"Use grep to locate relevant sections, then read_file with start/end (1-based) to read them."
+    )
+    return preview, abs_path, instruction

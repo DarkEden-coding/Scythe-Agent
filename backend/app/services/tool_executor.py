@@ -46,7 +46,8 @@ class ToolExecutor:
                 )
                 for tc in tool_calls_from_stream
             ]
-            return [r for r in await asyncio.gather(*tasks) if r is not None]
+            raw = [r for r in await asyncio.gather(*tasks) if r is not None]
+            return self._flatten_results(raw)
 
         results = []
         for tc in tool_calls_from_stream:
@@ -55,7 +56,29 @@ class ToolExecutor:
             )
             if r:
                 results.append(r)
-        return results
+        return self._flatten_results(results)
+
+    def _flatten_results(
+        self, raw: list[dict | list[dict]]
+    ) -> list[dict]:
+        """Flatten tool results; each item may be one message or [tool_msg, user_msg]."""
+        out: list[dict] = []
+        for r in raw:
+            if isinstance(r, list):
+                out.extend(r)
+            else:
+                out.append(r)
+        return out
+
+    def _tool_result_messages(
+        self, tc_id: str, output: str, spill_instruction: str | None
+    ) -> dict | list[dict]:
+        """Build tool result message(s); adds separate user msg when spill instruction present."""
+        tool_msg = {"role": "tool", "tool_call_id": tc_id, "content": output}
+        if spill_instruction:
+            user_msg = {"role": "user", "content": spill_instruction}
+            return [tool_msg, user_msg]
+        return tool_msg
 
     def _create_tool_call_row(
         self,
@@ -88,8 +111,8 @@ class ToolExecutor:
         checkpoint_id: str,
         parallel_group: str | None,
         is_parallel: bool,
-    ) -> dict | None:
-        """Execute a single tool call."""
+    ) -> dict | list[dict] | None:
+        """Execute a single tool call. Returns one message dict or [tool_msg, user_msg] when spill."""
         tc_id = tc.get("id", "")
         fn = tc.get("function", {}) or {}
         tc_name = fn.get("name", "unknown")
@@ -140,7 +163,7 @@ class ToolExecutor:
         tc_name: str,
         tc_input: dict | None,
         parallel_group: str,
-    ) -> dict | None:
+    ) -> dict | list[dict] | None:
         """Run approve() in an isolated session for parallel execution."""
         sf = self._session_factory
         if sf is None:
@@ -151,7 +174,9 @@ class ToolExecutor:
                 tool_out, _ = await approval_svc.approve(
                     chat_id=chat_id, tool_call_id=tc_db_id
                 )
-                return {"role": "tool", "tool_call_id": tc_id, "content": tool_out.output or ""}
+                return self._tool_result_messages(
+                    tc_id, tool_out.output or "", tool_out.spillInstruction
+                )
             except Exception as exc:
                 return await self._handle_approve_error(
                     exc, tc_db_id, tc_name, tc_input, tc_id, chat_id, parallel_group
@@ -165,13 +190,15 @@ class ToolExecutor:
         tc_db_id: str,
         tc_name: str,
         tc_input: dict | None,
-    ) -> dict | None:
+    ) -> dict | list[dict] | None:
         """Run approve() using the shared approval service (sequential)."""
         try:
             tool_out, _ = await self._approval_svc.approve(
                 chat_id=chat_id, tool_call_id=tc_db_id
             )
-            return {"role": "tool", "tool_call_id": tc_id, "content": tool_out.output or ""}
+            return self._tool_result_messages(
+                tc_id, tool_out.output or "", tool_out.spillInstruction
+            )
         except Exception as exc:
             return await self._handle_approve_error(
                 exc, tc_db_id, tc_name, tc_input, tc_id, chat_id, None
@@ -186,7 +213,7 @@ class ToolExecutor:
         tc_id: str,
         chat_id: str,
         parallel_group: str | None = None,
-    ) -> dict | None:
+    ) -> dict | list[dict] | None:
         """Handle exception from approve(); update DB and publish."""
         tc_row = self._chat_repo.get_tool_call(tc_db_id)
         err_msg = str(exc)
@@ -216,6 +243,7 @@ class ToolExecutor:
             duration=duration_ms,
             isParallel=bool(parallel_group) if parallel_group else None,
             parallelGroupId=parallel_group,
+            spillInstruction=None,
         )
         await self._event_bus.publish(
             chat_id,
@@ -233,7 +261,7 @@ class ToolExecutor:
         tc_name: str,
         tc_input: dict | None,
         parallel_group: str | None,
-    ) -> dict | None:
+    ) -> dict | list[dict] | None:
         """Wait for manual approval (execution happens in approve endpoint)."""
         tc_ts = utc_now_iso()
         payload = {
@@ -263,4 +291,11 @@ class ToolExecutor:
             output = f"Rejected or timed out: {result}"
             if tc_row and tc_row.status == "rejected" and tc_row.output_text:
                 output = tc_row.output_text
-        return {"role": "tool", "tool_call_id": tc_id, "content": output}
+        spill = None
+        if tc_row and tc_row.output_file_path:
+            spill = (
+                f"The preceding tool output was truncated. "
+                f"Full output saved to: {tc_row.output_file_path}. "
+                f"Use grep to locate relevant sections, then read_file with start/end (1-based) to read them."
+            )
+        return self._tool_result_messages(tc_id, output, spill)
