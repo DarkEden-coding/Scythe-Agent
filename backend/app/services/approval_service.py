@@ -15,6 +15,7 @@ from app.utils.time import utc_now_iso
 from app.utils.auto_approve import matches_auto_approve_rules
 from app.utils.json_helpers import safe_parse_json
 from app.services.event_bus import EventBus, get_event_bus
+from app.services.output_spillover import maybe_spill
 from app.tools.registry import ToolRegistry, get_tool_registry
 from app.utils.ids import generate_id
 
@@ -73,6 +74,15 @@ class ApprovalService:
                     project_root = project.path
             result = await tool.run(payload, project_root=project_root)
 
+            output_to_store = result.output
+            output_file_path = None
+            if chat:
+                spill_content, spill_path = maybe_spill(
+                    result.output, chat.project_id
+                )
+                output_to_store = spill_content
+                output_file_path = spill_path
+
             for idx, edit in enumerate(result.file_edits):
                 edit_ts = utc_now_iso()
                 file_edit_id = f"fe-{tool_call.id}-{idx}"
@@ -118,8 +128,9 @@ class ApprovalService:
             self.chat_repo.set_tool_call_status(
                 tool_call,
                 status="completed",
-                output_text=result.output,
+                output_text=output_to_store,
                 duration_ms=duration_ms,
+                output_file_path=output_file_path,
             )
             self.chat_repo.commit()
         except Exception as exc:

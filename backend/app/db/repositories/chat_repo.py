@@ -205,11 +205,14 @@ class ChatRepository(BaseRepository):
         *,
         status: str,
         output_text: str | None = None,
+        output_file_path: str | None = None,
         duration_ms: int | None = None,
     ) -> ToolCall:
         tool_call.status = status
         if output_text is not None:
             tool_call.output_text = output_text
+        if output_file_path is not None:
+            tool_call.output_file_path = output_file_path
         if duration_ms is not None:
             tool_call.duration_ms = duration_ms
         return tool_call
@@ -308,6 +311,25 @@ class ChatRepository(BaseRepository):
 
     def delete_file_snapshot(self, snapshot: FileSnapshot) -> None:
         self.db.delete(snapshot)
+
+    def list_tool_calls_after_checkpoint(
+        self, chat_id: str, cutoff_timestamp: str, checkpoint_id: str
+    ) -> list[ToolCall]:
+        cutoff = _normalize_ts(cutoff_timestamp)
+        stmt = (
+            select(ToolCall)
+            .where(
+                ToolCall.chat_id == chat_id,
+                or_(
+                    ToolCall.timestamp > cutoff,
+                    and_(
+                        ToolCall.timestamp == cutoff,
+                        or_(ToolCall.checkpoint_id.is_(None), ToolCall.checkpoint_id != checkpoint_id),
+                    ),
+                ),
+            )
+        )
+        return list(self.db.scalars(stmt).all())
 
     def delete_file_edit(self, file_edit: FileEdit) -> None:
         self.db.delete(file_edit)

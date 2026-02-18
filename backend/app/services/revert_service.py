@@ -28,6 +28,14 @@ class RevertService:
         if checkpoint is None or checkpoint.chat_id != chat_id:
             raise ValueError(f"Checkpoint not found: {checkpoint_id}")
 
+        tool_calls_to_remove = self.repo.list_tool_calls_after_checkpoint(
+            chat_id, checkpoint.timestamp, checkpoint_id
+        )
+        for tc in tool_calls_to_remove:
+            if tc.output_file_path:
+                spill_path = Path(tc.output_file_path)
+                spill_path.unlink(missing_ok=True)
+
         # Restore files from snapshots (reverse chronological so last changes are undone first)
         snapshots = self.repo.list_file_snapshots_after_checkpoint(
             chat_id, checkpoint.timestamp, checkpoint_id

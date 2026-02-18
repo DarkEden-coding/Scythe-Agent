@@ -4,6 +4,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
+# backend/app/tools/ -> backend/
+_BACKEND_ROOT = Path(__file__).resolve().parent.parent.parent
+TOOL_OUTPUTS_ROOT = _BACKEND_ROOT / "tool_outputs"
+
+
+def get_tool_outputs_root() -> Path:
+    """Return the directory for spilled tool outputs (backend/tool_outputs)."""
+    return TOOL_OUTPUTS_ROOT
+
+
 _BLOCKED_PREFIXES = [
     "/etc",
     "/var",
@@ -41,6 +51,15 @@ def resolve_path(
             "overview (e.g. /path/to/project/src/file.py)."
         )
     target = target.resolve()
+    for prefix in _BLOCKED_PREFIXES:
+        if str(target).startswith(prefix):
+            raise ValueError(f"Access denied: {raw_path} is in a restricted directory")
+    try:
+        target.relative_to(get_tool_outputs_root())
+    except ValueError:
+        pass
+    else:
+        return target
     if project_root:
         base = Path(project_root).resolve()
         try:
@@ -50,7 +69,4 @@ def resolve_path(
                 f"Path {raw_path} is outside the project root. "
                 f"Only paths under {base} are allowed."
             )
-    for prefix in _BLOCKED_PREFIXES:
-        if str(target).startswith(prefix):
-            raise ValueError(f"Access denied: {raw_path} is in a restricted directory")
     return target

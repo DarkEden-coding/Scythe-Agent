@@ -88,6 +88,7 @@ desktop.ini
 
 # Project-specific
 plans/
+backend/tool_outputs/
 
 # Temporary files
 tmp/
