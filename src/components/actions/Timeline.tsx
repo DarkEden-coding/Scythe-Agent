@@ -1,5 +1,6 @@
 import { ChevronDown, ChevronRight, GitBranch, RotateCcw } from 'lucide-react';
 import type { ToolCall, FileEdit, Checkpoint, ReasoningBlock } from '@/types';
+import { useAutoScroll } from '@/hooks/useAutoScroll';
 import { buildTimeline, type TimelineItem } from './buildTimeline';
 import { ToolCallCard, statusIcons } from './ToolCallCard';
 import { FileEditCard } from './FileEditCard';
@@ -112,9 +113,15 @@ export function Timeline({
   onRevertCheckpoint,
 }: TimelineProps) {
   const timeline = buildTimeline(checkpoints, toolCalls, fileEdits, reasoningBlocks);
+  const scrollTrigger = { toolCalls, fileEdits, reasoningBlocks };
+  const scroll = useAutoScroll(scrollTrigger);
 
   return (
-    <div className="flex-1 overflow-y-auto p-3 space-y-4">
+    <div
+      ref={scroll.ref}
+      onScroll={scroll.onScroll}
+      className="flex-1 overflow-y-auto p-3 space-y-4"
+    >
       {timeline.map(({ checkpoint, items }) => {
         const isCollapsed = collapsedCheckpoints.has(checkpoint.id);
 

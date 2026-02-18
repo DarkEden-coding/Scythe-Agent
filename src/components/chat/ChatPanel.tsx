@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useHashTab } from '@/hooks/useHashTab';
+import { useAutoScroll } from '@/hooks/useAutoScroll';
 import {
   MessageSquare,
   FolderOpen,
@@ -66,6 +67,8 @@ export function ChatPanel({
   const [showNewModal, setShowNewModal] = useState(false);
   const [chatToDelete, setChatToDelete] = useState<ProjectChat | null>(null);
   const [deleteInProgress, setDeleteInProgress] = useState(false);
+
+  const chatScroll = useAutoScroll(messages, { enabled: activeTab === 'chat' });
 
   useEffect(() => {
     setActiveChatId(externalActiveChatId ?? null);
@@ -186,7 +189,11 @@ export function ChatPanel({
 
       {activeTab === 'chat' && (
         <>
-          <div className="flex-1 overflow-y-auto p-4 space-y-4 relative">
+          <div
+            ref={chatScroll.ref}
+            onScroll={chatScroll.onScroll}
+            className="flex-1 overflow-y-auto p-4 space-y-4 relative"
+          >
             {chatLoading && (
               <div className="absolute inset-0 flex items-center justify-center bg-gray-900/50 z-10">
                 <div className="w-6 h-6 border-2 border-aqua-400 border-t-transparent rounded-full animate-spin" />
