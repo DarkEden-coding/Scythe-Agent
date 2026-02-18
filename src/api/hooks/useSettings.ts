@@ -72,6 +72,25 @@ export function useSettings(client: ApiClient = defaultApi) {
     });
   }, [client]);
 
+  const setSystemPrompt = useCallback(
+    async (systemPrompt: string) => {
+      const res = await client.setSystemPrompt({ systemPrompt });
+      if (res.ok) {
+        if (settingsCache) {
+          settingsCache = {
+            ...settingsCache,
+            data: { ...settingsCache.data, systemPrompt: res.data.systemPrompt },
+          };
+        }
+        setState((s) =>
+          s.data ? { ...s, data: { ...s.data, systemPrompt: res.data.systemPrompt } } : s,
+        );
+      }
+      return res;
+    },
+    [client],
+  );
+
   const changeModel = useCallback(
     async (model: string) => {
       const res = await client.changeModel({ model });
@@ -114,10 +133,12 @@ export function useSettings(client: ApiClient = defaultApi) {
     modelsByProvider: state.data?.modelsByProvider ?? {},
     modelMetadata: state.data?.modelMetadata ?? {},
     contextLimit: state.data?.contextLimit ?? 128_000,
+    systemPrompt: state.data?.systemPrompt ?? '',
     autoApproveRules,
     changeModel,
     updateAutoApproveRules,
     getAutoApproveRules,
+    setSystemPrompt,
     prefetchSettings,
   };
 }

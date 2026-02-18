@@ -54,6 +54,8 @@ import type {
   OpenRouterConfig,
   SetApiKeyRequest,
   SetApiKeyResponse,
+  SetSystemPromptRequest,
+  SetSystemPromptResponse,
   TestConnectionResponse,
   SyncModelsResponse,
 } from './types';
@@ -506,6 +508,11 @@ export class ApiClient {
   /** Manually trigger OpenRouter model sync. */
   async syncOpenRouterModels(): Promise<ApiResponse<SyncModelsResponse>> {
     return this.request('POST', '/settings/openrouter/sync');
+  }
+
+  /** Set custom system prompt. Empty string resets to default. */
+  async setSystemPrompt(req: SetSystemPromptRequest): Promise<ApiResponse<SetSystemPromptResponse>> {
+    return this.request('PUT', '/settings/system-prompt', req);
   }
 
   /* ── Agent event stream (SSE / WebSocket) ────────────────────── */

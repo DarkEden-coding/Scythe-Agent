@@ -1,6 +1,6 @@
 import { Bot, Terminal, ChevronDown } from 'lucide-react';
 import { ChatTabBar } from './ChatTabBar';
-import { ProviderSettingsDropdown, type ProviderId } from '@/components/ProviderSettingsDropdown';
+import { ProviderSettingsDropdown, type SettingsTabId } from '@/components/ProviderSettingsDropdown';
 import type { ProjectChat } from '@/types';
 
 interface AppHeaderProps {
@@ -13,7 +13,7 @@ interface AppHeaderProps {
   readonly onOpenModelPicker: () => void;
   readonly onPrefetchSettings: () => void;
   readonly currentModel: string;
-  readonly onSelectSettingsProvider: (id: ProviderId | null) => void;
+  readonly onSelectSettingsProvider: (id: SettingsTabId) => void;
   readonly projectsLoading?: boolean;
   readonly chatLoading?: boolean;
 }

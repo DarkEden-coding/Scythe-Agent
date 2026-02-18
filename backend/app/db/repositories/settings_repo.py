@@ -67,6 +67,22 @@ class SettingsRepository(BaseRepository):
             return "https://openrouter.ai/api/v1"
         return settings.openrouter_base_url
 
+    def get_system_prompt(self) -> str | None:
+        """Get custom system prompt from settings, or None to use default."""
+        settings = self.get_settings()
+        if settings is None or not settings.system_prompt:
+            return None
+        return settings.system_prompt
+
+    def set_system_prompt(self, prompt: str | None, updated_at: str) -> Settings:
+        """Set custom system prompt. Pass None or empty to reset to default."""
+        settings = self.get_settings()
+        if settings is None:
+            raise ValueError("Settings record missing")
+        settings.system_prompt = prompt if prompt and prompt.strip() else None
+        settings.updated_at = updated_at
+        return settings
+
     def list_auto_approve_rules(self) -> list[AutoApproveRule]:
         return list(self.db.scalars(select(AutoApproveRule).order_by(AutoApproveRule.created_at.asc())).all())
 

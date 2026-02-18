@@ -21,6 +21,7 @@ class GetSettingsResponse(BaseModel):
     modelMetadata: dict[str, ModelMetadata]
     contextLimit: int
     autoApproveRules: list[AutoApproveRuleOut]
+    systemPrompt: str
 
 
 class AutoApproveRuleIn(BaseModel):
@@ -78,3 +79,11 @@ class SyncModelsResponse(BaseModel):
     success: bool
     models: list[str]
     count: int
+
+
+class SetSystemPromptRequest(BaseModel):
+    systemPrompt: str
+
+
+class SetSystemPromptResponse(BaseModel):
+    systemPrompt: str

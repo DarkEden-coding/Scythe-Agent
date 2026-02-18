@@ -8,8 +8,10 @@ from app.schemas.settings import (
     SetAutoApproveRequest,
     SetModelRequest,
     SetApiKeyRequest,
+    SetSystemPromptRequest,
     OpenRouterConfigResponse,
     SetApiKeyResponse,
+    SetSystemPromptResponse,
     TestConnectionResponse,
     SyncModelsResponse,
 )
@@ -44,6 +46,18 @@ def get_auto_approve(db: Session = Depends(get_db)):
 def set_auto_approve(request: SetAutoApproveRequest, db: Session = Depends(get_db)):
     try:
         data = SettingsService(db).set_auto_approve_rules(request.rules)
+        return ok(data.model_dump())
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
+    except Exception:
+        return JSONResponse(status_code=500, content=err("Internal server error").model_dump())
+
+
+@router.put("/system-prompt")
+def set_system_prompt(request: SetSystemPromptRequest, db: Session = Depends(get_db)):
+    """Set custom system prompt. Empty string resets to default."""
+    try:
+        data = SettingsService(db).set_system_prompt(request.systemPrompt)
         return ok(data.model_dump())
     except ValueError as exc:
         return JSONResponse(status_code=400, content=err(str(exc)).model_dump())

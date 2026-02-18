@@ -1,23 +1,24 @@
 import { useState, useRef, useEffect } from 'react';
-import { Settings, ChevronDown, Key } from 'lucide-react';
+import { Settings, ChevronDown, Key, Bot } from 'lucide-react';
 import { cn } from '../utils/cn';
 
 export type ProviderId = 'openrouter';
 
+export type SettingsTabId = ProviderId | 'agent';
+
 interface ProviderOption {
-  id: ProviderId;
+  id: SettingsTabId;
   label: string;
   icon?: React.ReactNode;
 }
 
 const PROVIDER_OPTIONS: ProviderOption[] = [
   { id: 'openrouter', label: 'OpenRouter', icon: <Key className="w-4 h-4 text-cyan-400" /> },
-  // Add more providers here, e.g.:
-  // { id: 'openai-direct', label: 'Direct OpenAI' },
+  { id: 'agent', label: 'System Prompt', icon: <Bot className="w-4 h-4 text-cyan-400" /> },
 ];
 
 interface ProviderSettingsDropdownProps {
-  onSelectProvider: (provider: ProviderId) => void;
+  onSelectProvider: (tab: SettingsTabId) => void;
   title?: string;
 }
 
@@ -38,9 +39,9 @@ export function ProviderSettingsDropdown({
     return () => window.removeEventListener('click', handleClickOutside);
   }, []);
 
-  const handleSelect = (provider: ProviderId) => {
+  const handleSelect = (tab: SettingsTabId) => {
     setOpen(false);
-    onSelectProvider(provider);
+    onSelectProvider(tab);
   };
 
   return (
@@ -57,9 +58,9 @@ export function ProviderSettingsDropdown({
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-1 py-1 min-w-[160px] bg-[#1a1a24] border border-gray-700/50 rounded-lg shadow-xl z-50">
+        <div className="absolute right-0 top-full mt-1 py-1 min-w-[180px] bg-[#1a1a24] border border-gray-700/50 rounded-lg shadow-xl z-50">
           <div className="px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wider border-b border-gray-700/50 mb-1">
-            Providers
+            Settings
           </div>
           {PROVIDER_OPTIONS.map((opt) => (
             <button

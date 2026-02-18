@@ -9,7 +9,6 @@ from app.db.repositories.project_repo import ProjectRepository
 from app.db.repositories.settings_repo import SettingsRepository
 from app.db.session import get_sessionmaker
 from app.initial_information import apply_initial_information
-from app.preprocessors.system_prompt import DEFAULT_SYSTEM_PROMPT
 from app.tools.openrouter_format import get_openrouter_tools
 from app.schemas.chat import (
     CheckpointOut,
@@ -43,10 +42,33 @@ class ChatService:
         self.settings_service = SettingsService(db)
         self.event_bus = event_bus or get_event_bus()
 
+    async def _deny_pending_and_cancel_agent(self, chat_id: str) -> None:
+        """Deny any pending tool approvals and cancel the running agent for this chat."""
+        existing_task = _running_tasks.pop(chat_id, None)
+        if existing_task is None or existing_task.done():
+            return
+        for tc in self.repo.list_tool_calls(chat_id):
+            if tc.status == "pending":
+                try:
+                    await ApprovalService(self.repo.db).reject(
+                        chat_id=chat_id,
+                        tool_call_id=tc.id,
+                        reason="User sent new message",
+                    )
+                except ValueError:
+                    pass
+        existing_task.cancel()
+        try:
+            await existing_task
+        except (asyncio.CancelledError, Exception):
+            pass
+
     async def send_message(self, chat_id: str, content: str) -> SendMessageResponse:
         chat = self.repo.get_chat(chat_id)
         if chat is None:
             raise ValueError(f"Chat not found: {chat_id}")
+
+        await self._deny_pending_and_cancel_agent(chat_id)
 
         existing_messages = self.repo.list_messages(chat_id)
         is_first_message = len(existing_messages) == 0
@@ -134,17 +156,19 @@ class ChatService:
                 max_iterations = app_settings.max_agent_iterations
                 with get_sessionmaker()() as bg_session:
                     bg_settings_repo = SettingsRepository(bg_session)
+                    bg_settings_svc = SettingsService(bg_session)
+                    default_prompt = bg_settings_svc.get_system_prompt()
                     loop = AgentLoop(
                         chat_repo=ChatRepository(bg_session),
                         project_repo=ProjectRepository(bg_session),
                         settings_repo=bg_settings_repo,
-                        settings_service=SettingsService(bg_session),
+                        settings_service=bg_settings_svc,
                         api_key_resolver=APIKeyResolver(bg_settings_repo),
                         approval_svc=ApprovalService(bg_session, event_bus=event_bus),
                         event_bus=event_bus,
                         apply_initial_information=apply_initial_information,
                         get_openrouter_tools=get_openrouter_tools,
-                        default_system_prompt=DEFAULT_SYSTEM_PROMPT,
+                        default_system_prompt=default_prompt,
                     )
                     await loop.run(
                         chat_id=chat_id,
@@ -277,13 +301,14 @@ class ChatService:
         openrouter_messages = apply_initial_information(
             openrouter_messages, project_path=project_path
         )
-        openrouter_messages.insert(0, {"role": "system", "content": DEFAULT_SYSTEM_PROMPT})
+        system_prompt = self.settings_service.get_system_prompt()
+        openrouter_messages.insert(0, {"role": "system", "content": system_prompt})
 
         return {
             "chatId": chat_id,
             "model": history.model,
             "contextLimit": history.maxTokens,
-            "systemPrompt": DEFAULT_SYSTEM_PROMPT,
+            "systemPrompt": system_prompt,
             "assembledMessages": openrouter_messages,
             "history": history.model_dump(),
         }

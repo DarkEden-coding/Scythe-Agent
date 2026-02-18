@@ -9,6 +9,7 @@ from app.utils.time import utc_now_iso
 from app.db.models.auto_approve_rule import AutoApproveRule
 from app.config.settings import get_settings
 from app.db.repositories.settings_repo import SettingsRepository
+from app.preprocessors.system_prompt import DEFAULT_SYSTEM_PROMPT
 from app.schemas.settings import (
     AutoApproveRuleIn,
     AutoApproveRuleOut,
@@ -17,6 +18,7 @@ from app.schemas.settings import (
     ModelMetadata,
     SetModelResponse,
     SetAutoApproveResponse,
+    SetSystemPromptResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -55,6 +57,11 @@ class SettingsService:
 
         rules = self.repo.list_auto_approve_rules()
 
+        system_prompt = (
+            settings_row.system_prompt
+            if settings_row.system_prompt and settings_row.system_prompt.strip()
+            else DEFAULT_SYSTEM_PROMPT
+        )
         return GetSettingsResponse(
             model=settings_row.active_model,
             availableModels=available_models,
@@ -71,6 +78,7 @@ class SettingsService:
                 )
                 for r in rules
             ],
+            systemPrompt=system_prompt,
         )
 
     def _now(self) -> str:
@@ -287,6 +295,21 @@ class SettingsService:
         except Exception as e:
             logger.error(f"OpenRouter connection test failed: {e}")
             return False, str(e)
+
+    def get_system_prompt(self) -> str:
+        """Return effective system prompt (custom if set, else default)."""
+        custom = self.repo.get_system_prompt()
+        return custom if custom else DEFAULT_SYSTEM_PROMPT
+
+    def set_system_prompt(self, prompt: str) -> SetSystemPromptResponse:
+        """Set custom system prompt. Empty string resets to default."""
+        self.repo.set_system_prompt(
+            prompt if prompt.strip() else None,
+            updated_at=self._now(),
+        )
+        self.repo.commit()
+        effective = self.get_system_prompt()
+        return SetSystemPromptResponse(systemPrompt=effective)
 
     async def sync_openrouter_models(self) -> list[str]:
         """

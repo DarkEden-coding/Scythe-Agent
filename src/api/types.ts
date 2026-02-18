@@ -339,6 +339,15 @@ export interface GetSettingsResponse {
   modelMetadata: Record<string, ModelMetadata>;
   contextLimit: number;
   autoApproveRules: AutoApproveRule[];
+  systemPrompt: string;
+}
+
+export interface SetSystemPromptRequest {
+  systemPrompt: string;
+}
+
+export interface SetSystemPromptResponse {
+  systemPrompt: string;
 }
 
 // 5. OpenRouter configuration

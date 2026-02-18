@@ -4,7 +4,7 @@ import { ActionsPanel } from './components/ActionsPanel';
 import { AppHeader } from './components/header/AppHeader';
 import { ResizableLayout } from './components/layout/ResizableLayout';
 import { EnhancedModelPicker } from './components/EnhancedModelPicker';
-import { OpenRouterSettings } from './components/OpenRouterSettings';
+import { SettingsModal } from './components/SettingsModal';
 import { useToast } from './hooks/useToast';
 import { useChatHistory, useProjects, useSettings, useAgentEvents } from './api';
 import type { AgentEvent, AutoApproveRule } from './api';
@@ -12,7 +12,7 @@ import type { AgentEvent, AutoApproveRule } from './api';
 export function App() {
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [showModelPicker, setShowModelPicker] = useState(false);
-  const [settingsProvider, setSettingsProvider] = useState<'openrouter' | null>(null);
+  const [settingsTab, setSettingsTab] = useState<'openrouter' | 'agent' | null>(null);
   const [chatWidth, setChatWidth] = useState(33.33);
   const { showNotification, notificationMessage, showToast } = useToast();
   const [processingChats, setProcessingChats] = useState<Set<string>>(new Set());
@@ -138,10 +138,10 @@ export function App() {
         e.preventDefault();
         setShowModelPicker(true);
       }
-      // Cmd/Ctrl + , to open settings (OpenRouter for now)
+      // Cmd/Ctrl + , to open settings
       if ((e.metaKey || e.ctrlKey) && e.key === ',') {
         e.preventDefault();
-        setSettingsProvider('openrouter');
+        setSettingsTab('openrouter');
       }
     };
 
@@ -252,7 +252,7 @@ export function App() {
         onOpenModelPicker={() => setShowModelPicker(true)}
         onPrefetchSettings={settings.prefetchSettings}
         currentModel={settings.currentModel}
-        onSelectSettingsProvider={setSettingsProvider}
+        onSelectSettingsProvider={setSettingsTab}
         projectsLoading={projectsLoading}
         chatLoading={chat.loading}
       />
@@ -321,9 +321,10 @@ export function App() {
         loading={settings.loading}
         changeModel={settings.changeModel}
       />
-      <OpenRouterSettings
-        visible={settingsProvider === 'openrouter'}
-        onClose={() => setSettingsProvider(null)}
+      <SettingsModal
+        visible={settingsTab != null}
+        onClose={() => setSettingsTab(null)}
+        initialTab={settingsTab}
       />
     </div>
   );

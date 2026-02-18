@@ -13,4 +13,5 @@ class Settings(Base):
     updated_at: Mapped[str] = mapped_column(Text, nullable=False)
     openrouter_api_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     openrouter_base_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    system_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
 
