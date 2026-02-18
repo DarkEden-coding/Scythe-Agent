@@ -32,7 +32,11 @@ export function buildTimeline(
 ): TimelineSegment[] {
   const dedupedFileEdits = uniqueById(fileEdits);
   return checkpoints.map((checkpoint) => {
-    const cpToolCalls = toolCalls.filter((tc) => checkpoint.toolCalls.includes(tc.id));
+    const cpToolCalls = toolCalls
+      .filter((tc) => checkpoint.toolCalls.includes(tc.id))
+      .filter(
+        (tc) => !(tc.name === 'edit_file' && tc.status === 'completed'),
+      );
     const cpFileEdits = dedupedFileEdits.filter((fe) => fe.checkpointId === checkpoint.id);
     const cpReasoningBlocks = reasoningBlocks.filter((rb) =>
       checkpoint.reasoningBlocks?.includes(rb.id),
