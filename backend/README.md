@@ -19,17 +19,17 @@ This backend implements the scoped MVP from [`plans/backend-python-mvp-plan.md`]
 
 ```bash
 cd backend
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e .[dev]
+uv sync
 alembic upgrade head
-uvicorn app.main:app --reload --port 3001
+uv run uvicorn app.main:app --reload --port 3001
 ```
 
-If you run from the repository root instead of `backend/`, use:
+**Important:** Use `uv run uvicorn` so the process uses the project venv. Running `uvicorn` directly (e.g. from conda or system Python) will miss `tree-sitter-language-pack`, and `read_file` will return "No tree-sitter support" instead of file structure.
+
+To run from the repository root:
 
 ```bash
-python3 -m uvicorn app.main:app --app-dir backend --reload --port 3001
+uv run --project backend uvicorn app.main:app --app-dir backend --reload --port 3001
 ```
 
 ## Tests

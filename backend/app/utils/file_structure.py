@@ -124,7 +124,8 @@ def get_file_structure(content: str, path: str) -> str:
     """
     try:
         from tree_sitter_language_pack import get_parser  # type: ignore[import-untyped]
-    except ImportError:
+    except ImportError as e:
+        logger.warning("tree-sitter-language-pack not available: %s", e)
         lines = content.splitlines()
         return (
             f"File: {path} ({len(lines)} lines)\n"
