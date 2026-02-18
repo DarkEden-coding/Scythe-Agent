@@ -6,6 +6,7 @@ import {
   Pencil,
   Trash2,
   Plus,
+  Terminal,
   ChevronDown,
   ChevronRight,
   Clock,
@@ -28,6 +29,7 @@ export const toolIcons: Record<string, React.ReactNode> = {
   edit_file: <Pencil className="w-3.5 h-3.5" />,
   delete_file: <Trash2 className="w-3.5 h-3.5" />,
   list_files: <FolderOpen className="w-3.5 h-3.5" />,
+  execute_command: <Terminal className="w-3.5 h-3.5" />,
   install_npm_packages: <Package className="w-3.5 h-3.5" />,
   build_project: <Hammer className="w-3.5 h-3.5" />,
 };
@@ -56,6 +58,7 @@ export function ToolCallCard({
 }: ToolCallCardProps) {
   let pathHint: string | null = null;
   if (call.input?.path) pathHint = safeStr(call.input.path);
+  else if (call.input?.command) pathHint = safeStr(call.input.command).slice(0, 40);
   else if (call.input?.packages) pathHint = `[${(call.input.packages as string[]).length} pkgs]`;
   if (pathHint === '0') pathHint = null;
 
