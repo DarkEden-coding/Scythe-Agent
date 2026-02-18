@@ -27,7 +27,7 @@ def test_model_catalog_fetch_success_writes_cache() -> None:
 
     with get_sessionmaker()() as session:
         service = OpenRouterModelCatalogService(session, client=_Client())  # type: ignore[arg-type]
-        available = asyncio.run(service.sync_models_on_startup())
+        available = asyncio.run(service.sync_models_on_startup(force_refresh=True))
         assert available == ["a-model", "z-model"]
         cached = service.repo.list_models()
         assert [m.label for m in cached] == ["a-model", "z-model"]
@@ -44,13 +44,13 @@ def test_model_catalog_fetch_failure_uses_cache_then_fallback() -> None:
         service = OpenRouterModelCatalogService(session, client=_ClientFail())  # type: ignore[arg-type]
         service.repo.replace_models(service._normalize([{"id": "cached-model", "context_length": 2048}], service._now()))
         service.repo.commit()
-        available_cached = asyncio.run(service.sync_models_on_startup())
+        available_cached = asyncio.run(service.sync_models_on_startup(force_refresh=True))
         assert "cached-model" in available_cached
         assert _available_models() == ["cached-model"]
 
         service.repo.replace_models([])
         service.repo.commit()
-        available_fallback = asyncio.run(service.sync_models_on_startup())
+        available_fallback = asyncio.run(service.sync_models_on_startup(force_refresh=True))
         assert available_fallback
         assert set(available_fallback) == set(service.app_settings.fallback_models)
 
@@ -68,7 +68,7 @@ def test_settings_model_update_validation_and_autocorrect(client) -> None:
     assert valid_body["data"]["model"] == valid_target
 
     invalid_res = client.put("/api/settings/model", json={"model": "not-a-real-model"})
-    assert invalid_res.status_code == 200
+    assert invalid_res.status_code == 400
     invalid_body = invalid_res.json()
     assert invalid_body["ok"] is False
     assert "not available" in invalid_body["error"]

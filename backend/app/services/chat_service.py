@@ -42,18 +42,21 @@ class ChatService:
         self.settings_service = SettingsService(db)
         self.event_bus = event_bus or get_event_bus()
 
-    async def _deny_pending_and_cancel_agent(self, chat_id: str) -> None:
-        """Deny any pending tool approvals and cancel the running agent for this chat."""
+    async def _deny_pending_and_cancel_agent(
+        self, chat_id: str, reject_reason: str = "User sent new message"
+    ) -> bool:
+        """Deny any pending tool approvals and cancel the running agent for this chat.
+        Returns True if a task was cancelled."""
         existing_task = _running_tasks.pop(chat_id, None)
         if existing_task is None or existing_task.done():
-            return
+            return False
         for tc in self.repo.list_tool_calls(chat_id):
             if tc.status == "pending":
                 try:
                     await ApprovalService(self.repo.db).reject(
                         chat_id=chat_id,
                         tool_call_id=tc.id,
-                        reason="User sent new message",
+                        reason=reject_reason,
                     )
                 except ValueError:
                     pass
@@ -62,6 +65,11 @@ class ChatService:
             await existing_task
         except (asyncio.CancelledError, Exception):
             pass
+        return True
+
+    async def cancel_agent(self, chat_id: str) -> bool:
+        """Cancel the running agent for this chat. Returns True if a task was cancelled."""
+        return await self._deny_pending_and_cancel_agent(chat_id, "User cancelled")
 
     async def send_message(self, chat_id: str, content: str) -> SendMessageResponse:
         chat = self.repo.get_chat(chat_id)

@@ -86,6 +86,16 @@ export function App() {
     }
   };
 
+  const handleCancelMessage = useCallback(() => {
+    if (activeChatId == null) return;
+    chat.cancelProcessing(activeChatId);
+    setProcessingChats((prev) => {
+      const next = new Set(prev);
+      next.delete(activeChatId);
+      return next;
+    });
+  }, [activeChatId, chat]);
+
   const handleApproveCommand = async (toolCallId: string) => {
     const res = await chat.approveCommand(toolCallId);
     if (res.ok) showToast('Tool call approved');
@@ -269,6 +279,7 @@ export function App() {
             contextItems={chat.contextItems}
             maxTokens={chat.maxTokens}
             onSendMessage={handleSendMessage}
+            onCancel={handleCancelMessage}
             projects={projects}
             activeChatId={activeChatId}
             onSwitchChat={handleSwitchChat}

@@ -140,6 +140,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
       const id = targetChatId ?? chatId;
       if (typeof id !== 'string') return;
       client.cancelSession(id);
+      client.cancelChat(id);
       setProcessingChats((prev) => {
         const next = new Set(prev);
         next.delete(id);

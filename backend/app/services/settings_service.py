@@ -325,5 +325,5 @@ class SettingsService:
             raise ValueError("No OpenRouter API key configured")
 
         catalog_service = OpenRouterModelCatalogService(self.repo.db, client=client)
-        labels = await catalog_service.sync_models_on_startup()
+        labels = await catalog_service.sync_models_on_startup(force_refresh=True)
         return labels

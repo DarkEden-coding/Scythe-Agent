@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from app.config.settings import get_settings
+
+MODEL_CACHE_TTL_SECONDS = 300
 from app.db.models.provider_model_cache import ProviderModelCache
 from app.db.repositories.settings_repo import SettingsRepository
 from app.providers.openrouter.client import OpenRouterClient
@@ -74,6 +76,18 @@ class OpenRouterModelCatalogService:
             return cache_labels
         return list(self.app_settings.fallback_models)
 
+    def _cache_is_fresh(self) -> bool:
+        """Return True if openrouter cache exists and is within TTL."""
+        models = [m for m in self.repo.list_models() if m.provider == "openrouter"]
+        if not models:
+            return False
+        try:
+            newest = max(m.fetched_at for m in models)
+            fetched = datetime.fromisoformat(newest.replace("Z", "+00:00"))
+            return (datetime.now(timezone.utc) - fetched).total_seconds() < MODEL_CACHE_TTL_SECONDS
+        except (ValueError, TypeError):
+            return False
+
     def ensure_active_model_valid(self) -> None:
         settings = self.repo.get_settings()
         if settings is None:
@@ -90,7 +104,12 @@ class OpenRouterModelCatalogService:
             self.repo.set_active_model(target_model, updated_at=self._now())
             self.repo.commit()
 
-    async def sync_models_on_startup(self) -> list[str]:
+    async def sync_models_on_startup(self, *, force_refresh: bool = False) -> list[str]:
+        """Sync models from API when needed. Use cache when fresh unless force_refresh."""
+        if not force_refresh and self._cache_is_fresh():
+            self.ensure_active_model_valid()
+            return self._available_model_labels()
+
         fetched_at = self._now()
         try:
             remote = await self.client.get_models()
@@ -102,6 +121,7 @@ class OpenRouterModelCatalogService:
                 self.repo.replace_models(self._fallback_rows(fetched_at))
                 self.repo.commit()
         except Exception:
+            # Prefer existing cache; only fallback when no cache exists
             if not self.repo.list_models():
                 self.repo.replace_models(self._fallback_rows(fetched_at))
                 self.repo.commit()

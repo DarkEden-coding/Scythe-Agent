@@ -346,10 +346,11 @@ export class ApiClient {
     return Array.from(this.activeSessions.keys());
   }
 
-  /** Cancel a specific chat's in-flight session. */
+  /** Cancel a specific chat's in-flight session. Aborts the send-message request. */
   cancelSession(chatId: string): void {
     this.activeSessions.get(chatId)?.abort();
     this.activeSessions.delete(chatId);
+    this.cancel(`send-${chatId}`);
   }
 
   /** Cancel all active sessions across all chats. */
@@ -375,6 +376,11 @@ export class ApiClient {
     } finally {
       this.endSession(req.chatId);
     }
+  }
+
+  /** Request the backend to cancel the running agent for a chat. Fire-and-forget. */
+  cancelChat(chatId: string): void {
+    void this.request<{ cancelled: boolean }>('POST', `/chat/${chatId}/cancel`);
   }
 
   /** Approve a pending tool call. */

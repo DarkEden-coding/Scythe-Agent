@@ -24,6 +24,7 @@ interface ChatPanelProps {
   readonly contextItems: ContextItem[];
   readonly maxTokens: number;
   readonly onSendMessage?: (content: string) => void;
+  readonly onCancel?: () => void;
   readonly projects: Project[];
   readonly activeChatId?: string | null;
   readonly onSwitchChat?: (chatId: string) => void;
@@ -47,6 +48,7 @@ export function ChatPanel({
   contextItems,
   maxTokens,
   onSendMessage,
+  onCancel,
   projects,
   activeChatId: externalActiveChatId,
   onSwitchChat,
@@ -213,7 +215,9 @@ export function ChatPanel({
               value={inputValue}
               onChange={setInputValue}
               onSubmit={handleSend}
+              onCancel={onCancel}
               activeChatId={activeChatId}
+              isProcessing={isProcessing}
             />
           </div>
         </>

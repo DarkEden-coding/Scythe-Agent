@@ -7,6 +7,8 @@ from typing import Protocol
 from sqlalchemy.orm import Session
 
 from app.db.models.mcp_tool_cache import MCPToolCache
+
+MCP_TOOL_CACHE_TTL_SECONDS = 300
 from app.db.repositories.mcp_repo import MCPRepository
 from app.mcp.protocol_models import (
     MCPToolCallResult,
@@ -47,7 +49,21 @@ class MCPClientManager:
         """Register a transport factory for tests. name is e.g. 'stdio', 'sse', 'http'."""
         _transport_factory_registry[name.lower().strip()] = factory
 
-    async def discover_and_cache_tools(self, db: Session) -> tuple[list[MCPToolDescriptor], list[str]]:
+    def _server_cache_is_fresh(self, repo: MCPRepository, server_id: str) -> bool:
+        """Return True if server has cached tools within TTL."""
+        cached = repo.list_cached_tools_for_server(server_id)
+        if not cached:
+            return False
+        try:
+            newest = max(c.discovered_at for c in cached)
+            discovered = datetime.fromisoformat(newest.replace("Z", "+00:00"))
+            return (datetime.now(timezone.utc) - discovered).total_seconds() < MCP_TOOL_CACHE_TTL_SECONDS
+        except (ValueError, TypeError):
+            return False
+
+    async def discover_and_cache_tools(
+        self, db: Session, *, force_refresh: bool = False
+    ) -> tuple[list[MCPToolDescriptor], list[str]]:
         repo = MCPRepository(db)
         discovered: list[MCPToolDescriptor] = []
         errors: list[str] = []
@@ -60,6 +76,25 @@ class MCPClientManager:
             except json.JSONDecodeError:
                 config = {}
             self._server_configs[server.id] = (server.transport, config)
+
+            if not force_refresh and self._server_cache_is_fresh(repo, server.id):
+                for cached in repo.list_cached_tools_for_server(server.id):
+                    schema = {}
+                    try:
+                        schema_value = json.loads(cached.schema_json)
+                        if isinstance(schema_value, dict):
+                            schema = schema_value
+                    except json.JSONDecodeError:
+                        pass
+                    discovered.append(
+                        MCPToolDescriptor(
+                            server_id=server.id,
+                            name=cached.tool_name,
+                            description=cached.description,
+                            input_schema=schema,
+                        )
+                    )
+                continue
 
             try:
                 transport = self._build_transport(transport_name=server.transport, config=config)

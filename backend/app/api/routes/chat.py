@@ -79,6 +79,20 @@ async def edit_message(
         )
 
 
+@router.post("/{chat_id}/cancel")
+async def cancel_agent(chat_id: str, db: Session = Depends(get_db)):
+    """Cancel the running agent for this chat (e.g. when user stops the stream)."""
+    try:
+        cancelled = await ChatService(db).cancel_agent(chat_id)
+        return ok({"cancelled": cancelled})
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
+    except Exception:
+        return JSONResponse(
+            status_code=500, content=err("Internal server error").model_dump()
+        )
+
+
 @router.post("/{chat_id}/approve")
 async def approve(
     chat_id: str, request: ApproveCommandRequest, db: Session = Depends(get_db)
