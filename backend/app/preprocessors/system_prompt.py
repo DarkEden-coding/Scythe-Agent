@@ -9,6 +9,8 @@ PATH CONVENTIONS: All paths in tool calls (read_file, edit_file, list_files, exe
 
 READ_FILE BEHAVIOR: Call read_file without start/end to get the file structure (tree-sitter outline with line ranges). Use that to decide which spans to read, then call read_file with start and end (1-based line numbers) for specific sections. Avoid reading entire large files when a targeted span suffices.
 
+PARALLEL TOOL CALLS: Prefer issuing multiple independent tool calls in a single turn when they can run in parallel (e.g. reading several files at once, listing directories while grepping). This reduces latency and speeds up tasks. Only serialize calls when one depends on another's output.
+
 WORKFLOW: The user may need to approve tool calls before they run. Prefer small, focused operations. Explain your reasoning when making changes. Use list_files to explore the project structure before reading or editing."""
 
 

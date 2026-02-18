@@ -153,6 +153,7 @@ class ChatRepository(BaseRepository):
         timestamp: str,
         output_text: str | None = None,
         duration_ms: int | None = None,
+        parallel_group: str | None = None,
     ) -> ToolCall:
         tool_call = ToolCall(
             id=tool_call_id,
@@ -164,8 +165,8 @@ class ChatRepository(BaseRepository):
             output_text=output_text,
             timestamp=timestamp,
             duration_ms=duration_ms,
-            parallel=0,
-            parallel_group=None,
+            parallel=1 if parallel_group else 0,
+            parallel_group=parallel_group,
         )
         self.db.add(tool_call)
         return tool_call

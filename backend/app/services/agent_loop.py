@@ -37,6 +37,7 @@ class AgentLoop:
         apply_initial_information,
         get_openrouter_tools,
         default_system_prompt: str,
+        session_factory=None,
     ):
         self._chat_repo = chat_repo
         self._project_repo = project_repo
@@ -48,6 +49,7 @@ class AgentLoop:
         self._apply_initial_information = apply_initial_information
         self._get_openrouter_tools = get_openrouter_tools
         self._default_system_prompt = default_system_prompt
+        self._session_factory = session_factory
 
     async def run(
         self,
@@ -109,7 +111,12 @@ class AgentLoop:
         context_limit = settings.contextLimit
 
         streamer = LLMStreamer(self._chat_repo, self._event_bus)
-        executor = ToolExecutor(self._chat_repo, self._approval_svc, self._event_bus)
+        executor = ToolExecutor(
+            self._chat_repo,
+            self._approval_svc,
+            self._event_bus,
+            session_factory=self._session_factory,
+        )
 
         iteration = 0
         reasoning_param = {"effort": "medium"}

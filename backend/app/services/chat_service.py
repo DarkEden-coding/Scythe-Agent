@@ -169,6 +169,7 @@ class ChatService:
                         apply_initial_information=apply_initial_information,
                         get_openrouter_tools=get_openrouter_tools,
                         default_system_prompt=default_prompt,
+                        session_factory=get_sessionmaker(),
                     )
                     await loop.run(
                         chat_id=chat_id,
