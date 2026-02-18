@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from datetime import datetime, timezone
+from pathlib import Path
 
 from sqlalchemy.orm import Session
 
@@ -12,6 +13,7 @@ from app.db.repositories.settings_repo import SettingsRepository
 from app.schemas.chat import FileEditOut, ToolCallOut
 from app.utils.mappers import map_file_action_for_ui
 from app.utils.time import utc_now_iso
+from app.tools.path_utils import get_tool_outputs_root
 from app.utils.auto_approve import matches_auto_approve_rules
 from app.utils.json_helpers import safe_parse_json
 from app.services.event_bus import EventBus, get_event_bus
@@ -35,6 +37,15 @@ class ApprovalService:
         self.registry = tool_registry or get_tool_registry()
 
     def should_auto_approve(self, tool_name: str, input_payload: dict) -> bool:
+        if tool_name == "read_file":
+            path_val = str(input_payload.get("path", ""))
+            if path_val:
+                try:
+                    target = Path(path_val).expanduser().resolve()
+                    target.relative_to(get_tool_outputs_root())
+                    return True
+                except (ValueError, OSError):
+                    pass
         rules = self.settings_repo.list_auto_approve_rules()
         return matches_auto_approve_rules(
             tool_name=tool_name, input_payload=input_payload, rules=rules

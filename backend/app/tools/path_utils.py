@@ -41,14 +41,17 @@ def resolve_path(
     raw_path: str,
     *,
     project_root: str | None = None,
+    allow_external: bool = False,
 ) -> Path:
     """
     Resolve an absolute path with security checks. Only absolute paths accepted.
 
     Args:
         raw_path: User-provided path; must be absolute.
-        project_root: Project root directory. If provided, path must be within
-            it. Used to validate access scope.
+        project_root: Project root directory. If provided and allow_external is
+            False, path must be within it or under tool_outputs.
+        allow_external: If True (e.g. for read_file), allow any path outside
+            project_root. Tool output paths and blocked prefixes still apply.
 
     Returns:
         Resolved absolute Path. Raises ValueError if path is restricted or
@@ -69,6 +72,8 @@ def resolve_path(
     except ValueError:
         pass
     else:
+        return target
+    if allow_external:
         return target
     if project_root:
         base = Path(project_root).resolve()

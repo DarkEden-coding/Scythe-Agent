@@ -8,7 +8,8 @@ from app.utils.file_structure import get_file_structure
 class ReadFileTool:
     name = "read_file"
     description = (
-        "Read a file from the project. path must be an absolute path. "
+        "Read a file. path must be an absolute path. Can read project files, tool output files "
+        "(spilled outputs under tool_outputs/), and other external paths (those require approval). "
         "Without start/end: returns file structure (declarations with line ranges) and total line count; use that to decide which spans to read. "
         "With start and end (1-based): returns that line span. "
         "For files without structure support (unknown extensions), use start/end to read sections. Always prefer targeted spans over reading entire large files."
@@ -27,7 +28,11 @@ class ReadFileTool:
         self, payload: dict, *, project_root: str | None = None
     ) -> ToolResult:
         try:
-            path = resolve_path(payload.get("path", ""), project_root=project_root)
+            path = resolve_path(
+                payload.get("path", ""),
+                project_root=project_root,
+                allow_external=True,
+            )
         except ValueError as exc:
             return ToolResult(output=str(exc), file_edits=[], ok=False)
         if not path.exists() or not path.is_file():
