@@ -15,6 +15,7 @@ export {
   useProjects,
   useFilesystemBrowser,
   useSettings,
+  useOpenRouter,
   useAgentEvents,
 } from './hooks';
 

@@ -16,6 +16,7 @@ import {
   isValidChatId,
 } from '@/api/normalizers';
 import type { Message, ToolCall, FileEdit, Checkpoint, ContextItem, ReasoningBlock } from '@/types';
+import type { AgentEvent } from '@/api/types';
 
 export function useChatHistory(chatId: string | null | undefined, client: ApiClient = defaultApi) {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -99,7 +100,10 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
   );
 
   const isChatProcessing = useCallback(
-    (targetChatId?: string) => processingChats.has(targetChatId ?? chatId),
+    (targetChatId?: string) => {
+      const id = targetChatId ?? chatId;
+      return typeof id === 'string' ? processingChats.has(id) : false;
+    },
     [processingChats, chatId],
   );
 
@@ -111,6 +115,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
   const cancelProcessing = useCallback(
     (targetChatId?: string) => {
       const id = targetChatId ?? chatId;
+      if (typeof id !== 'string') return;
       client.cancelSession(id);
       setProcessingChats((prev) => {
         const next = new Set(prev);
@@ -123,6 +128,9 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
 
   const approveCommand = useCallback(
     async (toolCallId: string) => {
+      if (!isValidChatId(chatId)) {
+        return { ok: false as const, data: null, error: 'No chat selected', timestamp: new Date().toISOString() };
+      }
       const res = await client.approveCommand({ chatId, toolCallId });
       if (res.ok) {
         setToolCalls((prev) =>
@@ -139,6 +147,9 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
 
   const rejectCommand = useCallback(
     async (toolCallId: string, reason?: string) => {
+      if (!isValidChatId(chatId)) {
+        return { ok: false as const, data: null, error: 'No chat selected', timestamp: new Date().toISOString() };
+      }
       const res = await client.rejectCommand({ chatId, toolCallId, reason });
       if (res.ok) {
         setToolCalls((prev) =>
@@ -153,6 +164,9 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
   );
 
   const summarizeContext = useCallback(async () => {
+    if (!isValidChatId(chatId)) {
+      return { ok: false as const, data: null, error: 'No chat selected', timestamp: new Date().toISOString() };
+    }
     const res = await client.summarizeContext({ chatId });
     if (res.ok) {
       setContextItems(res.data.contextItems);
@@ -166,6 +180,9 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
 
   const revertToCheckpoint = useCallback(
     async (checkpointId: string) => {
+      if (!isValidChatId(chatId)) {
+        return { ok: false as const, data: null, error: 'No chat selected', timestamp: new Date().toISOString() };
+      }
       const res = await client.revertToCheckpoint({ chatId, checkpointId });
       if (res.ok) {
         setMessages(uniqueById(res.data.messages.map(normalizeMessage)));
@@ -181,6 +198,9 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
 
   const revertFile = useCallback(
     async (fileEditId: string) => {
+      if (!isValidChatId(chatId)) {
+        return { ok: false as const, data: null, error: 'No chat selected', timestamp: new Date().toISOString() };
+      }
       const res = await client.revertFile({ chatId, fileEditId });
       if (res.ok) {
         setFileEdits(uniqueById(res.data.fileEdits.map(normalizeFileEdit)));
@@ -188,6 +208,189 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
       return res;
     },
     [chatId, client],
+  );
+
+  const asDate = useCallback((value: string | Date): Date => (value instanceof Date ? value : new Date(value)), []);
+
+  const processEvent = useCallback(
+    (event: AgentEvent) => {
+      const updateById = <T extends { id: string }>(items: T[], next: T): T[] => {
+        const idx = items.findIndex((item) => item.id === next.id);
+        if (idx === -1) return [...items, next];
+        const copy = [...items];
+        copy[idx] = next;
+        return copy;
+      };
+
+      switch (event.type) {
+        case 'message': {
+          const payload = event.payload as { message: Message };
+          const message = { ...payload.message, timestamp: asDate(payload.message.timestamp) };
+          setMessages((prev) => updateById(prev, message));
+          break;
+        }
+        case 'content_delta': {
+          const payload = event.payload as { messageId: string; delta: string };
+          setMessages((prev) => {
+            const idx = prev.findIndex((m) => m.id === payload.messageId);
+            if (idx === -1) {
+              const placeholder: Message = {
+                id: payload.messageId,
+                role: 'agent',
+                content: payload.delta,
+                timestamp: new Date(),
+              };
+              return [...prev, placeholder];
+            }
+            const m = prev[idx];
+            const updated = { ...m, content: m.content + payload.delta };
+            const copy = [...prev];
+            copy[idx] = updated;
+            return copy;
+          });
+          break;
+        }
+        case 'tool_call_start':
+        case 'tool_call_end': {
+          const payload = event.payload as {
+            toolCall?: ToolCall & { checkpointId?: string };
+            toolCallId?: string;
+            toolName?: string;
+            input?: Record<string, unknown>;
+          };
+          const toolCall = payload.toolCall ?? {
+            id: payload.toolCallId ?? `tc-evt-${Date.now()}`,
+            name: payload.toolName ?? 'unknown',
+            status: 'pending' as const,
+            input: payload.input ?? {},
+            timestamp: new Date(),
+            approvalRequired: false,
+          };
+          const tcWithTs = { ...toolCall, timestamp: asDate(toolCall.timestamp) };
+          setToolCalls((prev) => updateById(prev, tcWithTs));
+          const cpId = (payload.toolCall as { checkpointId?: string })?.checkpointId;
+          if (cpId && tcWithTs.id) {
+            setCheckpoints((prev) =>
+              prev.map((cp) =>
+                cp.id === cpId && !cp.toolCalls.includes(tcWithTs.id)
+                  ? { ...cp, toolCalls: [...cp.toolCalls, tcWithTs.id] }
+                  : cp,
+              ),
+            );
+          }
+          break;
+        }
+        case 'approval_required': {
+          const payload = event.payload as {
+            toolCall?: ToolCall & { checkpointId?: string };
+            toolCallId?: string;
+            toolName?: string;
+            input?: Record<string, unknown>;
+            description?: string;
+            autoApproved?: boolean;
+          };
+          const toolCall = payload.toolCall ?? {
+            id: payload.toolCallId ?? `tc-evt-${Date.now()}`,
+            name: payload.toolName ?? 'unknown',
+            status: payload.autoApproved ? ('running' as const) : ('pending' as const),
+            input: payload.input ?? {},
+            description: payload.description,
+            approvalRequired: !payload.autoApproved,
+            timestamp: new Date(),
+          };
+          const tcWithTs = {
+            ...toolCall,
+            timestamp: asDate(toolCall.timestamp),
+            approvalRequired: payload.autoApproved ? false : (toolCall.approvalRequired ?? true),
+            description: payload.description ?? toolCall.description,
+          };
+          setToolCalls((prev) => updateById(prev, tcWithTs));
+          const cpId = (payload.toolCall as { checkpointId?: string })?.checkpointId;
+          if (cpId && tcWithTs.id) {
+            setCheckpoints((prev) =>
+              prev.map((cp) =>
+                cp.id === cpId && !cp.toolCalls.includes(tcWithTs.id)
+                  ? { ...cp, toolCalls: [...cp.toolCalls, tcWithTs.id] }
+                  : cp,
+              ),
+            );
+          }
+          break;
+        }
+        case 'file_edit': {
+          const payload = event.payload as { fileEdit: FileEdit };
+          const edit = { ...payload.fileEdit, timestamp: asDate(payload.fileEdit.timestamp) };
+          setFileEdits((prev) => updateById(prev, edit));
+          break;
+        }
+        case 'reasoning_start':
+        case 'reasoning_end': {
+          const payload = event.payload as { reasoningBlock: ReasoningBlock };
+          if (payload.reasoningBlock) {
+            const block = {
+              ...payload.reasoningBlock,
+              timestamp: asDate(payload.reasoningBlock.timestamp),
+            };
+            setReasoningBlocks((prev) => updateById(prev, block));
+            const cpId = block.checkpointId;
+            if (cpId && block.id) {
+              setCheckpoints((prev) =>
+                prev.map((cp) =>
+                  cp.id === cpId && !(cp.reasoningBlocks ?? []).includes(block.id)
+                    ? { ...cp, reasoningBlocks: [...(cp.reasoningBlocks ?? []), block.id] }
+                    : cp,
+                ),
+              );
+            }
+          }
+          break;
+        }
+        case 'reasoning_delta': {
+          const payload = event.payload as { reasoningBlockId: string; delta: string };
+          if (payload.reasoningBlockId && payload.delta) {
+            setReasoningBlocks((prev) => {
+              const idx = prev.findIndex((rb) => rb.id === payload.reasoningBlockId);
+              if (idx === -1) return prev;
+              const copy = [...prev];
+              copy[idx] = { ...copy[idx], content: copy[idx].content + payload.delta };
+              return copy;
+            });
+          }
+          break;
+        }
+        case 'checkpoint': {
+          const payload = event.payload as { checkpoint: Checkpoint };
+          const checkpoint = { ...payload.checkpoint, timestamp: asDate(payload.checkpoint.timestamp) };
+          setCheckpoints((prev) => updateById(prev, checkpoint));
+          break;
+        }
+        case 'context_update': {
+          const payload = event.payload as { contextItems: ContextItem[] };
+          setContextItems(payload.contextItems);
+          break;
+        }
+        case 'error': {
+          const payload = event.payload as {
+            message?: string;
+            toolCallId?: string;
+            toolName?: string;
+          };
+          if (payload.toolCallId) {
+            setToolCalls((prev) =>
+              prev.map((tc) =>
+                tc.id === payload.toolCallId
+                  ? { ...tc, status: 'error' as const, output: payload.message ?? tc.output }
+                  : tc,
+              ),
+            );
+          }
+          break;
+        }
+        default:
+          break;
+      }
+    },
+    [asDate],
   );
 
   return {
@@ -219,5 +422,6 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
     setContextItems,
     setModel,
     setMaxTokens,
+    processEvent,
   };
 }

@@ -103,3 +103,7 @@ temp/
 .eslintcache
 
 *.pyc
+
+# alembic
+alembic.ini
+alembic/versions/

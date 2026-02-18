@@ -6,12 +6,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { api as defaultApi, ApiClient } from '@/api/client';
-import type {
-  OpenRouterConfig,
-  SetApiKeyResponse,
-  TestConnectionResponse,
-  SyncModelsResponse,
-} from '@/api/types';
+import type { OpenRouterConfig } from '@/api/types';
 
 export function useOpenRouter(client: ApiClient = defaultApi) {
   const [config, setConfig] = useState<OpenRouterConfig | null>(null);

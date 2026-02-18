@@ -8,7 +8,7 @@ let settingsCache: { data: GetSettingsResponse; fetchedAt: number } | null = nul
 async function getSettingsCached(client: ApiClient): Promise<ApiResponse<GetSettingsResponse>> {
   const now = Date.now();
   if (settingsCache && now - settingsCache.fetchedAt < SETTINGS_CACHE_TTL_MS) {
-    return { ok: true, data: settingsCache.data };
+    return { ok: true, data: settingsCache.data, timestamp: new Date().toISOString() };
   }
   const res = await client.getSettings();
   if (res.ok) {
