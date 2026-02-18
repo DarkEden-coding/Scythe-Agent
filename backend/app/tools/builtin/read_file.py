@@ -9,8 +9,9 @@ class ReadFileTool:
     name = "read_file"
     description = (
         "Read a file from the project. path must be an absolute path. "
-        "Without start/end: returns file structure (declarations with line ranges). "
-        "With start and end (1-based): returns that line span. Use structure first, then read specific spans."
+        "Without start/end: returns file structure (declarations with line ranges) and total line count; use that to decide which spans to read. "
+        "With start and end (1-based): returns that line span. "
+        "For files without structure support (unknown extensions), use start/end to read sections. Always prefer targeted spans over reading entire large files."
     )
     input_schema = {
         "type": "object",
@@ -60,8 +61,9 @@ class ReadFileTool:
             if start_idx > end_idx:
                 start_idx, end_idx = end_idx, start_idx
             span_lines = lines[start_idx - 1 : end_idx]
+            total = len(lines)
             return ToolResult(
-                output="\n".join(span_lines),
+                output=f"File: {path} ({total} lines)\n\n" + "\n".join(span_lines),
                 file_edits=[],
             )
 

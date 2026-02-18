@@ -29,6 +29,10 @@ _EXT_TO_LANG: dict[str, str] = {
     ".swift": "swift",
     ".kt": "kotlin",
     ".scala": "scala",
+    ".toml": "toml",
+    ".json": "json",
+    ".yaml": "yaml",
+    ".yml": "yaml",
 }
 
 _DECL_NODE_TYPES: dict[str, list[str]] = {
@@ -46,6 +50,14 @@ _DECL_NODE_TYPES: dict[str, list[str]] = {
     "swift": ["class_declaration", "struct_declaration", "function_declaration"],
     "kotlin": ["class_declaration", "function_declaration"],
     "scala": ["class_definition", "object_definition", "function_definition"],
+    "toml": ["table", "table_array_element", "pair"],
+    "json": ["pair"],
+    "yaml": ["block_mapping_pair", "block_sequence_item"],
+}
+
+_MAX_DEPTH: dict[str, int] = {
+    "json": 3,
+    "yaml": 5,
 }
 
 
@@ -59,12 +71,30 @@ class Declaration:
     end_line: int
 
 
+_NAME_NODE_TYPES = frozenset(
+    (
+        "identifier",
+        "name",
+        "property_identifier",
+        "bare_key",
+        "quoted_key",
+        "dotted_key",
+        "string",
+        "plain_scalar",
+        "string_scalar",
+    )
+)
+
+
 def _get_node_name(node: Any, source_bytes: bytes) -> str:
     """Extract identifier name from a tree-sitter node."""
     try:
         for child in node.children:
-            if hasattr(child, "type") and child.type in ("identifier", "name", "property_identifier"):
-                return source_bytes[child.start_byte : child.end_byte].decode("utf-8", errors="replace")
+            if hasattr(child, "type") and child.type in _NAME_NODE_TYPES:
+                raw = source_bytes[child.start_byte : child.end_byte].decode("utf-8", errors="replace")
+                if child.type == "string" and len(raw) >= 2 and raw[0] == raw[-1] == '"':
+                    return raw[1:-1]
+                return raw
             name = _get_node_name(child, source_bytes)
             if name:
                 return name
@@ -80,10 +110,11 @@ def _walk_declarations(
     decls: list[Declaration],
     *,
     depth: int = 0,
-    max_depth: int = 1,
+    max_depth: int | None = None,
 ) -> None:
     """Collect top-level declarations (limited depth to avoid nested methods)."""
-    if depth > max_depth:
+    limit = max_depth if max_depth is not None else _MAX_DEPTH.get(lang, 1)
+    if depth > limit:
         return
     try:
         node_type = getattr(node, "type", None)
@@ -104,7 +135,7 @@ def _walk_declarations(
             )
         for child in node.children:
             _walk_declarations(
-                child, source_bytes, lang, decls, depth=depth + 1, max_depth=max_depth
+                child, source_bytes, lang, decls, depth=depth + 1, max_depth=limit
             )
     except (AttributeError, IndexError) as exc:
         logger.debug("tree-sitter walk error: %s", exc)

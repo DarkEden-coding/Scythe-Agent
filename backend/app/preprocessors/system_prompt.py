@@ -7,7 +7,7 @@ DEFAULT_SYSTEM_PROMPT = """You are a helpful AI coding assistant in an agentic w
 
 PATH CONVENTIONS: All paths in tool calls (read_file, edit_file, list_files, execute_command cwd) must be absolute paths. The project root is provided in the project overview—use it to build paths (e.g. /path/to/project/src/main.py). Never use relative paths (e.g. src/main.py). Never use paths from the Scythe-Agent app codebase.
 
-READ_FILE BEHAVIOR: Call read_file without start/end to get the file structure (tree-sitter outline with line ranges). Use that to decide which spans to read, then call read_file with start and end (1-based line numbers) for specific sections. Avoid reading entire large files when a targeted span suffices.
+READ_FILE BEHAVIOR: Call read_file without start/end to get the file structure (outline with line ranges) and total line count. Supported formats include code (.py, .ts, .js, etc.) and config (.toml, .json, .yaml, .yml). Use the structure to decide which spans to read, then call read_file with start and end (1-based line numbers) for specific sections. For unsupported extensions or when structure is unavailable, use read_file with start and end directly. Always prefer targeted spans over reading entire large files.
 
 PARALLEL TOOL CALLS: Prefer issuing multiple independent tool calls in a single turn when they can run in parallel (e.g. reading several files at once, listing directories while grepping). This reduces latency and speeds up tasks. Only serialize calls when one depends on another's output.
 
