@@ -7,7 +7,7 @@ import shutil
 from pathlib import Path
 
 from app.tools.contracts import ToolResult
-from app.tools.path_utils import resolve_path
+from app.tools.path_utils import IGNORED_DIR_NAMES, resolve_path
 
 
 def _resolve_search_path(
@@ -32,6 +32,8 @@ def _resolve_search_path(
 def _build_rg_args(payload: dict, pattern: str, base: Path) -> list[str]:
     """Build ripgrep command args."""
     args = ["rg", "--no-heading", "--line-number"]
+    for name in IGNORED_DIR_NAMES:
+        args.extend(["--glob", f"!**/{name}/**"])
     if payload.get("case_insensitive"):
         args.append("--ignore-case")
     if payload.get("files_only"):
@@ -60,7 +62,8 @@ class GrepTool:
     description = (
         "Search for a pattern in files using ripgrep. "
         "path must be absolute when provided (file or directory). "
-        "Omit path to search project root. Supports regex patterns."
+        "Omit path to search project root. Supports regex patterns. "
+        "Auto-ignores .venv, node_modules, __pycache__, .git, cache, dist, build, and similar dirs."
     )
     input_schema = {
         "type": "object",

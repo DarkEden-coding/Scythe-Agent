@@ -14,6 +14,16 @@ def get_tool_outputs_root() -> Path:
     return TOOL_OUTPUTS_ROOT
 
 
+# Directory names to auto-ignore in grep and list_files (e.g. .venv, node_modules)
+IGNORED_DIR_NAMES = frozenset({
+    ".venv", "venv", ".env", "node_modules", "__pycache__",
+    ".git", ".hg", ".svn", ".cache", "cache",
+    "dist", "build", ".next", ".nuxt", ".output",
+    "coverage", ".coverage", ".pytest_cache", ".mypy_cache",
+    "target",  # Rust
+    ".tox", ".eggs",
+})
+
 _BLOCKED_PREFIXES = [
     "/etc",
     "/var",
