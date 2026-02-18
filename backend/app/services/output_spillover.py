@@ -48,6 +48,6 @@ def maybe_spill(output: str, project_id: str) -> tuple[str, str | None]:
 
 ---
 Full output saved to: {abs_path}
-Use the read_file tool with this path to read specific sections. Search and selective reads from that file as needed. (Line-range read support will be added later.)"""
+Use the read_file tool with start and end (1-based line numbers) to read specific sections."""
 
     return summarized, abs_path
