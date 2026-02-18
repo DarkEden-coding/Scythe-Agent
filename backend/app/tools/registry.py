@@ -22,6 +22,12 @@ class ToolRegistry:
     def list_tools(self) -> list[str]:
         return sorted(self._tools.keys())
 
+    def unregister_mcp_tools(self) -> None:
+        """Remove all MCP tools from the registry (names start with mcp__)."""
+        to_remove = [k for k in self._tools if k.startswith("mcp__")]
+        for k in to_remove:
+            del self._tools[k]
+
     def register_mcp_tools(self, tools: list[dict]) -> None:
         for tool in tools:
             schema_raw = tool.get("input_schema")

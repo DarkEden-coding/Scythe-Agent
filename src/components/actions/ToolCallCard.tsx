@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import type { ToolCall } from '@/types';
 import { cn } from '@/utils/cn';
+import { formatToolDisplayName } from '@/utils/tools';
 
 function safeStr(v: unknown): string {
   if (typeof v === 'string') return v;
@@ -83,7 +84,9 @@ export function ToolCallCard({
           <span className="text-aqua-400 shrink-0">
             {toolIcons[call.name] || <FileCode className="w-3.5 h-3.5" />}
           </span>
-          <span className="text-[11px] text-gray-300 font-mono whitespace-nowrap">{call.name}</span>
+          <span className="text-[11px] text-gray-300 font-mono whitespace-nowrap" title={call.name}>
+            {formatToolDisplayName(call.name)}
+          </span>
           {pathHint && call.name !== 'build_project' && call.name !== 'list_files' && (
             <span className="text-[10px] text-gray-600 font-mono whitespace-nowrap">{pathHint}</span>
           )}

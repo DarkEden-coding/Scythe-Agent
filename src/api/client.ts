@@ -58,6 +58,12 @@ import type {
   SetSystemPromptResponse,
   TestConnectionResponse,
   SyncModelsResponse,
+  MCPServersResponse,
+  MCPServer,
+  MCPTool,
+  CreateMCPServerRequest,
+  UpdateMCPServerRequest,
+  RefreshMCPResponse,
 } from './types';
 
 /* ── Retry Configuration ────────────────────────────────────────── */
@@ -519,6 +525,43 @@ export class ApiClient {
   /** Set custom system prompt. Empty string resets to default. */
   async setSystemPrompt(req: SetSystemPromptRequest): Promise<ApiResponse<SetSystemPromptResponse>> {
     return this.request('PUT', '/settings/system-prompt', req);
+  }
+
+  /* ── MCP configuration ──────────────────────────────────────── */
+
+  /** List all MCP servers with their tools. */
+  async getMcpServers(): Promise<ApiResponse<MCPServersResponse>> {
+    return this.request('GET', '/settings/mcp');
+  }
+
+  /** Create a new MCP server. */
+  async createMcpServer(req: CreateMCPServerRequest): Promise<ApiResponse<MCPServer>> {
+    return this.request('POST', '/settings/mcp', req);
+  }
+
+  /** Update an MCP server. */
+  async updateMcpServer(serverId: string, req: UpdateMCPServerRequest): Promise<ApiResponse<MCPServer>> {
+    return this.request('PUT', `/settings/mcp/${serverId}`, req);
+  }
+
+  /** Delete an MCP server. */
+  async deleteMcpServer(serverId: string): Promise<ApiResponse<{ deleted: boolean }>> {
+    return this.request('DELETE', `/settings/mcp/${serverId}`);
+  }
+
+  /** Enable or disable an MCP server. */
+  async setMcpServerEnabled(serverId: string, enabled: boolean): Promise<ApiResponse<MCPServer>> {
+    return this.request('PATCH', `/settings/mcp/${serverId}/enabled`, { enabled });
+  }
+
+  /** Enable or disable an MCP tool. */
+  async setMcpToolEnabled(toolId: string, enabled: boolean): Promise<ApiResponse<MCPTool>> {
+    return this.request('PATCH', `/settings/mcp/tools/${toolId}/enabled`, { enabled });
+  }
+
+  /** Refresh MCP tools from all enabled servers and update the tool registry. */
+  async refreshMcpTools(): Promise<ApiResponse<RefreshMCPResponse>> {
+    return this.request('POST', '/settings/mcp/refresh');
   }
 
   /* ── Agent event stream (SSE / WebSocket) ────────────────────── */

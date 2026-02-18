@@ -82,7 +82,8 @@ class EditFileTool:
     name = "edit_file"
     description = (
         "Search-and-replace in a file. path must be absolute (e.g. /path/to/project/src/main.py). "
-        "Tries exact match first; if not found, uses fuzzy match that ignores tab vs space differences."
+        "Tries exact match first; if not found, uses fuzzy match that ignores tab vs space differences. "
+        "For empty files (e.g. after touch), use search=\"\" and replace=\"content\" to populate."
     )
     input_schema = {
         "type": "object",
@@ -111,16 +112,18 @@ class EditFileTool:
         search = str(payload.get("search", ""))
         replace = str(payload.get("replace", ""))
 
-        if not search:
-            return ToolResult(output="search must be non-empty", file_edits=[], ok=False)
-
         if not target.exists():
             return ToolResult(output=f"File not found: {target}", file_edits=[], ok=False)
 
         content = target.read_text(encoding="utf-8")
         used_fuzzy = False
 
-        result = _apply_replace(content, search, replace, fuzzy=False)
+        if not search:
+            if content:
+                return ToolResult(output="search must be non-empty", file_edits=[], ok=False)
+            result = (replace, 0, len(replace))
+        else:
+            result = _apply_replace(content, search, replace, fuzzy=False)
         if result is None:
             result = _apply_replace(content, search, replace, fuzzy=True)
             used_fuzzy = result is not None

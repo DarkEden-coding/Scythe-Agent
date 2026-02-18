@@ -378,3 +378,46 @@ export interface SyncModelsResponse {
   models: string[];
   count: number;
 }
+
+/* ── MCP configuration ────────────────────────────────────────── */
+
+export interface MCPTool {
+  id: string;
+  serverId: string;
+  toolName: string;
+  description: string | null;
+  enabled: boolean;
+  discoveredAt: string;
+}
+
+export interface MCPServer {
+  id: string;
+  name: string;
+  transport: string;
+  configJson: string;
+  enabled: boolean;
+  lastConnectedAt: string | null;
+  tools: MCPTool[];
+}
+
+export interface MCPServersResponse {
+  servers: MCPServer[];
+}
+
+export interface CreateMCPServerRequest {
+  name: string;
+  transport: string;
+  configJson: string;
+}
+
+export interface UpdateMCPServerRequest {
+  name?: string;
+  transport?: string;
+  configJson?: string;
+}
+
+export interface RefreshMCPResponse {
+  success: boolean;
+  discoveredCount: number;
+  errors: string[];
+}

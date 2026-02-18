@@ -1,13 +1,15 @@
 import { useState, useEffect } from 'react';
-import { Settings, Key, Bot, ChevronRight, FolderOpen } from 'lucide-react';
+import { Settings, Key, Bot, ChevronRight, FolderOpen, Plug } from 'lucide-react';
 import { cn } from '@/utils/cn';
 import { Modal } from './Modal';
 import { OpenRouterSettingsPanel } from './settings/OpenRouterSettingsPanel';
 import { AgentSettingsPanel } from './settings/AgentSettingsPanel';
+import { MCPSettingsPanel } from './settings/MCPSettingsPanel';
 import type { ProviderId, SettingsTabId } from './ProviderSettingsDropdown';
 
-const PROVIDER_TABS: { id: ProviderId; label: string; icon: React.ReactNode }[] = [
+const PROVIDER_TABS: { id: ProviderId | 'mcp'; label: string; icon: React.ReactNode }[] = [
   { id: 'openrouter', label: 'OpenRouter', icon: <Key className="w-4 h-4 text-cyan-400" /> },
+  { id: 'mcp', label: 'MCP', icon: <Plug className="w-4 h-4 text-cyan-400" /> },
 ];
 
 interface SettingsModalProps {
@@ -46,6 +48,18 @@ export function SettingsModal({
               >
                 Read the OpenRouter docs
               </a>
+            </p>
+          }
+        />
+      );
+    }
+    if (activeTab === 'mcp') {
+      return (
+        <MCPSettingsPanel
+          footer={
+            <p className="text-xs text-gray-400">
+              MCP servers provide tools to the agent. Use stdio (npx/uvx) for local or http for
+              remote servers, then refresh to discover tools.
             </p>
           }
         />

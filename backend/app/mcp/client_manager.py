@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timezone
 from typing import Protocol
 
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 from app.db.models.mcp_tool_cache import MCPToolCache
 
@@ -16,7 +19,7 @@ from app.mcp.protocol_models import (
     parse_tool_call_result,
     parse_tools_list_response,
 )
-# Production has no built-in transports; tests register mock factories via register_transport_factory
+# Transports are registered at import time (stdio, http); tests can override via register_transport_factory
 _transport_factory_registry: dict[str, type] = {}
 
 
@@ -39,6 +42,8 @@ class MCPClientManager:
 
     def _build_transport(self, *, transport_name: str, config: dict) -> _Transport:
         key = transport_name.lower().strip()
+        if key == "streamable-http":
+            key = "http"
         factory = _transport_factory_registry.get(key)
         if factory is not None:
             return factory(config)
@@ -46,7 +51,7 @@ class MCPClientManager:
 
     @staticmethod
     def register_transport_factory(name: str, factory: type) -> None:
-        """Register a transport factory for tests. name is e.g. 'stdio', 'sse', 'http'."""
+        """Register a transport factory. name is e.g. 'stdio', 'http'."""
         _transport_factory_registry[name.lower().strip()] = factory
 
     def _server_cache_is_fresh(self, repo: MCPRepository, server_id: str) -> bool:
@@ -78,7 +83,9 @@ class MCPClientManager:
             self._server_configs[server.id] = (server.transport, config)
 
             if not force_refresh and self._server_cache_is_fresh(repo, server.id):
-                for cached in repo.list_cached_tools_for_server(server.id):
+                for cached in repo.list_cached_tools_for_server(
+                    server.id, enabled_only=True
+                ):
                     schema = {}
                     try:
                         schema_value = json.loads(cached.schema_json)
@@ -102,23 +109,37 @@ class MCPClientManager:
                 self._transports[server.id] = transport
                 raw = await transport.request("tools/list", {})
                 tools = parse_tools_list_response(raw, server_id=server.id)
-                cache_rows = [
-                    MCPToolCache(
-                        id=f"mcpt-{server.id}-{tool.name}",
-                        server_id=server.id,
-                        tool_name=tool.name,
-                        schema_json=json.dumps(tool.input_schema, sort_keys=True),
-                        description=tool.description,
-                        discovered_at=self._now(),
+                existing = {t.tool_name: t for t in repo.list_cached_tools_for_server(server.id)}
+                cache_rows = []
+                for tool in tools:
+                    prev = existing.get(tool.name)
+                    enabled = prev.enabled if prev else 1
+                    cache_rows.append(
+                        MCPToolCache(
+                            id=f"mcpt-{server.id}-{tool.name}",
+                            server_id=server.id,
+                            tool_name=tool.name,
+                            schema_json=json.dumps(tool.input_schema, sort_keys=True),
+                            description=tool.description,
+                            discovered_at=self._now(),
+                            enabled=enabled,
+                        )
                     )
-                    for tool in tools
-                ]
                 repo.replace_server_tools(server_id=server.id, tools=cache_rows)
                 repo.set_last_connected(server, self._now())
-                discovered.extend(tools)
+                for i, tool in enumerate(tools):
+                    if cache_rows[i].enabled:
+                        discovered.append(tool)
             except Exception as exc:
-                errors.append(f"{server.id}: {exc}")
-                for cached in repo.list_cached_tools_for_server(server.id):
+                base = str(exc)
+                if "Expecting value" in base or (type(exc).__name__ == "JSONDecodeError"):
+                    base = f"Server returned invalid/empty response. Original: {base}"
+                msg = f"{server.id}: {base}"
+                errors.append(msg)
+                logger.warning("MCP discovery failed for server %s: %s", server.id, exc)
+                for cached in repo.list_cached_tools_for_server(
+                    server.id, enabled_only=True
+                ):
                     schema = {}
                     try:
                         schema_value = json.loads(cached.schema_json)

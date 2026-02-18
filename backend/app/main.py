@@ -7,12 +7,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes.chat import router as chat_router
 from app.api.routes.events import router as events_router
 from app.api.routes.filesystem import router as filesystem_router
+from app.api.routes.mcp import router as mcp_router
 from app.api.routes.projects import router as projects_router
 from app.api.routes.settings import router as settings_router
 from app.config.settings import get_settings
 from app.db.seed import seed_app_data
 from app.db.session import get_engine, get_sessionmaker
 from app.mcp.client_manager import get_mcp_client_manager
+from app.mcp.transports import *  # noqa: F401, F403 - registers stdio transport
 from app.middleware.error_handler import ServiceError, catch_all_handler, service_error_handler
 from app.providers.openrouter.model_catalog import OpenRouterModelCatalogService
 from app.tools.registry import get_tool_registry
@@ -81,6 +83,7 @@ def create_app() -> FastAPI:
     app.include_router(projects_router)
     app.include_router(filesystem_router)
     app.include_router(settings_router)
+    app.include_router(mcp_router)
     app.include_router(chat_router)
     app.include_router(events_router)
 

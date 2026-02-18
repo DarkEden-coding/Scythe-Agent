@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config.settings import get_settings
+from app.db.models.mcp_server import MCPServer
 from app.utils.time import utc_now_iso
 from app.utils.encryption import encrypt
 from app.db.models.auto_approve_rule import AutoApproveRule
@@ -72,3 +73,8 @@ def seed_app_data(db: Session) -> None:
                 created_at=now,
             )
         )
+
+    # Remove legacy mock MCP server if present (from old test seed)
+    mock_server = db.get(MCPServer, "mcp-local-1")
+    if mock_server is not None:
+        db.delete(mock_server)

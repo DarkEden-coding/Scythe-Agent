@@ -1,4 +1,4 @@
-from sqlalchemy import ForeignKey, Text
+from sqlalchemy import ForeignKey, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -13,4 +13,5 @@ class MCPToolCache(Base):
     schema_json: Mapped[str] = mapped_column(Text, nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     discovered_at: Mapped[str] = mapped_column(Text, nullable=False)
+    enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 

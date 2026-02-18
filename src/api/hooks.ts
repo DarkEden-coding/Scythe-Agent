@@ -8,6 +8,7 @@ export { useProjects } from './hooks/useProjects';
 export { useFilesystemBrowser } from './hooks/useFilesystemBrowser';
 export { useSettings } from './hooks/useSettings';
 export { useOpenRouter } from './hooks/useOpenRouter';
+export { useMcp } from './hooks/useMcp';
 export { useAgentEvents } from './hooks/useAgentEvents';
 
 export { api as defaultApiClient } from './client';

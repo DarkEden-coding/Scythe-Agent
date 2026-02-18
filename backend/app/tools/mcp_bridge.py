@@ -5,7 +5,7 @@ from app.tools.contracts import ToolResult
 
 
 def build_mcp_tool_name(*, server_id: str, tool_name: str) -> str:
-    return f"mcp::{server_id}::{tool_name}"
+    return f"mcp__{server_id}__{tool_name}"
 
 
 class MCPBridgeTool:

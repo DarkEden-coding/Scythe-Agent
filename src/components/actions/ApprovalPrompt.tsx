@@ -4,6 +4,7 @@ import type { ToolCall } from '@/types';
 import type { AutoApproveRule } from '@/api';
 import { toolIcons } from './ToolCallCard';
 import { cn } from '@/utils/cn';
+import { formatToolDisplayName } from '@/utils/tools';
 
 function safeStr(v: unknown): string {
   if (typeof v === 'string') return v;
@@ -213,7 +214,9 @@ export function ApprovalPrompt({
             <span className="text-aqua-400 shrink-0">
               {toolIcons[pendingApproval.name] ?? <FileCode className="w-3.5 h-3.5" />}
             </span>
-            <span className="text-xs font-mono text-gray-300">{pendingApproval.name}</span>
+            <span className="text-xs font-mono text-gray-300" title={pendingApproval.name}>
+            {formatToolDisplayName(pendingApproval.name)}
+          </span>
           </div>
 
           <div className="space-y-1">
@@ -267,7 +270,7 @@ export function ApprovalPrompt({
                         isAutoApproved ? 'text-emerald-300' : 'text-gray-300',
                       )}
                     >
-                      {part.value}
+                      {part.key === 'tool' ? formatToolDisplayName(part.value) : part.value}
                     </span>
                   </button>
                 );

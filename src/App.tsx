@@ -12,7 +12,7 @@ import type { AgentEvent, AutoApproveRule } from './api';
 export function App() {
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [showModelPicker, setShowModelPicker] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<'openrouter' | 'agent' | null>(null);
+  const [settingsTab, setSettingsTab] = useState<'openrouter' | 'agent' | 'mcp' | null>(null);
   const [chatWidth, setChatWidth] = useState(33.33);
   const { showNotification, notificationMessage, showToast } = useToast();
   const [processingChats, setProcessingChats] = useState<Set<string>>(new Set());
