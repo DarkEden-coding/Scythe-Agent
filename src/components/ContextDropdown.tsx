@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { FileCode, MessageSquare, Terminal, FileText, ChevronDown, Bug } from 'lucide-react';
+import { MessageSquare, Terminal, FileText, ChevronDown, Bug } from 'lucide-react';
 import { ContextItem } from '../types';
 import { cn } from '../utils/cn';
 import { api } from '../api';
@@ -12,21 +12,18 @@ interface ContextDropdownProps {
 }
 
 const typeIcons: Record<string, React.ReactNode> = {
-  file: <FileCode className="w-3 h-3" />,
   conversation: <MessageSquare className="w-3 h-3" />,
   tool_output: <Terminal className="w-3 h-3" />,
   summary: <FileText className="w-3 h-3" />,
 };
 
 const typeColors: Record<string, string> = {
-  file: 'text-cyan-300 bg-cyan-500/10 border border-cyan-500/20',
   conversation: 'text-aqua-300 bg-aqua-500/10 border border-aqua-500/20',
   tool_output: 'text-teal-300 bg-teal-500/10 border border-teal-500/20',
   summary: 'text-amber-300 bg-amber-500/10 border border-amber-500/20',
 };
 
 const PIE_COLORS: Record<string, string> = {
-  file: '#0ea5e9',
   conversation: '#22c55e',
   tool_output: '#a855f7',
   summary: '#f97316',
@@ -65,7 +62,7 @@ function PieChart({
     const y2 = cy + r * Math.sin(acc);
     const large = pct > 0.5 ? 1 : 0;
     const d = `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`;
-    const fill = seg.type === '_remaining' ? REMAINING_COLOR : PIE_COLORS[seg.type] ?? PIE_COLORS.file;
+    const fill = seg.type === '_remaining' ? REMAINING_COLOR : PIE_COLORS[seg.type] ?? PIE_COLORS.tool_output;
     const opacity = seg.type === '_remaining' ? 0.5 : 0.9;
     return (
       <path key={seg.type} d={d} fill={fill} opacity={opacity} />
@@ -122,7 +119,6 @@ function escapeHtml(s: string): string {
 }
 
 const typeLabels: Record<string, string> = {
-  file: 'Files',
   conversation: 'Conversation',
   tool_output: 'Tool Outputs',
   summary: 'Summaries',
@@ -148,9 +144,10 @@ export function ContextDropdown({
   };
 
   const groupedByType = contextItems.reduce<Record<string, { count: number; tokens: number }>>((acc, item) => {
-    if (!acc[item.type]) acc[item.type] = { count: 0, tokens: 0 };
-    acc[item.type].count++;
-    acc[item.type].tokens += item.tokens;
+    const type = item.type === 'file' ? 'tool_output' : item.type;
+    if (!acc[type]) acc[type] = { count: 0, tokens: 0 };
+    acc[type].count++;
+    acc[type].tokens += item.tokens;
     return acc;
   }, {});
 
@@ -210,9 +207,9 @@ export function ContextDropdown({
                     <div className="flex items-center gap-1.5">
                       <span
                         className="w-1.5 h-1.5 rounded-full shrink-0"
-                        style={{ backgroundColor: PIE_COLORS[seg.type] ?? PIE_COLORS.file }}
+                        style={{ backgroundColor: PIE_COLORS[seg.type] ?? PIE_COLORS.tool_output }}
                       />
-                      <span className="text-gray-400">{typeLabels[seg.type]}</span>
+                      <span className="text-gray-400">{typeLabels[seg.type] ?? 'Tool Outputs'}</span>
                     </div>
                     <span className="text-gray-500 font-mono">{seg.tokens.toLocaleString()}</span>
                   </div>
@@ -246,10 +243,10 @@ export function ContextDropdown({
                 title={item.full_name ?? item.name}
                 className={cn(
                   'flex items-center gap-2 px-2 py-1.5 rounded-lg text-[11px]',
-                  typeColors[item.type]
+                  typeColors[item.type] ?? typeColors.tool_output
                 )}
               >
-                {typeIcons[item.type]}
+                {typeIcons[item.type] ?? typeIcons.tool_output}
                 <span className="flex-1 min-w-0 truncate">{item.name}</span>
                 <span className="text-gray-500 font-mono text-[10px] shrink-0">{item.tokens.toLocaleString()}</span>
               </div>

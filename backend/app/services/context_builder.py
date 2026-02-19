@@ -56,8 +56,8 @@ def build_context_items(
                     tokens = token_counter.count(content)
                     items.append(
                         ContextItemOut(
-                            id=f"ctx-file-{chat_id[:8]}",
-                            type="file",
+                            id=f"ctx-tool-{chat_id[:8]}",
+                            type="tool_output",
                             name="Project structure",
                             tokens=tokens,
                             full_name=project_path,
