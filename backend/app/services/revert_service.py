@@ -8,6 +8,7 @@ from app.db.repositories.chat_repo import ChatRepository
 from app.db.repositories.project_repo import ProjectRepository
 from app.schemas.chat import FileEditOut, RevertFileResponse, RevertToCheckpointResponse
 from app.services.chat_history import ChatHistoryAssembler
+from app.services.memory.observational.background import om_runner
 from app.services.settings_service import SettingsService
 from app.utils.mappers import map_file_action_for_ui
 
@@ -20,6 +21,9 @@ class RevertService:
         )
 
     def revert_to_checkpoint(self, chat_id: str, checkpoint_id: str) -> RevertToCheckpointResponse:
+        # Stop any in-flight observation work before mutating chat history.
+        om_runner.cancel(chat_id)
+
         chat = self.repo.get_chat(chat_id)
         if chat is None:
             raise ValueError(f"Chat not found: {chat_id}")
@@ -72,6 +76,9 @@ class RevertService:
         )
 
     def revert_file(self, chat_id: str, file_edit_id: str) -> RevertFileResponse:
+        # Avoid stale observation writes while reverting artifacts.
+        om_runner.cancel(chat_id)
+
         edit = self.repo.get_file_edit(file_edit_id)
         if edit is None or edit.chat_id != chat_id:
             raise ValueError(f"File edit not found: {file_edit_id}")

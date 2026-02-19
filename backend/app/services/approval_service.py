@@ -83,12 +83,14 @@ class ApprovalService:
                 project = self.project_repo.get_project(chat.project_id)
                 if project and project.path:
                     project_root = project.path
-            result = await tool.run(
-                payload,
-                project_root=project_root,
-                chat_id=chat_id,
-                chat_repo=self.chat_repo,
-            )
+            run_kwargs = {
+                "project_root": project_root,
+                "chat_id": chat_id,
+                "chat_repo": self.chat_repo,
+            }
+            if tool_call.name == "update_todo_list":
+                run_kwargs["checkpoint_id"] = tool_call.checkpoint_id
+            result = await tool.run(payload, **run_kwargs)
 
             output_to_store = result.output
             output_file_path = None
@@ -151,14 +153,14 @@ class ApprovalService:
             self.chat_repo.commit()
 
             if tool_call.name == "update_todo_list" and result.ok:
-                todos = self.chat_repo.list_todos(chat_id)
+                todos = self.chat_repo.get_current_todos(chat_id)
                 todos_out = [
                     TodoOut(
-                        id=t.id,
-                        content=t.content,
-                        status=t.status,
-                        sortOrder=t.sort_order,
-                        timestamp=t.timestamp,
+                        id=t["id"],
+                        content=t["content"],
+                        status=t["status"],
+                        sortOrder=t["sort_order"],
+                        timestamp=t["timestamp"],
                     )
                     for t in todos
                 ]

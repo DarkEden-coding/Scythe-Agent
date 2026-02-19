@@ -44,6 +44,9 @@ class ChatService:
     ) -> bool:
         """Deny any pending tool approvals and cancel the running agent for this chat.
         Returns True if a task was cancelled."""
+        # Cancel any in-flight observation cycle for this chat.
+        om_runner.cancel(chat_id)
+
         existing_task = _running_tasks.pop(chat_id, None)
         if existing_task is None or existing_task.done():
             return False
@@ -158,6 +161,9 @@ class ChatService:
         if checkpoint is None:
             raise ValueError(f"No checkpoint found for message: {message_id}")
 
+        # Prevent stale observation writes while we mutate/revert history.
+        om_runner.cancel(chat_id)
+
         # Cancel any running agent task for this chat
         existing_task = _running_tasks.pop(chat_id, None)
         if existing_task is not None and not existing_task.done():
@@ -270,6 +276,16 @@ def _schedule_background_task(
                     session_factory=session_factory,
                     event_bus=event_bus,
                 )
+        except asyncio.CancelledError:
+            logger.info(
+                "Conversation ended: task cancelled chat_id=%s checkpoint_id=%s",
+                chat_id,
+                checkpoint_id,
+            )
+            await event_bus.publish(
+                chat_id,
+                {"type": "agent_done", "payload": {"checkpointId": checkpoint_id}},
+            )
         except Exception as exc:
             err_msg = str(exc)
             logger.exception(
@@ -318,6 +334,9 @@ def _schedule_background_task(
     _running_tasks[chat_id] = task
 
     def _on_done(t: asyncio.Task) -> None:
-        _running_tasks.pop(chat_id, None)
+        # Only remove if this task is still the tracked one; avoids
+        # a race where a stale callback removes a newer task.
+        if _running_tasks.get(chat_id) is t:
+            del _running_tasks[chat_id]
 
     task.add_done_callback(_on_done)

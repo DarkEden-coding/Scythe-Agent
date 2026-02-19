@@ -13,15 +13,7 @@ from app.db.repositories.settings_repo import SettingsRepository
 
 # Subscription models; /v1/models returns 403 for OAuth tokens
 OPENAI_SUB_FALLBACK_MODELS = [
-    ("gpt-5", 128_000),
-    ("gpt-5-codex", 128_000),
-    ("gpt-5-codex-mini", 128_000),
-    ("gpt-5.1", 128_000),
-    ("gpt-5.1-codex", 128_000),
-    ("gpt-5.1-codex-max", 128_000),
     ("gpt-5.1-codex-mini", 128_000),
-    ("gpt-5.2", 128_000),
-    ("gpt-5.2-codex", 128_000),
     ("gpt-5.3-codex", 128_000),
 ]
 

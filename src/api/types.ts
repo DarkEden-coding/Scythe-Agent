@@ -346,8 +346,14 @@ export interface AgentContextPayload {
 }
 
 export interface AgentErrorPayload {
-  code: string;
+  code?: string;
   message: string;
+  toolCallId?: string;
+  toolName?: string;
+  source?: string;
+  retryable?: boolean;
+  retryAction?: 'retry_observation' | string;
+  checkpointId?: string;
 }
 
 // 4. Settings

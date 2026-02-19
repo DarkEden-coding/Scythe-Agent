@@ -58,14 +58,22 @@ export function App() {
     });
   }, []);
 
-  // Bootstrap activeChatId from first available chat when projects load
+  // Persist active chat so it restores on refresh (never clear — bootstrap may run before projects load)
   useEffect(() => {
-    if (projectsLoading) return;
+    if (activeChatId) localStorage.setItem('activeChatId', activeChatId);
+  }, [activeChatId]);
+
+  // Bootstrap activeChatId from last opened or first available chat when projects load
+  useEffect(() => {
+    if (projectsLoading || !projects.length) return;
     const allChats = projects.flatMap((p) => p.chats);
+    if (!allChats.length) return;
     const firstChatId = allChats[0]?.id ?? null;
+    const lastChatId = localStorage.getItem('activeChatId');
+    const lastExists = lastChatId && allChats.some((c) => c.id === lastChatId);
     const currentExists = activeChatId != null && allChats.some((c) => c.id === activeChatId);
     if (!currentExists) {
-      setActiveChatId(firstChatId);
+      setActiveChatId(lastExists ? lastChatId : firstChatId);
     }
   }, [projectsLoading, projects, activeChatId]);
 
@@ -86,17 +94,24 @@ export function App() {
         projectsApi.refresh();
         return;
       }
-      if (
-        event.type === 'agent_done' ||
-        (event.type === 'error' && !(event.payload as { toolCallId?: string })?.toolCallId)
-      ) {
+      if (event.type === 'approval_required') {
+        // Agent is waiting for user input; stop "thinking" state until user approves/rejects.
         removeProcessing(event.chatId);
-        return;
+      }
+      if (event.type === 'agent_done') {
+        removeProcessing(event.chatId);
+      }
+      if (event.type === 'error' && !(event.payload as { toolCallId?: string })?.toolCallId) {
+        removeProcessing(event.chatId);
+        if (event.chatId === activeChatId) {
+          const payload = event.payload as { message?: string };
+          showToast(`Error: ${payload.message ?? 'Unknown error'}`);
+        }
       }
       if (event.chatId !== activeChatId) return;
       chat.processEvent(event);
     },
-    [activeChatId, chat, projectsApi, removeProcessing],
+    [activeChatId, chat, projectsApi, removeProcessing, showToast],
   );
 
   useAgentEvents([activeChatId, ...processingChats], handleAgentEvent);
@@ -129,16 +144,45 @@ export function App() {
     });
   }, [activeChatId, chat]);
 
+  const handleRetryObservation = useCallback(async () => {
+    const res = await chat.retryObservation();
+    if (!res.ok) showToast(`Error: ${res.error}`);
+  }, [chat, showToast]);
+
   const handleApproveCommand = async (toolCallId: string) => {
+    if (activeChatId != null) {
+      setProcessingChats((prev) => new Set(prev).add(activeChatId));
+    }
     const res = await chat.approveCommand(toolCallId);
     if (res.ok) showToast('Tool call approved');
-    else showToast(`Error: ${res.error}`);
+    else {
+      showToast(`Error: ${res.error}`);
+      if (activeChatId != null) {
+        setProcessingChats((prev) => {
+          const next = new Set(prev);
+          next.delete(activeChatId);
+          return next;
+        });
+      }
+    }
   };
 
   const handleRejectCommand = async (toolCallId: string) => {
+    if (activeChatId != null) {
+      setProcessingChats((prev) => new Set(prev).add(activeChatId));
+    }
     const res = await chat.rejectCommand(toolCallId);
     if (res.ok) showToast('Tool call rejected');
-    else showToast(`Error: ${res.error}`);
+    else {
+      showToast(`Error: ${res.error}`);
+      if (activeChatId != null) {
+        setProcessingChats((prev) => {
+          const next = new Set(prev);
+          next.delete(activeChatId);
+          return next;
+        });
+      }
+    }
   };
 
   const handleRevertToCheckpoint = async (checkpointId: string) => {
@@ -330,6 +374,8 @@ export function App() {
             observationStatus={chat.observationStatus}
             observation={chat.observation}
             showObservationsInChat={showObservationsInChat}
+            persistentError={chat.persistentError}
+            onRetryPersistentError={handleRetryObservation}
           />
         }
         rightPanel={

@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_db
 from app.api.envelope import err, ok
 from fastapi.responses import RedirectResponse
+from app.middleware.error_handler import full_error_message
 
 from app.config.settings import get_settings
 from app.schemas.settings import (
@@ -33,9 +34,9 @@ def get_settings_route(db: Session = Depends(get_db)):
         return ok(data.model_dump())
     except ValueError as exc:
         return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
-    except Exception:
+    except Exception as exc:
         return JSONResponse(
-            status_code=500, content=err("Internal server error").model_dump()
+            status_code=500, content=err(full_error_message(exc)).model_dump()
         )
 
 
@@ -46,9 +47,9 @@ def get_auto_approve(db: Session = Depends(get_db)):
         return ok(data.model_dump())
     except ValueError as exc:
         return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
-    except Exception:
+    except Exception as exc:
         return JSONResponse(
-            status_code=500, content=err("Internal server error").model_dump()
+            status_code=500, content=err(full_error_message(exc)).model_dump()
         )
 
 
@@ -59,9 +60,9 @@ def set_auto_approve(request: SetAutoApproveRequest, db: Session = Depends(get_d
         return ok(data.model_dump())
     except ValueError as exc:
         return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
-    except Exception:
+    except Exception as exc:
         return JSONResponse(
-            status_code=500, content=err("Internal server error").model_dump()
+            status_code=500, content=err(full_error_message(exc)).model_dump()
         )
 
 
@@ -73,9 +74,9 @@ def set_system_prompt(request: SetSystemPromptRequest, db: Session = Depends(get
         return ok(data.model_dump())
     except ValueError as exc:
         return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
-    except Exception:
+    except Exception as exc:
         return JSONResponse(
-            status_code=500, content=err("Internal server error").model_dump()
+            status_code=500, content=err(full_error_message(exc)).model_dump()
         )
 
 
@@ -86,9 +87,9 @@ def set_model(request: SetModelRequest, db: Session = Depends(get_db)):
         return ok(data.model_dump())
     except ValueError as exc:
         return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
-    except Exception:
+    except Exception as exc:
         return JSONResponse(
-            status_code=500, content=err("Internal server error").model_dump()
+            status_code=500, content=err(full_error_message(exc)).model_dump()
         )
 
 

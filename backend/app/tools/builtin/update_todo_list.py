@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from app.tools.contracts import ToolResult
-from app.utils.time import utc_now_iso
+from app.utils.todos import normalize_todo_items
 
 
 class UpdateTodoListTool:
@@ -51,6 +51,7 @@ class UpdateTodoListTool:
         project_root: str | None = None,
         chat_id: str | None = None,
         chat_repo=None,
+        checkpoint_id: str | None = None,
     ) -> ToolResult:
         if not chat_id:
             return ToolResult(
@@ -71,24 +72,7 @@ class UpdateTodoListTool:
                 file_edits=[],
                 ok=False,
             )
-        normalized = []
-        for i, item in enumerate(items):
-            if not isinstance(item, dict):
-                continue
-            content = str(item.get("content", "")).strip()
-            if not content:
-                continue
-            status = str(item.get("status", "pending")).lower()
-            if status not in ("pending", "in_progress", "completed"):
-                status = "pending"
-            normalized.append({
-                "content": content,
-                "status": status,
-                "sort_order": int(item.get("sort_order", i)),
-            })
-        timestamp = utc_now_iso()
-        chat_repo.replace_todos(chat_id, normalized, timestamp=timestamp)
-        chat_repo.commit()
+        normalized = normalize_todo_items(items)
         return ToolResult(
             output=f"Todo list updated with {len(normalized)} item(s).",
             file_edits=[],

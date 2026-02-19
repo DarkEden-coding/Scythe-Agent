@@ -6,7 +6,6 @@ import logging
 
 from app.preprocessors.base import PreprocessorContext
 from app.providers.base import LLMProvider
-from app.services.memory.observational.background import om_runner
 from app.services.memory.observational.service import ObservationMemoryService
 from app.utils.messages import strip_message_metadata
 
@@ -29,9 +28,7 @@ class ObservationalMemoryPreprocessor:
     ) -> PreprocessorContext:
         chat_id = ctx.chat_id
 
-        # Wait for any in-flight background observation to finish
-        await om_runner.await_if_running(chat_id, timeout=10.0)
-
+        # Refresh session so we see observations written by background tasks
         self._chat_repo.db.expire_all()
 
         # Load latest observation

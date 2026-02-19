@@ -1,7 +1,10 @@
 from datetime import datetime
+from types import SimpleNamespace
 
 from sqlalchemy import and_, delete, or_
 from sqlalchemy import select
+from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 
 from app.db.models.chat import Chat
 from app.db.models.checkpoint import Checkpoint
@@ -15,12 +18,22 @@ from app.db.models.todo import Todo
 from app.db.models.tool_call import ToolCall
 from app.db.repositories.base_repo import BaseRepository
 from app.utils.ids import generate_id
+from app.utils.json_helpers import safe_parse_json
+from app.utils.todos import normalize_todo_items
 
 
 def _normalize_ts(iso_str: str) -> str:
     """Ensure ISO timestamp has consistent microsecond padding for string comparison."""
     dt = datetime.fromisoformat(iso_str)
     return dt.strftime("%Y-%m-%dT%H:%M:%S.%f+00:00")
+
+
+def _parse_ts_safe(iso_str: str) -> datetime | None:
+    """Parse ISO timestamp; return None if invalid."""
+    try:
+        return datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
 
 
 class ChatRepository(BaseRepository):
@@ -100,6 +113,31 @@ class ChatRepository(BaseRepository):
         )
         return list(self.db.scalars(stmt).all())
 
+    def _delete_todos_after_timestamp(
+        self, chat_id: str, cutoff_ts: str, checkpoint_id: str
+    ) -> None:
+        """Delete legacy Todo rows created after a checkpoint revert cutoff."""
+        cutoff_dt = _parse_ts_safe(cutoff_ts)
+        if cutoff_dt is None:
+            self.db.execute(delete(Todo).where(Todo.chat_id == chat_id))
+            return
+
+        todos = self.list_todos(chat_id)
+        to_delete: list[str] = []
+        for todo in todos:
+            parsed = _parse_ts_safe(todo.timestamp)
+            if parsed is None:
+                to_delete.append(todo.id)
+                continue
+            if parsed > cutoff_dt:
+                to_delete.append(todo.id)
+                continue
+            if parsed == cutoff_dt and (todo.checkpoint_id is None or todo.checkpoint_id != checkpoint_id):
+                to_delete.append(todo.id)
+
+        if to_delete:
+            self.db.execute(delete(Todo).where(Todo.chat_id == chat_id, Todo.id.in_(to_delete)))
+
     def list_todos(self, chat_id: str) -> list[Todo]:
         """Return todos for a chat, ordered by sort_order then timestamp."""
         stmt = (
@@ -107,24 +145,115 @@ class ChatRepository(BaseRepository):
             .where(Todo.chat_id == chat_id)
             .order_by(Todo.sort_order.asc(), Todo.timestamp.asc())
         )
-        return list(self.db.scalars(stmt).all())
+        try:
+            return list(self.db.scalars(stmt).all())
+        except OperationalError as exc:
+            # Backward-compat: DB may not have todos.checkpoint_id yet.
+            if "no such column: todos.checkpoint_id" not in str(exc):
+                raise
+            rows = self.db.execute(
+                text(
+                    """
+                    SELECT id, chat_id, content, status, sort_order, timestamp
+                    FROM todos
+                    WHERE chat_id = :chat_id
+                    ORDER BY sort_order ASC, timestamp ASC
+                    """
+                ),
+                {"chat_id": chat_id},
+            ).mappings().all()
+            return [
+                SimpleNamespace(
+                    id=row["id"],
+                    chat_id=row["chat_id"],
+                    checkpoint_id=None,
+                    content=row["content"],
+                    status=row["status"],
+                    sort_order=row["sort_order"],
+                    timestamp=row["timestamp"],
+                )
+                for row in rows
+            ]
+
+    def get_current_todos(self, chat_id: str) -> list[dict]:
+        """Return the active todo state derived from the latest successful update_todo_list call."""
+        latest_stmt = (
+            select(ToolCall)
+            .where(
+                ToolCall.chat_id == chat_id,
+                ToolCall.name == "update_todo_list",
+                ToolCall.status == "completed",
+            )
+            .order_by(ToolCall.timestamp.desc())
+        )
+        latest = self.db.scalars(latest_stmt).first()
+        if latest is None:
+            legacy = self.list_todos(chat_id)
+            return [
+                {
+                    "id": t.id,
+                    "content": t.content,
+                    "status": t.status,
+                    "sort_order": t.sort_order,
+                    "timestamp": t.timestamp,
+                }
+                for t in legacy
+            ]
+
+        payload = safe_parse_json(latest.input_json)
+        items = payload.get("todos") if isinstance(payload, dict) else []
+        normalized = normalize_todo_items(items)
+        return [
+            {
+                "id": f"todo-{latest.id}-{idx}",
+                "content": item["content"],
+                "status": item["status"],
+                "sort_order": item["sort_order"],
+                "timestamp": latest.timestamp,
+            }
+            for idx, item in enumerate(normalized)
+        ]
 
     def replace_todos(
         self, chat_id: str, items: list[dict], *, timestamp: str
     ) -> None:
         """Replace all todos for a chat with the given items. Each item has content, status, sort_order."""
-        self.db.execute(delete(Todo).where(Todo.chat_id == chat_id))
-        for i, item in enumerate(items):
-            self.db.add(
-                Todo(
-                    id=generate_id("todo"),
-                    chat_id=chat_id,
-                    content=str(item.get("content", "")),
-                    status=str(item.get("status", "pending")),
-                    sort_order=int(item.get("sort_order", i)),
-                    timestamp=timestamp,
+        normalized_ts = _normalize_ts(timestamp)
+        try:
+            self.db.execute(delete(Todo).where(Todo.chat_id == chat_id))
+            for i, item in enumerate(items):
+                self.db.add(
+                    Todo(
+                        id=generate_id("todo"),
+                        chat_id=chat_id,
+                        content=str(item.get("content", "")),
+                        status=str(item.get("status", "pending")),
+                        sort_order=int(item.get("sort_order", i)),
+                        timestamp=normalized_ts,
+                    )
                 )
-            )
+        except OperationalError as exc:
+            # Backward-compat: DB may not have todos.checkpoint_id yet.
+            if "no such column: todos.checkpoint_id" not in str(exc):
+                raise
+            self.db.execute(text("DELETE FROM todos WHERE chat_id = :chat_id"), {"chat_id": chat_id})
+            for i, item in enumerate(items):
+                self.db.execute(
+                    text(
+                        """
+                        INSERT INTO todos (id, chat_id, content, status, sort_order, timestamp)
+                        VALUES (:id, :chat_id, :content, :status, :sort_order, :timestamp)
+                        """
+                    ),
+                    {
+                        "id": generate_id("todo"),
+                        "chat_id": chat_id,
+                        "content": str(item.get("content", "")),
+                        "status": str(item.get("status", "pending")),
+                        "sort_order": int(item.get("sort_order", i)),
+                        "timestamp": normalized_ts,
+                    },
+                )
 
     def replace_context_items(
         self, chat_id: str, items: list[tuple[str, str, str, int]]
@@ -413,8 +542,10 @@ class ChatRepository(BaseRepository):
         return obs
 
     def delete_observation(self, obs: Observation) -> None:
-        """Delete a specific observation."""
-        self.db.delete(obs)
+        """Delete a specific observation by ID (direct SQL to avoid ORM tracking issues)."""
+        self.db.execute(
+            delete(Observation).where(Observation.id == obs.id)
+        )
 
     def delete_observations_before_generation(
         self, chat_id: str, generation: int
@@ -498,6 +629,7 @@ class ChatRepository(BaseRepository):
                 ),
             )
         )
+        self._delete_todos_after_timestamp(chat_id, cutoff, checkpoint_id)
         # Delete all observations for this chat after a revert; they will be
         # regenerated on the next agent turn if OM is enabled.
         self.db.execute(

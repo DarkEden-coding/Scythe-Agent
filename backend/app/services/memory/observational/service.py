@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
+import httpx
+
 from app.db.models.observation import Observation
 from app.services.memory.observational.prompts import (
     build_observer_prompt,
@@ -18,6 +20,10 @@ from app.utils.time import utc_now_iso
 logger = logging.getLogger(__name__)
 
 
+class ObservationError(RuntimeError):
+    """Raised when observer/reflector requests fail and should be surfaced to UI."""
+
+
 def _count_tokens(text: str) -> int:
     """Rough token estimate: 1 token ≈ 4 characters."""
     return max(1, len(text) // 4) if text else 0
@@ -26,6 +32,21 @@ def _count_tokens(text: str) -> int:
 def _today_str() -> str:
     """Return today's date as a human-readable string like 'February 19, 2026'."""
     return datetime.now(timezone.utc).strftime("%B %d, %Y")
+
+
+def _format_observation_error(exc: Exception) -> str:
+    """Create a short user-safe error string from provider/client exceptions."""
+    if isinstance(exc, httpx.HTTPStatusError):
+        status = exc.response.status_code
+        detail = ""
+        try:
+            body = exc.response.text.strip()
+            if body:
+                detail = body[:240]
+        except Exception:
+            detail = ""
+        return f"Observer request failed ({status}). {detail}".strip()
+    return str(exc) or "Observer request failed."
 
 
 class ObservationMemoryService:
@@ -103,11 +124,11 @@ class ObservationMemoryService:
                 max_tokens=4096,
                 temperature=0.1,
             )
-        except Exception:
+        except Exception as exc:
             logger.warning(
                 "Observer LLM call failed for chat=%s", chat_id, exc_info=True
             )
-            return None
+            raise ObservationError(_format_observation_error(exc)) from exc
 
         content, current_task, suggested_response = parse_observation_output(raw_output)
         if not content:
@@ -178,11 +199,11 @@ class ObservationMemoryService:
                 max_tokens=4096,
                 temperature=0.1,
             )
-        except Exception:
+        except Exception as exc:
             logger.warning(
                 "Reflector LLM call failed for chat=%s", chat_id, exc_info=True
             )
-            return None
+            raise ObservationError(_format_observation_error(exc)) from exc
 
         content, current_task, suggested_response = parse_observation_output(raw_output)
         if not content:

@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Layers } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Layers, CheckSquare, ChevronDown } from 'lucide-react';
 import { ToolCall, FileEdit, Checkpoint, ReasoningBlock, TodoItem } from '../types';
 import { cn } from '@/utils/cn';
 import { Timeline } from './actions/Timeline';
@@ -41,7 +41,8 @@ export function ActionsPanel({
   const [expandedReasoning, setExpandedReasoning] = useState<Set<string>>(new Set());
   const [collapsedCheckpoints, setCollapsedCheckpoints] = useState<Set<string>>(new Set());
   const [expandedParallelGroups, setExpandedParallelGroups] = useState<Set<string>>(new Set());
-  const [todoOverlayFaded, setTodoOverlayFaded] = useState(false);
+  const [todoDropdownOpen, setTodoDropdownOpen] = useState(false);
+  const todoContainerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     setExpandedReasoning((prev) => {
@@ -56,6 +57,23 @@ export function ActionsPanel({
       return next;
     });
   }, [streamingReasoningBlockIds]);
+
+  useEffect(() => {
+    if (todos.length === 0) {
+      setTodoDropdownOpen(false);
+    }
+  }, [todos.length]);
+
+  useEffect(() => {
+    const handleOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (!todoContainerRef.current?.contains(target)) {
+        setTodoDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, []);
 
   const toggleTool = (toolId: string) => {
     const next = new Set(expandedTools);
@@ -94,6 +112,7 @@ export function ActionsPanel({
   const pendingApproval = toolCalls.find(
     (tc) => tc.status === 'pending' && tc.approvalRequired === true,
   );
+  const completedTodoCount = todos.filter((t) => t.status === 'completed').length;
 
   return (
     <div className="flex flex-col h-full bg-gray-900 rounded-2xl shadow-xl shadow-black/30 border border-gray-700/40 overflow-hidden">
@@ -134,18 +153,36 @@ export function ActionsPanel({
 
         {todos.length > 0 && (
           <section
-            aria-label="Task list - hover to fade and interact with timeline below"
+            aria-label="Task list"
             className="absolute top-0 left-0 pt-3 px-4 z-10 w-fit"
-            onMouseEnter={() => setTodoOverlayFaded(true)}
-            onMouseLeave={() => setTodoOverlayFaded(false)}
           >
             <div
-              className={cn(
-                'w-fit transition-opacity duration-200',
-                todoOverlayFaded && 'opacity-0 pointer-events-none',
-              )}
+              ref={todoContainerRef}
+              className="relative w-fit"
             >
-              <TodoList todos={todos} />
+              <button
+                type="button"
+                onClick={() => {
+                  setTodoDropdownOpen((prev) => !prev);
+                }}
+                className="flex items-center gap-1.5 px-2 py-1 rounded-full border border-gray-700/50 bg-gray-850/95 hover:bg-gray-800/95 text-[10px] text-gray-300 shadow-md"
+              >
+                <CheckSquare className="w-3 h-3 text-aqua-400/80" />
+                <span>
+                  Tasks {completedTodoCount}/{todos.length}
+                </span>
+                <ChevronDown
+                  className={cn(
+                    'w-3 h-3 text-gray-500 transition-transform',
+                    todoDropdownOpen && 'rotate-180',
+                  )}
+                />
+              </button>
+              {todoDropdownOpen && (
+                <div className="absolute left-0 top-full mt-2">
+                  <TodoList todos={todos} />
+                </div>
+              )}
             </div>
           </section>
         )}

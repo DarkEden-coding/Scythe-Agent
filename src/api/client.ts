@@ -598,6 +598,11 @@ export class ApiClient {
     return this.request('GET', `/chat/${chatId}/observations`);
   }
 
+  /** Retry the observational memory cycle for a chat. */
+  async retryObservations(chatId: string): Promise<ApiResponse<{ scheduled: boolean }>> {
+    return this.request('POST', `/chat/${chatId}/observations/retry`);
+  }
+
   /* ── MCP configuration ──────────────────────────────────────── */
 
   /** List all MCP servers with their tools. */

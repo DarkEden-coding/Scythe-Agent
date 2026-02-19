@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
 from app.api.envelope import err, ok
+from app.middleware.error_handler import full_error_message
 from app.schemas.projects import (
     CreateChatRequest,
     CreateProjectRequest,
@@ -24,8 +25,8 @@ def get_projects(db: Session = Depends(get_db)):
         return ok(data.model_dump())
     except ValueError as exc:
         return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
-    except Exception:
-        return JSONResponse(status_code=500, content=err("Internal server error").model_dump())
+    except Exception as exc:
+        return JSONResponse(status_code=500, content=err(full_error_message(exc)).model_dump())
 
 
 @router.post("/api/projects")
@@ -35,8 +36,8 @@ def create_project(request: CreateProjectRequest, db: Session = Depends(get_db))
         return ok(data.model_dump())
     except ValueError as exc:
         return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
-    except Exception:
-        return JSONResponse(status_code=500, content=err("Internal server error").model_dump())
+    except Exception as exc:
+        return JSONResponse(status_code=500, content=err(full_error_message(exc)).model_dump())
 
 
 # Static "/reorder" path must be registered BEFORE the dynamic "/{project_id}" path
@@ -48,8 +49,8 @@ def reorder_projects(request: ReorderProjectsRequest, db: Session = Depends(get_
         return ok(data.model_dump())
     except ValueError as exc:
         return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
-    except Exception:
-        return JSONResponse(status_code=500, content=err("Internal server error").model_dump())
+    except Exception as exc:
+        return JSONResponse(status_code=500, content=err(full_error_message(exc)).model_dump())
 
 
 @router.patch("/api/projects/{project_id}")
@@ -59,8 +60,8 @@ def update_project(project_id: str, request: UpdateProjectRequest, db: Session =
         return ok(data.model_dump())
     except ValueError as exc:
         return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
-    except Exception:
-        return JSONResponse(status_code=500, content=err("Internal server error").model_dump())
+    except Exception as exc:
+        return JSONResponse(status_code=500, content=err(full_error_message(exc)).model_dump())
 
 
 @router.delete("/api/projects/{project_id}")
@@ -70,8 +71,8 @@ def delete_project(project_id: str, db: Session = Depends(get_db)):
         return ok(data.model_dump())
     except ValueError as exc:
         return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
-    except Exception:
-        return JSONResponse(status_code=500, content=err("Internal server error").model_dump())
+    except Exception as exc:
+        return JSONResponse(status_code=500, content=err(full_error_message(exc)).model_dump())
 
 
 # Static "/chats/reorder" path must be registered BEFORE any route that could
@@ -83,8 +84,8 @@ def reorder_chats(project_id: str, request: ReorderChatsRequest, db: Session = D
         return ok(data.model_dump())
     except ValueError as exc:
         return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
-    except Exception:
-        return JSONResponse(status_code=500, content=err("Internal server error").model_dump())
+    except Exception as exc:
+        return JSONResponse(status_code=500, content=err(full_error_message(exc)).model_dump())
 
 
 @router.post("/api/projects/{project_id}/chats")
@@ -94,8 +95,8 @@ def create_chat(project_id: str, request: CreateChatRequest, db: Session = Depen
         return ok(data.model_dump())
     except ValueError as exc:
         return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
-    except Exception:
-        return JSONResponse(status_code=500, content=err("Internal server error").model_dump())
+    except Exception as exc:
+        return JSONResponse(status_code=500, content=err(full_error_message(exc)).model_dump())
 
 
 @router.patch("/api/chats/{chat_id}")
@@ -105,8 +106,8 @@ def update_chat(chat_id: str, request: UpdateChatRequest, db: Session = Depends(
         return ok(data.model_dump())
     except ValueError as exc:
         return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
-    except Exception:
-        return JSONResponse(status_code=500, content=err("Internal server error").model_dump())
+    except Exception as exc:
+        return JSONResponse(status_code=500, content=err(full_error_message(exc)).model_dump())
 
 
 @router.delete("/api/chats/{chat_id}")
@@ -116,5 +117,5 @@ def delete_chat(chat_id: str, db: Session = Depends(get_db)):
         return ok(data.model_dump())
     except ValueError as exc:
         return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
-    except Exception:
-        return JSONResponse(status_code=500, content=err("Internal server error").model_dump())
+    except Exception as exc:
+        return JSONResponse(status_code=500, content=err(full_error_message(exc)).model_dump())

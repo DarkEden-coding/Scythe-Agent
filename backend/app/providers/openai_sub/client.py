@@ -19,15 +19,7 @@ logger = logging.getLogger(__name__)
 CODEX_API_BASE = "https://chatgpt.com/backend-api/codex"
 
 _OPENAI_SUB_MODEL_IDS = [
-    "gpt-5",
-    "gpt-5-codex",
-    "gpt-5-codex-mini",
-    "gpt-5.1",
-    "gpt-5.1-codex",
-    "gpt-5.1-codex-max",
     "gpt-5.1-codex-mini",
-    "gpt-5.2",
-    "gpt-5.2-codex",
     "gpt-5.3-codex",
 ]
 
@@ -82,8 +74,15 @@ def _ensure_additional_properties_false(schema: dict) -> dict:
             if isinstance(prop, dict):
                 if prop.get("type") == "object":
                     new_props[key] = _ensure_additional_properties_false(prop)
-                elif prop.get("type") == "array" and isinstance(prop.get("items"), dict) and prop["items"].get("type") == "object":
-                    new_props[key] = {**prop, "items": _ensure_additional_properties_false(prop["items"])}
+                elif (
+                    prop.get("type") == "array"
+                    and isinstance(prop.get("items"), dict)
+                    and prop["items"].get("type") == "object"
+                ):
+                    new_props[key] = {
+                        **prop,
+                        "items": _ensure_additional_properties_false(prop["items"]),
+                    }
                 else:
                     new_props[key] = prop
             else:
@@ -104,8 +103,15 @@ def _ensure_all_required(schema: dict) -> dict:
             if isinstance(prop, dict):
                 if prop.get("type") == "object":
                     new_props[key] = _ensure_all_required(prop)
-                elif prop.get("type") == "array" and isinstance(prop.get("items"), dict) and prop["items"].get("type") == "object":
-                    new_props[key] = {**prop, "items": _ensure_all_required(prop["items"])}
+                elif (
+                    prop.get("type") == "array"
+                    and isinstance(prop.get("items"), dict)
+                    and prop["items"].get("type") == "object"
+                ):
+                    new_props[key] = {
+                        **prop,
+                        "items": _ensure_all_required(prop["items"]),
+                    }
                 else:
                     new_props[key] = prop
             else:
@@ -129,16 +135,22 @@ def _messages_to_codex_input(messages: list[dict]) -> tuple[list[dict], str]:
         content = m.get("content", "")
 
         if role == "system":
-            instructions = (instructions + "\n\n" + content).strip() if instructions else str(content)
+            instructions = (
+                (instructions + "\n\n" + content).strip()
+                if instructions
+                else str(content)
+            )
             continue
 
         if role == "user":
             text = content if isinstance(content, str) else ""
             if text:
-                input_items.append({
-                    "role": "user",
-                    "content": [{"type": "input_text", "text": text}],
-                })
+                input_items.append(
+                    {
+                        "role": "user",
+                        "content": [{"type": "input_text", "text": text}],
+                    }
+                )
             continue
 
         if role == "assistant":
@@ -153,22 +165,28 @@ def _messages_to_codex_input(messages: list[dict]) -> tuple[list[dict], str]:
             tool_calls = m.get("tool_calls") or []
             for tc in tool_calls:
                 fn = tc.get("function", {}) or {}
-                input_items.append({
-                    "type": "function_call",
-                    "call_id": _sanitize_call_id(tc.get("id", "") or f"call_{uuid.uuid4().hex[:8]}"),
-                    "name": fn.get("name", ""),
-                    "arguments": fn.get("arguments", "{}"),
-                })
+                input_items.append(
+                    {
+                        "type": "function_call",
+                        "call_id": _sanitize_call_id(
+                            tc.get("id", "") or f"call_{uuid.uuid4().hex[:8]}"
+                        ),
+                        "name": fn.get("name", ""),
+                        "arguments": fn.get("arguments", "{}"),
+                    }
+                )
             continue
 
         if role == "tool":
             tool_call_id = m.get("tool_call_id", "")
             output = content if isinstance(content, str) else str(content or "")
-            input_items.append({
-                "type": "function_call_output",
-                "call_id": _sanitize_call_id(tool_call_id),
-                "output": output,
-            })
+            input_items.append(
+                {
+                    "type": "function_call_output",
+                    "call_id": _sanitize_call_id(tool_call_id),
+                    "output": output,
+                }
+            )
 
     return (input_items, instructions or "You are a helpful assistant.")
 
@@ -246,7 +264,9 @@ def _find_accumulated_idx_by_call_id(accumulated: dict, call_id: str) -> int | N
 
 
 def _process_stream_event(
-    parsed: dict, content_parts: list[str], accumulated: dict,
+    parsed: dict,
+    content_parts: list[str],
+    accumulated: dict,
     reasoning_parts: list[str] | None = None,
 ) -> tuple[list[StreamEvent], str | None]:
     """Process SSE event from Codex or Responses API. Returns (events, finish_reason)."""
@@ -255,11 +275,19 @@ def _process_stream_event(
 
     # --- Error events ---
     if ev_type in ("response.error", "error"):
-        msg = (parsed.get("error") or {}).get("message") or parsed.get("message") or "Unknown API error"
+        msg = (
+            (parsed.get("error") or {}).get("message")
+            or parsed.get("message")
+            or "Unknown API error"
+        )
         raise RuntimeError(f"OpenAI Sub API error: {msg}")
 
     if ev_type == "response.failed":
-        msg = (parsed.get("error") or {}).get("message") or parsed.get("message") or "Unknown failure"
+        msg = (
+            (parsed.get("error") or {}).get("message")
+            or parsed.get("message")
+            or "Unknown failure"
+        )
         raise RuntimeError(f"OpenAI Sub API response failed: {msg}")
 
     # --- Text deltas ---
@@ -289,11 +317,16 @@ def _process_stream_event(
         delta = parsed.get("delta")
         if delta:
             content_parts.append(f"[Refusal] {delta}")
-            events.append(StreamContentEvent(type="content", delta=f"[Refusal] {delta}"))
+            events.append(
+                StreamContentEvent(type="content", delta=f"[Refusal] {delta}")
+            )
         return (events, None)
 
     # --- Tool/function call argument deltas ---
-    if ev_type in ("response.tool_call_arguments.delta", "response.function_call_arguments.delta"):
+    if ev_type in (
+        "response.tool_call_arguments.delta",
+        "response.function_call_arguments.delta",
+    ):
         idx = parsed.get("index", 0)
         delta = parsed.get("delta") or parsed.get("arguments", "")
         if idx in accumulated and delta:
@@ -303,13 +336,22 @@ def _process_stream_event(
     # --- Output item added/done for function_call ---
     if ev_type in ("response.output_item.added", "response.output_item.done"):
         item = parsed.get("item")
-        if isinstance(item, dict) and item.get("type") in ("function_call", "tool_call"):
-            call_id = item.get("call_id") or item.get("tool_call_id") or item.get("id", "")
+        if isinstance(item, dict) and item.get("type") in (
+            "function_call",
+            "tool_call",
+        ):
+            call_id = (
+                item.get("call_id") or item.get("tool_call_id") or item.get("id", "")
+            )
             name = item.get("name") or (item.get("function") or {}).get("name", "")
             args = item.get("arguments", "")
             # Look up existing entry by call_id first to prevent duplicates
             existing_idx = _find_accumulated_idx_by_call_id(accumulated, str(call_id))
-            idx = existing_idx if existing_idx is not None else item.get("index", len(accumulated))
+            idx = (
+                existing_idx
+                if existing_idx is not None
+                else item.get("index", len(accumulated))
+            )
             if idx not in accumulated:
                 accumulated[idx] = {
                     "id": str(call_id),
@@ -347,13 +389,24 @@ def _process_stream_event(
                         text = c.get("text", "")
                         if text:
                             content_parts.append(text)
-                            events.append(StreamContentEvent(type="content", delta=text))
-            elif item.get("type") == "reasoning" and isinstance(item.get("summary"), list) and not reasoning_already_streamed:
+                            events.append(
+                                StreamContentEvent(type="content", delta=text)
+                            )
+            elif (
+                item.get("type") == "reasoning"
+                and isinstance(item.get("summary"), list)
+                and not reasoning_already_streamed
+            ):
                 for summary in item["summary"]:
-                    if isinstance(summary, dict) and summary.get("type") == "summary_text":
+                    if (
+                        isinstance(summary, dict)
+                        and summary.get("type") == "summary_text"
+                    ):
                         text = summary.get("text", "")
                         if text:
-                            events.append(StreamReasoningEvent(type="reasoning", delta=text))
+                            events.append(
+                                StreamReasoningEvent(type="reasoning", delta=text)
+                            )
             elif item.get("type") in ("function_call", "tool_call"):
                 has_tool_calls = True
                 call_id = str(item.get("call_id") or item.get("id", ""))
@@ -376,7 +429,11 @@ def _process_stream_event(
                             "arguments": str(item.get("arguments", "{}")),
                         },
                     }
-        finish = "tool_calls" if (has_tool_calls or accumulated) else ("stop" if output else None)
+        finish = (
+            "tool_calls"
+            if (has_tool_calls or accumulated)
+            else ("stop" if output else None)
+        )
         return (events, finish)
 
     # --- Legacy api.openai.com format: output_delta ---
@@ -393,11 +450,19 @@ def _process_stream_event(
                         delta_text = c.get("text") or c.get("delta", "")
                         if delta_text:
                             content_parts.append(delta_text)
-                            events.append(StreamContentEvent(type="content", delta=str(delta_text)))
+                            events.append(
+                                StreamContentEvent(
+                                    type="content", delta=str(delta_text)
+                                )
+                            )
             elif kind == "function_call":
                 idx = item.get("index", 0)
                 if idx not in accumulated:
-                    accumulated[idx] = {"id": "", "type": "function", "function": {"name": "", "arguments": ""}}
+                    accumulated[idx] = {
+                        "id": "",
+                        "type": "function",
+                        "function": {"name": "", "arguments": ""},
+                    }
                 acc = accumulated[idx]
                 if item.get("id"):
                     acc["id"] = str(item["id"])
@@ -460,7 +525,9 @@ class OpenAISubClient:
         if resp_tools:
             payload["tools"] = resp_tools
             payload["parallel_tool_calls"] = True
-        headers = _codex_headers(self._access_token, self._session_id, account_id=self._account_id)
+        headers = _codex_headers(
+            self._access_token, self._session_id, account_id=self._account_id
+        )
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
                 f"{CODEX_API_BASE}/responses",
@@ -506,7 +573,9 @@ class OpenAISubClient:
                 payload["reasoning"] = {"effort": effort, "summary": "auto"}
                 payload["include"] = ["reasoning.encrypted_content"]
 
-        headers = _codex_headers(self._access_token, self._session_id, account_id=self._account_id)
+        headers = _codex_headers(
+            self._access_token, self._session_id, account_id=self._account_id
+        )
         accumulated: dict[int, dict[str, Any]] = {}
         content_parts: list[str] = []
         reasoning_parts: list[str] = []
@@ -552,18 +621,22 @@ class OpenAISubClient:
             if cid in seen_call_ids:
                 continue
             seen_call_ids.add(cid)
-            tool_calls_list.append({
-                "id": cid,
-                "type": "function",
-                "function": {
-                    "name": acc.get("function", {}).get("name", "unknown"),
-                    "arguments": acc.get("function", {}).get("arguments", "{}"),
-                },
-            })
+            tool_calls_list.append(
+                {
+                    "id": cid,
+                    "type": "function",
+                    "function": {
+                        "name": acc.get("function", {}).get("name", "unknown"),
+                        "arguments": acc.get("function", {}).get("arguments", "{}"),
+                    },
+                }
+            )
         if tool_calls_list:
             yield StreamToolCallsEvent(
                 type="tool_calls",
                 tool_calls=cast(list[StreamToolCall], tool_calls_list),
             )
         finish_reason = "tool_calls" if tool_calls_list else "stop"
-        yield StreamFinishEvent(type="finish", reason=finish_reason, content=content_str)
+        yield StreamFinishEvent(
+            type="finish", reason=finish_reason, content=content_str
+        )

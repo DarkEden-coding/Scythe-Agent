@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
@@ -13,10 +15,19 @@ from app.schemas.chat import (
 from app.services.approval_service import ApprovalService
 from app.services.approval_waiter import signal_approved, signal_rejected
 from app.services.chat_service import ChatService
+from app.middleware.error_handler import full_error_message
 from app.services.revert_service import RevertService
 from app.services.summarize_service import SummarizeService
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
+logger = logging.getLogger(__name__)
+
+
+def _internal_error(exc: Exception) -> JSONResponse:
+    logger.exception("Unhandled error in chat route")
+    return JSONResponse(
+        status_code=500, content=err(full_error_message(exc)).model_dump()
+    )
 
 
 @router.get("/{chat_id}/history")
@@ -26,10 +37,8 @@ def get_chat_history(chat_id: str, db: Session = Depends(get_db)):
         return ok(data.model_dump())
     except ValueError as exc:
         return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
-    except Exception:
-        return JSONResponse(
-            status_code=500, content=err("Internal server error").model_dump()
-        )
+    except Exception as exc:
+        return _internal_error(exc)
 
 
 @router.get("/{chat_id}/debug")
@@ -39,10 +48,8 @@ def get_chat_debug(chat_id: str, db: Session = Depends(get_db)):
         return ok(data)
     except ValueError as exc:
         return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
-    except Exception:
-        return JSONResponse(
-            status_code=500, content=err("Internal server error").model_dump()
-        )
+    except Exception as exc:
+        return _internal_error(exc)
 
 
 @router.post("/{chat_id}/messages")
@@ -56,10 +63,8 @@ async def send_message(
         return ok(data.model_dump())
     except ValueError as exc:
         return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
-    except Exception:
-        return JSONResponse(
-            status_code=500, content=err("Internal server error").model_dump()
-        )
+    except Exception as exc:
+        return _internal_error(exc)
 
 
 @router.put("/{chat_id}/messages/{message_id}")
@@ -73,10 +78,8 @@ async def edit_message(
         return ok(data.model_dump())
     except ValueError as exc:
         return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
-    except Exception:
-        return JSONResponse(
-            status_code=500, content=err("Internal server error").model_dump()
-        )
+    except Exception as exc:
+        return _internal_error(exc)
 
 
 @router.post("/{chat_id}/cancel")
@@ -87,10 +90,8 @@ async def cancel_agent(chat_id: str, db: Session = Depends(get_db)):
         return ok({"cancelled": cancelled})
     except ValueError as exc:
         return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
-    except Exception:
-        return JSONResponse(
-            status_code=500, content=err("Internal server error").model_dump()
-        )
+    except Exception as exc:
+        return _internal_error(exc)
 
 
 @router.post("/{chat_id}/approve")
@@ -110,10 +111,8 @@ async def approve(
         )
     except ValueError as exc:
         return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
-    except Exception:
-        return JSONResponse(
-            status_code=500, content=err("Internal server error").model_dump()
-        )
+    except Exception as exc:
+        return _internal_error(exc)
 
 
 @router.post("/{chat_id}/reject")
@@ -130,10 +129,8 @@ async def reject(
         return ok({"toolCallId": tool_call.id, "status": "rejected"})
     except ValueError as exc:
         return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
-    except Exception:
-        return JSONResponse(
-            status_code=500, content=err("Internal server error").model_dump()
-        )
+    except Exception as exc:
+        return _internal_error(exc)
 
 
 @router.post("/{chat_id}/summarize")
@@ -143,10 +140,8 @@ async def summarize(chat_id: str, db: Session = Depends(get_db)):
         return ok(data.model_dump())
     except ValueError as exc:
         return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
-    except Exception:
-        return JSONResponse(
-            status_code=500, content=err("Internal server error").model_dump()
-        )
+    except Exception as exc:
+        return _internal_error(exc)
 
 
 @router.post("/{chat_id}/revert/{checkpoint_id}")
@@ -156,10 +151,8 @@ def revert(chat_id: str, checkpoint_id: str, db: Session = Depends(get_db)):
         return ok(data.model_dump())
     except ValueError as exc:
         return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
-    except Exception:
-        return JSONResponse(
-            status_code=500, content=err("Internal server error").model_dump()
-        )
+    except Exception as exc:
+        return _internal_error(exc)
 
 
 @router.post("/{chat_id}/revert-file/{file_edit_id}")
@@ -169,7 +162,5 @@ def revert_file(chat_id: str, file_edit_id: str, db: Session = Depends(get_db)):
         return ok(data.model_dump())
     except ValueError as exc:
         return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
-    except Exception:
-        return JSONResponse(
-            status_code=500, content=err("Internal server error").model_dump()
-        )
+    except Exception as exc:
+        return _internal_error(exc)

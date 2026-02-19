@@ -128,14 +128,14 @@ class ChatHistoryAssembler:
             for r in raw_reasoning_blocks
         ]
 
-        raw_todos = self._chat_repo.list_todos(chat_id)
+        raw_todos = self._chat_repo.get_current_todos(chat_id)
         todos = [
             TodoOut(
-                id=t.id,
-                content=t.content,
-                status=t.status,
-                sortOrder=t.sort_order,
-                timestamp=t.timestamp,
+                id=t["id"],
+                content=t["content"],
+                status=t["status"],
+                sortOrder=t["sort_order"],
+                timestamp=t["timestamp"],
             )
             for t in raw_todos
         ]

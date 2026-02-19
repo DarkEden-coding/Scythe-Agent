@@ -20,6 +20,9 @@ class Todo(Base):
     chat_id: Mapped[str] = mapped_column(
         ForeignKey("chats.id", ondelete="CASCADE"), nullable=False
     )
+    checkpoint_id: Mapped[str | None] = mapped_column(
+        ForeignKey("checkpoints.id", ondelete="CASCADE"), nullable=True
+    )
     content: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String, nullable=False, default="pending")
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

@@ -6,6 +6,8 @@ import {
   FolderOpen,
   Folder,
   Plus,
+  AlertTriangle,
+  RotateCcw,
 } from 'lucide-react';
 import type {
   Message,
@@ -52,6 +54,13 @@ interface ChatPanelProps {
   readonly observationStatus?: ObservationStatus;
   readonly observation?: ObservationData | null;
   readonly showObservationsInChat?: boolean;
+  readonly persistentError?: {
+    message: string;
+    source?: string;
+    retryable?: boolean;
+    retryAction?: string;
+  } | null;
+  readonly onRetryPersistentError?: () => void | Promise<void>;
 }
 
 export function ChatPanel({
@@ -80,6 +89,8 @@ export function ChatPanel({
   observationStatus = 'idle',
   observation = null,
   showObservationsInChat = false,
+  persistentError = null,
+  onRetryPersistentError,
 }: ChatPanelProps) {
   const [inputValue, setInputValue] = useState('');
   const [activeTab, setActiveTab] = useHashTab<'chat' | 'projects'>('chat', ['chat', 'projects']);
@@ -210,6 +221,26 @@ export function ChatPanel({
 
       {activeTab === 'chat' && (
         <>
+          {persistentError && (
+            <div className="mx-4 mt-3 px-3 py-2.5 rounded-xl border border-red-500/40 bg-red-500/10">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start gap-2 min-w-0">
+                  <AlertTriangle className="w-4 h-4 text-red-300 mt-0.5 shrink-0" />
+                  <p className="text-xs text-red-100 break-words">{persistentError.message}</p>
+                </div>
+                {persistentError.retryable && persistentError.retryAction === 'retry_observation' && (
+                  <button
+                    type="button"
+                    onClick={() => onRetryPersistentError?.()}
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] bg-red-500/20 border border-red-400/40 text-red-100 hover:bg-red-500/30 transition-colors shrink-0"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    Retry
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
           <div
             ref={chatScroll.ref}
             onScroll={chatScroll.onScroll}

@@ -31,7 +31,7 @@ class TodoInjectorPreprocessor:
         provider: LLMProvider,
     ) -> PreprocessorContext:
         chat_id = ctx.chat_id
-        todos = self._chat_repo.list_todos(chat_id)
+        todos = self._chat_repo.get_current_todos(chat_id)
 
         last_user_idx = None
         for i in range(len(ctx.messages) - 1, -1, -1):
@@ -55,9 +55,9 @@ class TodoInjectorPreprocessor:
                 "|---|---------|--------|",
             ]
             for i, t in enumerate(todos, 1):
-                status = t.status.replace("_", " ").title()
-                content_escaped = (t.content or "").replace("|", "\\|")[:80]
-                if len(t.content or "") > 80:
+                status = str(t["status"]).replace("_", " ").title()
+                content_escaped = str(t["content"] or "").replace("|", "\\|")[:80]
+                if len(str(t["content"] or "")) > 80:
                     content_escaped += "..."
                 lines.append(f"| {i} | {content_escaped} | {status} |")
             lines.append("")

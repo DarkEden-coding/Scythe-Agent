@@ -282,7 +282,13 @@ class ToolExecutor:
             chat_id, {"type": "approval_required", "payload": payload}
         )
         result = await register_and_wait(chat_id, tc_db_id)
-        tc_row = self._chat_repo.get_tool_call(tc_db_id)
+        # The approve endpoint runs in a separate DB session, so the
+        # identity-map cached object is stale.  Expire it first so
+        # get_tool_call hits the database for fresh data.
+        cached = self._chat_repo.get_tool_call(tc_db_id)
+        if cached is not None:
+            self._chat_repo.db.refresh(cached)
+        tc_row = cached
         if result == "approved" and tc_row and tc_row.status == "completed":
             output = tc_row.output_text or ""
         elif tc_row and tc_row.status == "error" and tc_row.output_text:

@@ -5,6 +5,7 @@ from fastapi.responses import JSONResponse
 
 from app.api.deps import get_db
 from app.api.envelope import err, ok
+from app.middleware.error_handler import full_error_message
 from app.schemas.mcp import (
     CreateMCPServerRequest,
     MCPServersResponse,
@@ -25,7 +26,7 @@ def list_mcp_servers(db=Depends(get_db)):
         data = MCPService(db).list_servers()
         return ok(MCPServersResponse(servers=data).model_dump())
     except Exception as exc:
-        return JSONResponse(status_code=500, content=err(str(exc)).model_dump())
+        return JSONResponse(status_code=500, content=err(full_error_message(exc)).model_dump())
 
 
 @router.post("")
@@ -41,7 +42,7 @@ def create_mcp_server(request: CreateMCPServerRequest, db=Depends(get_db)):
     except ValueError as exc:
         return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
     except Exception as exc:
-        return JSONResponse(status_code=500, content=err(str(exc)).model_dump())
+        return JSONResponse(status_code=500, content=err(full_error_message(exc)).model_dump())
 
 
 @router.post("/refresh")
@@ -51,7 +52,7 @@ async def refresh_mcp_tools(db=Depends(get_db)):
         result = await MCPService(db).refresh_tools()
         return ok(RefreshMCPResponse(**result).model_dump())
     except Exception as exc:
-        return JSONResponse(status_code=500, content=err(str(exc)).model_dump())
+        return JSONResponse(status_code=500, content=err(full_error_message(exc)).model_dump())
 
 
 @router.patch("/tools/{tool_id}/enabled")
@@ -98,7 +99,7 @@ def update_mcp_server(
     except ValueError as exc:
         return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
     except Exception as exc:
-        return JSONResponse(status_code=500, content=err(str(exc)).model_dump())
+        return JSONResponse(status_code=500, content=err(full_error_message(exc)).model_dump())
 
 
 @router.delete("/{server_id}")
