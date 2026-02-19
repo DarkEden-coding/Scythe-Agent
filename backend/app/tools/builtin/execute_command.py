@@ -44,7 +44,12 @@ class ExecuteCommandTool:
     }
 
     async def run(
-        self, payload: dict, *, project_root: str | None = None
+        self,
+        payload: dict,
+        *,
+        project_root: str | None = None,
+        chat_id: str | None = None,
+        chat_repo=None,
     ) -> ToolResult:
         command = str(payload.get("command", "")).strip()
         cwd_raw = payload.get("cwd") or None

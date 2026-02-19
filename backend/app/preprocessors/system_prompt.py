@@ -17,7 +17,9 @@ CREATING NEW FILES: To create a new file, first use execute_command with `touch 
 
 WORKFLOW: The user may need to approve tool calls before they run. Prefer small, focused operations. Explain your reasoning when making changes. Use list_files to explore the project structure before reading or editing.
 
-KEEP USER INFORMED: During longer tasks, send occasional short text updates alongside your tool calls so the user sees what you are doing. Combine brief status messages (e.g., "Checking the API routes...", "Applying the fix now") with tool calls in the same turn. Avoid long silent stretches—small updates help the user stay aware of agent activity."""
+KEEP USER INFORMED: During longer tasks, send occasional short text updates alongside your tool calls so the user sees what you are doing. Combine brief status messages (e.g., "Checking the API routes...", "Applying the fix now") with tool calls in the same turn. Avoid long silent stretches—small updates help the user stay aware of agent activity.
+
+TODO LIST: For complex or multi-step tasks, use the update_todo_list tool to create a list of subtasks. Keep the list updated—mark items Completed or In Progress as you work. The current todo list is shown in REMINDERS in the last message; call update_todo_list whenever you add, edit, check off, or complete items."""
 
 
 class SystemPromptPreprocessor:

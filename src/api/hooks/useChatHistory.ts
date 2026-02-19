@@ -11,6 +11,7 @@ import {
   normalizeFileEdit,
   normalizeCheckpoint,
   normalizeReasoningBlock,
+  normalizeTodo,
   upsertById,
   uniqueById,
   isValidChatId,
@@ -22,6 +23,7 @@ import type {
   Checkpoint,
   ContextItem,
   ReasoningBlock,
+  TodoItem,
   ObservationData,
   VerificationIssues,
 } from '@/types';
@@ -36,6 +38,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
   const [reasoningBlocks, setReasoningBlocks] = useState<ReasoningBlock[]>([]);
   const [streamingReasoningBlockIds, setStreamingReasoningBlockIds] = useState<Set<string>>(new Set());
   const [contextItems, setContextItems] = useState<ContextItem[]>([]);
+  const [todos, setTodos] = useState<TodoItem[]>([]);
   const [verificationIssues, setVerificationIssues] = useState<Record<string, VerificationIssues>>({});
   const [maxTokens, setMaxTokens] = useState(128_000);
   const [model, setModel] = useState('Claude Sonnet 4');
@@ -63,6 +66,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
       setReasoningBlocks([]);
       setStreamingReasoningBlockIds(new Set());
       setContextItems([]);
+      setTodos([]);
       setVerificationIssues({});
       setObservationStatus('idle');
       setObservation(null);
@@ -102,6 +106,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
         setCheckpoints(uniqueById(d.checkpoints.map(normalizeCheckpoint)));
         setReasoningBlocks(uniqueById(d.reasoningBlocks.map(normalizeReasoningBlock)));
         setContextItems(d.contextItems);
+        setTodos((d.todos ?? []).map(normalizeTodo));
         setMaxTokens(d.maxTokens);
         setModel(d.model);
         setError(null);
@@ -241,6 +246,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
         setFileEdits(uniqueById(res.data.fileEdits.map(normalizeFileEdit)));
         setCheckpoints(uniqueById(res.data.checkpoints.map(normalizeCheckpoint)));
         setReasoningBlocks(uniqueById(res.data.reasoningBlocks.map(normalizeReasoningBlock)));
+        setTodos((res.data.todos ?? []).map(normalizeTodo));
       }
       return res;
     },
@@ -533,6 +539,14 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
           setFileEdits(uniqueById(payload.revertedHistory.fileEdits.map(normalizeFileEdit)));
           setCheckpoints(uniqueById(payload.revertedHistory.checkpoints.map(normalizeCheckpoint)));
           setReasoningBlocks(uniqueById(payload.revertedHistory.reasoningBlocks.map(normalizeReasoningBlock)));
+          setTodos((payload.revertedHistory.todos ?? []).map(normalizeTodo));
+          break;
+        }
+        case 'todo_list_updated': {
+          const payload = event.payload as { todos: TodoItem[] };
+          if (payload.todos) {
+            setTodos(payload.todos.map(normalizeTodo));
+          }
           break;
         }
         case 'observation_status': {
@@ -581,6 +595,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
     toolCalls,
     fileEdits,
     checkpoints,
+    todos,
     reasoningBlocks,
     streamingReasoningBlockIds,
     contextItems,

@@ -24,7 +24,12 @@ class MCPBridgeTool:
         self.input_schema = input_schema
 
     async def run(
-        self, payload: dict, *, project_root: str | None = None
+        self,
+        payload: dict,
+        *,
+        project_root: str | None = None,
+        chat_id: str | None = None,
+        chat_repo=None,
     ) -> ToolResult:
         manager = get_mcp_client_manager()
         result = await manager.call_tool(self.server_id, self.tool_name, payload)

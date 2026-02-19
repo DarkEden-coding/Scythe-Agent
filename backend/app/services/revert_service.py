@@ -68,6 +68,7 @@ class RevertService:
             fileEdits=history.fileEdits,
             checkpoints=history.checkpoints,
             reasoningBlocks=history.reasoningBlocks,
+            todos=history.todos,
         )
 
     def revert_file(self, chat_id: str, file_edit_id: str) -> RevertFileResponse:

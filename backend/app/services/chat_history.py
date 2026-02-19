@@ -10,6 +10,7 @@ from app.schemas.chat import (
     GetChatHistoryResponse,
     MessageOut,
     ReasoningBlockOut,
+    TodoOut,
     ToolCallOut,
 )
 from app.services.context_builder import build_context_items
@@ -127,6 +128,18 @@ class ChatHistoryAssembler:
             for r in raw_reasoning_blocks
         ]
 
+        raw_todos = self._chat_repo.list_todos(chat_id)
+        todos = [
+            TodoOut(
+                id=t.id,
+                content=t.content,
+                status=t.status,
+                sortOrder=t.sort_order,
+                timestamp=t.timestamp,
+            )
+            for t in raw_todos
+        ]
+
         settings = self._settings_service.get_settings()
         token_counter = TokenCounter(model=settings.model)
         context_items = build_context_items(
@@ -144,6 +157,7 @@ class ChatHistoryAssembler:
             checkpoints=checkpoints_out,
             reasoningBlocks=reasoning_blocks,
             contextItems=context_items,
+            todos=todos,
             maxTokens=settings.contextLimit,
             model=settings.model,
         )

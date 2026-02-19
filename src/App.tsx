@@ -338,6 +338,7 @@ export function App() {
             fileEdits={chat.fileEdits}
             checkpoints={chat.checkpoints}
             reasoningBlocks={chat.reasoningBlocks}
+            todos={chat.todos}
             streamingReasoningBlockIds={chat.streamingReasoningBlockIds}
             onRevertFile={handleRevertFile}
             onRevertCheckpoint={handleRevertToCheckpoint}

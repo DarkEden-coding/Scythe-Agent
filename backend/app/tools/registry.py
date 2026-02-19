@@ -3,6 +3,7 @@ from __future__ import annotations
 from app.tools.builtin.edit_file import EditFileTool
 from app.tools.builtin.execute_command import ExecuteCommandTool
 from app.tools.builtin.grep import GrepTool
+from app.tools.builtin.update_todo_list import UpdateTodoListTool
 from app.tools.builtin.list_files import ListFilesTool
 from app.tools.builtin.read_file import ReadFileTool
 from app.tools.mcp_bridge import MCPBridgeTool
@@ -54,6 +55,7 @@ def get_tool_registry() -> ToolRegistry:
         registry.register(EditFileTool())
         registry.register(ExecuteCommandTool())
         registry.register(GrepTool())
+        registry.register(UpdateTodoListTool())
         _registry = registry
     return _registry
 

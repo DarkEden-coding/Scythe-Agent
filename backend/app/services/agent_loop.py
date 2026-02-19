@@ -12,6 +12,7 @@ from app.preprocessors.observational_memory import ObservationalMemoryPreprocess
 from app.preprocessors.pipeline import PreprocessorPipeline
 from app.preprocessors.project_context import ProjectContextPreprocessor
 from app.preprocessors.system_prompt import SystemPromptPreprocessor
+from app.preprocessors.todo_injector import TodoInjectorPreprocessor
 from app.preprocessors.token_estimator import TokenEstimatorPreprocessor
 from app.preprocessors.tool_result_pruner import ToolResultPrunerPreprocessor
 from app.schemas.chat import MessageOut
@@ -90,6 +91,11 @@ class AgentLoop:
                 chat_id,
                 {"type": "agent_done", "payload": {"checkpointId": checkpoint_id}},
             )
+            logger.info(
+                "Conversation ended: no API key configured for provider=%s chat_id=%s",
+                provider,
+                chat_id,
+            )
             return
 
         chat_model = self._chat_repo.get_chat(chat_id)
@@ -98,6 +104,7 @@ class AgentLoop:
                 chat_id,
                 {"type": "agent_done", "payload": {"checkpointId": checkpoint_id}},
             )
+            logger.info("Conversation ended: chat not found chat_id=%s", chat_id)
             return
 
         settings = self._settings_service.get_settings()
@@ -121,7 +128,8 @@ class AgentLoop:
         pipeline = PreprocessorPipeline(
             [
                 SystemPromptPreprocessor(default_prompt=self._default_system_prompt),
-                ProjectContextPreprocessor(project_path),   # priority 15: after system prompt
+                TodoInjectorPreprocessor(self._chat_repo),
+                ProjectContextPreprocessor(project_path),
                 TokenEstimatorPreprocessor(),
                 ToolResultPrunerPreprocessor(),
                 memory_preprocessor,
@@ -228,6 +236,11 @@ class AgentLoop:
                     chat_id,
                     {"type": "agent_done", "payload": {"checkpointId": checkpoint_id}},
                 )
+                logger.info(
+                    "Conversation ended: responded with text and no tools chat_id=%s checkpoint_id=%s",
+                    chat_id,
+                    checkpoint_id,
+                )
                 return
 
             assistant_msg = {
@@ -274,6 +287,12 @@ class AgentLoop:
         await self._event_bus.publish(
             chat_id,
             {"type": "agent_done", "payload": {"checkpointId": checkpoint_id}},
+        )
+        logger.info(
+            "Conversation ended: max iterations reached (iteration=%d) chat_id=%s checkpoint_id=%s",
+            iteration,
+            chat_id,
+            checkpoint_id,
         )
 
     def _maybe_schedule_observation(

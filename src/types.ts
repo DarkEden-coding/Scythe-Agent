@@ -47,6 +47,14 @@ export interface ReasoningBlock {
   checkpointId: string;
 }
 
+export interface TodoItem {
+  id: string;
+  content: string;
+  status: 'pending' | 'in_progress' | 'completed';
+  sortOrder: number;
+  timestamp: Date;
+}
+
 export interface ContextItem {
   id: string;
   type: 'file' | 'conversation' | 'tool_output' | 'summary';

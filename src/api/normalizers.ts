@@ -4,7 +4,7 @@
 
 import { useState, useCallback } from 'react';
 import type { ApiResponse } from './types';
-import type { Message, ToolCall, FileEdit, Checkpoint, ReasoningBlock } from '@/types';
+import type { Message, ToolCall, FileEdit, Checkpoint, ReasoningBlock, TodoItem } from '@/types';
 
 export const toDate = (value: Date | string): Date =>
   value instanceof Date ? value : new Date(value);
@@ -33,6 +33,11 @@ export const normalizeCheckpoint = (cp: Checkpoint): Checkpoint => ({
 export const normalizeReasoningBlock = (rb: ReasoningBlock): ReasoningBlock => ({
   ...rb,
   timestamp: toDate(rb.timestamp),
+});
+
+export const normalizeTodo = (t: TodoItem): TodoItem => ({
+  ...t,
+  timestamp: toDate(t.timestamp),
 });
 
 export const upsertById = <T extends { id: string }>(items: T[], next: T): T[] => {

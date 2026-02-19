@@ -50,7 +50,12 @@ class ReadFileTool:
     }
 
     async def run(
-        self, payload: dict, *, project_root: str | None = None
+        self,
+        payload: dict,
+        *,
+        project_root: str | None = None,
+        chat_id: str | None = None,
+        chat_repo=None,
     ) -> ToolResult:
         try:
             path = resolve_path(

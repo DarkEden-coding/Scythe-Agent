@@ -57,6 +57,14 @@ class ContextItemOut(BaseModel):
     full_name: str | None = None
 
 
+class TodoOut(BaseModel):
+    id: str
+    content: str
+    status: str
+    sortOrder: int
+    timestamp: str
+
+
 class GetChatHistoryResponse(BaseModel):
     chatId: str
     messages: list[MessageOut]
@@ -65,6 +73,7 @@ class GetChatHistoryResponse(BaseModel):
     checkpoints: list[CheckpointOut]
     reasoningBlocks: list[ReasoningBlockOut]
     contextItems: list[ContextItemOut]
+    todos: list[TodoOut]
     maxTokens: int
     model: str
 
@@ -109,6 +118,7 @@ class RevertToCheckpointResponse(BaseModel):
     fileEdits: list[FileEditOut]
     checkpoints: list[CheckpointOut]
     reasoningBlocks: list[ReasoningBlockOut]
+    todos: list[TodoOut]
 
 
 class RevertFileResponse(BaseModel):

@@ -11,8 +11,10 @@ from app.db.models.file_snapshot import FileSnapshot
 from app.db.models.message import Message
 from app.db.models.observation import Observation
 from app.db.models.reasoning_block import ReasoningBlock
+from app.db.models.todo import Todo
 from app.db.models.tool_call import ToolCall
 from app.db.repositories.base_repo import BaseRepository
+from app.utils.ids import generate_id
 
 
 def _normalize_ts(iso_str: str) -> str:
@@ -97,6 +99,32 @@ class ChatRepository(BaseRepository):
             .order_by(ContextItem.id.asc())
         )
         return list(self.db.scalars(stmt).all())
+
+    def list_todos(self, chat_id: str) -> list[Todo]:
+        """Return todos for a chat, ordered by sort_order then timestamp."""
+        stmt = (
+            select(Todo)
+            .where(Todo.chat_id == chat_id)
+            .order_by(Todo.sort_order.asc(), Todo.timestamp.asc())
+        )
+        return list(self.db.scalars(stmt).all())
+
+    def replace_todos(
+        self, chat_id: str, items: list[dict], *, timestamp: str
+    ) -> None:
+        """Replace all todos for a chat with the given items. Each item has content, status, sort_order."""
+        self.db.execute(delete(Todo).where(Todo.chat_id == chat_id))
+        for i, item in enumerate(items):
+            self.db.add(
+                Todo(
+                    id=generate_id("todo"),
+                    chat_id=chat_id,
+                    content=str(item.get("content", "")),
+                    status=str(item.get("status", "pending")),
+                    sort_order=int(item.get("sort_order", i)),
+                    timestamp=timestamp,
+                )
+            )
 
     def replace_context_items(
         self, chat_id: str, items: list[tuple[str, str, str, int]]

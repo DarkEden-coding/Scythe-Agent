@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
 import { Layers } from 'lucide-react';
-import { ToolCall, FileEdit, Checkpoint, ReasoningBlock } from '../types';
+import { ToolCall, FileEdit, Checkpoint, ReasoningBlock, TodoItem } from '../types';
+import { cn } from '@/utils/cn';
 import { Timeline } from './actions/Timeline';
+import { TodoList } from './actions/TodoList';
 import { ApprovalPrompt } from './actions/ApprovalPrompt';
 import type { AutoApproveRule } from '../api';
 
@@ -10,6 +12,7 @@ interface ActionsPanelProps {
   readonly fileEdits: FileEdit[];
   readonly checkpoints: Checkpoint[];
   readonly reasoningBlocks: ReasoningBlock[];
+  readonly todos?: TodoItem[];
   readonly streamingReasoningBlockIds?: Set<string>;
   readonly onRevertFile: (fileEditId: string) => void;
   readonly onRevertCheckpoint: (checkpointId: string) => void;
@@ -24,6 +27,7 @@ export function ActionsPanel({
   fileEdits,
   checkpoints,
   reasoningBlocks,
+  todos = [],
   streamingReasoningBlockIds = new Set(),
   onRevertFile,
   onRevertCheckpoint,
@@ -37,6 +41,7 @@ export function ActionsPanel({
   const [expandedReasoning, setExpandedReasoning] = useState<Set<string>>(new Set());
   const [collapsedCheckpoints, setCollapsedCheckpoints] = useState<Set<string>>(new Set());
   const [expandedParallelGroups, setExpandedParallelGroups] = useState<Set<string>>(new Set());
+  const [todoOverlayFaded, setTodoOverlayFaded] = useState(false);
 
   useEffect(() => {
     setExpandedReasoning((prev) => {
@@ -106,25 +111,45 @@ export function ActionsPanel({
         </div>
       </div>
 
-      <Timeline
-        checkpoints={checkpoints}
-        toolCalls={toolCalls}
-        fileEdits={fileEdits}
-        reasoningBlocks={reasoningBlocks}
-        streamingReasoningBlockIds={streamingReasoningBlockIds}
-        expandedTools={expandedTools}
-        expandedFiles={expandedFiles}
-        expandedReasoning={expandedReasoning}
-        collapsedCheckpoints={collapsedCheckpoints}
-        expandedParallelGroups={expandedParallelGroups}
-        onToggleTool={toggleTool}
-        onToggleFile={toggleFile}
-        onToggleReasoning={toggleReasoning}
-        onToggleCheckpointCollapse={toggleCheckpointCollapse}
-        onToggleParallelGroup={toggleParallelGroup}
-        onRevertFile={onRevertFile}
-        onRevertCheckpoint={onRevertCheckpoint}
-      />
+      <div className="relative flex-1 min-h-0 flex flex-col overflow-hidden">
+        <Timeline
+          checkpoints={checkpoints}
+          toolCalls={toolCalls}
+          fileEdits={fileEdits}
+          reasoningBlocks={reasoningBlocks}
+          streamingReasoningBlockIds={streamingReasoningBlockIds}
+          expandedTools={expandedTools}
+          expandedFiles={expandedFiles}
+          expandedReasoning={expandedReasoning}
+          collapsedCheckpoints={collapsedCheckpoints}
+          expandedParallelGroups={expandedParallelGroups}
+          onToggleTool={toggleTool}
+          onToggleFile={toggleFile}
+          onToggleReasoning={toggleReasoning}
+          onToggleCheckpointCollapse={toggleCheckpointCollapse}
+          onToggleParallelGroup={toggleParallelGroup}
+          onRevertFile={onRevertFile}
+          onRevertCheckpoint={onRevertCheckpoint}
+        />
+
+        {todos.length > 0 && (
+          <section
+            aria-label="Task list - hover to fade and interact with timeline below"
+            className="absolute top-0 left-0 pt-3 px-4 z-10 w-fit"
+            onMouseEnter={() => setTodoOverlayFaded(true)}
+            onMouseLeave={() => setTodoOverlayFaded(false)}
+          >
+            <div
+              className={cn(
+                'w-fit transition-opacity duration-200',
+                todoOverlayFaded && 'opacity-0 pointer-events-none',
+              )}
+            >
+              <TodoList todos={todos} />
+            </div>
+          </section>
+        )}
+      </div>
 
       {pendingApproval && (
         <ApprovalPrompt

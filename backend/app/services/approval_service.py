@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.db.repositories.chat_repo import ChatRepository
 from app.db.repositories.project_repo import ProjectRepository
 from app.db.repositories.settings_repo import SettingsRepository
-from app.schemas.chat import FileEditOut, ToolCallOut
+from app.schemas.chat import FileEditOut, TodoOut, ToolCallOut
 from app.utils.mappers import map_file_action_for_ui
 from app.utils.time import utc_now_iso
 from app.tools.path_utils import get_tool_outputs_root
@@ -35,6 +35,8 @@ class ApprovalService:
         self.registry = tool_registry or get_tool_registry()
 
     def should_auto_approve(self, tool_name: str, input_payload: dict) -> bool:
+        if tool_name == "update_todo_list":
+            return True
         if tool_name == "read_file":
             path_val = str(input_payload.get("path", ""))
             if path_val:
@@ -81,7 +83,12 @@ class ApprovalService:
                 project = self.project_repo.get_project(chat.project_id)
                 if project and project.path:
                     project_root = project.path
-            result = await tool.run(payload, project_root=project_root)
+            result = await tool.run(
+                payload,
+                project_root=project_root,
+                chat_id=chat_id,
+                chat_repo=self.chat_repo,
+            )
 
             output_to_store = result.output
             output_file_path = None
@@ -142,6 +149,26 @@ class ApprovalService:
                 output_file_path=output_file_path,
             )
             self.chat_repo.commit()
+
+            if tool_call.name == "update_todo_list" and result.ok:
+                todos = self.chat_repo.list_todos(chat_id)
+                todos_out = [
+                    TodoOut(
+                        id=t.id,
+                        content=t.content,
+                        status=t.status,
+                        sortOrder=t.sort_order,
+                        timestamp=t.timestamp,
+                    )
+                    for t in todos
+                ]
+                await self.event_bus.publish(
+                    chat_id,
+                    {
+                        "type": "todo_list_updated",
+                        "payload": {"todos": [o.model_dump() for o in todos_out]},
+                    },
+                )
         except Exception as exc:
             duration_ms = int(
                 (datetime.now(timezone.utc) - start).total_seconds() * 1000

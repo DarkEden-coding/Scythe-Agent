@@ -13,6 +13,7 @@ import {
   Checkpoint,
   ContextItem,
   ReasoningBlock,
+  TodoItem,
   Project,
 } from '../types';
 
@@ -117,6 +118,7 @@ export interface RevertToCheckpointResponse {
   fileEdits: FileEdit[];
   checkpoints: Checkpoint[];
   reasoningBlocks: ReasoningBlock[];
+  todos: TodoItem[];
 }
 
 export interface RevertFileRequest {
@@ -215,6 +217,7 @@ export interface GetChatHistoryResponse {
   checkpoints: Checkpoint[];
   reasoningBlocks: ReasoningBlock[];
   contextItems: ContextItem[];
+  todos: TodoItem[];
   maxTokens: number;
   model: string;
 }
@@ -257,6 +260,7 @@ export type AgentEventType =
   | 'message_edited'
   | 'verification_issues'
   | 'observation_status'
+  | 'todo_list_updated'
   | 'error';
 
 export interface AgentObservationStatusPayload {

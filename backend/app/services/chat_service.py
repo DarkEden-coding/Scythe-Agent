@@ -277,6 +277,12 @@ def _schedule_background_task(
                 chat_id,
                 checkpoint_id,
             )
+            logger.info(
+                "Conversation ended: error chat_id=%s checkpoint_id=%s reason=%s",
+                chat_id,
+                checkpoint_id,
+                err_msg,
+            )
             await event_bus.publish(
                 chat_id,
                 {
