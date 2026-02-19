@@ -54,6 +54,7 @@ class ContextItemOut(BaseModel):
     type: str
     name: str
     tokens: int
+    full_name: str | None = None
 
 
 class GetChatHistoryResponse(BaseModel):

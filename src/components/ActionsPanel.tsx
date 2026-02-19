@@ -76,18 +76,14 @@ export function ActionsPanel({
     else next.add(cpId);
     setCollapsedCheckpoints(next);
   };
-  const toggleParallelGroup = (groupKey: string, calls: ToolCall[]) => {
+  const toggleParallelGroup = (groupKey: string, _calls: ToolCall[]) => {
     const newExpanded = new Set(expandedParallelGroups);
-    const newExpandedTools = new Set(expandedTools);
     if (newExpanded.has(groupKey)) {
       newExpanded.delete(groupKey);
-      calls.forEach((c) => newExpandedTools.delete(c.id));
     } else {
       newExpanded.add(groupKey);
-      calls.forEach((c) => newExpandedTools.add(c.id));
     }
     setExpandedParallelGroups(newExpanded);
-    setExpandedTools(newExpandedTools);
   };
 
   const pendingApproval = toolCalls.find(

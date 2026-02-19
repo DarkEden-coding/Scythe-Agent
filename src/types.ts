@@ -52,6 +52,7 @@ export interface ContextItem {
   type: 'file' | 'conversation' | 'tool_output' | 'summary';
   name: string;
   tokens: number;
+  full_name?: string | null;
 }
 
 export interface ProjectChat {

@@ -34,7 +34,7 @@ def build_context_items(
     stored = chat_repo.list_context_items(chat_id)
     if stored:
         return [
-            ContextItemOut(id=c.id, type=c.type, name=c.label, tokens=c.tokens)
+            ContextItemOut(id=c.id, type=c.type, name=c.label, tokens=c.tokens, full_name=None)
             for c in stored
         ]
 
@@ -60,6 +60,7 @@ def build_context_items(
                             type="file",
                             name="Project structure",
                             tokens=tokens,
+                            full_name=project_path,
                         )
                     )
                 break
@@ -75,6 +76,7 @@ def build_context_items(
                 type="conversation",
                 name=label,
                 tokens=tokens,
+                full_name=f"{m.role}: {content}" if len(content) > 48 else None,
             )
         )
 
@@ -90,18 +92,21 @@ def build_context_items(
                 type="tool_output",
                 name=f"{tc.name}: {_truncate_label(tc.input_json)}",
                 tokens=tokens,
+                full_name=f"{tc.name}({tc.input_json})",
             )
         )
 
     reasoning_blocks = chat_repo.list_reasoning_blocks(chat_id)
     for rb in reasoning_blocks:
         tokens = token_counter.count(rb.content or "")
+        content = rb.content or ""
         items.append(
             ContextItemOut(
                 id=rb.id,
                 type="conversation",
-                name=f"Reasoning: {_truncate_label(rb.content or '')}",
+                name=f"Reasoning: {_truncate_label(content)}",
                 tokens=tokens,
+                full_name=f"Reasoning: {content}" if len(content) > 48 else None,
             )
         )
 

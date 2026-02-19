@@ -32,20 +32,20 @@ class SummarizeService:
         )
         tokens_before = sum(i.tokens for i in items)
 
-        summarized: list[tuple[str, str, str, int]] = []
+        summarized: list[tuple[str, str, str, int, str | None]] = []
         for i in items:
             tokens = i.tokens
             if i.type in {"conversation", "tool_output"}:
                 tokens = max(1, int(tokens * 0.3))
-            summarized.append((i.id, i.type, i.name, tokens))
+            summarized.append((i.id, i.type, i.name, tokens, getattr(i, "full_name", None)))
 
-        self.repo.replace_context_items(chat_id, summarized)
+        self.repo.replace_context_items(chat_id, [(x[0], x[1], x[2], x[3]) for x in summarized])
         self.repo.commit()
 
-        tokens_after = sum(t for (_, _, _, t) in summarized)
+        tokens_after = sum(t for (_, _, _, t, _) in summarized)
         out = [
-            ContextItemOut(id=id_, type=type_, name=name, tokens=t)
-            for id_, type_, name, t in summarized
+            ContextItemOut(id=id_, type=type_, name=name, tokens=t, full_name=fn)
+            for id_, type_, name, t, fn in summarized
         ]
         await self.event_bus.publish(
             chat_id, {"type": "context_update", "payload": {"contextItems": [i.model_dump() for i in out]}}

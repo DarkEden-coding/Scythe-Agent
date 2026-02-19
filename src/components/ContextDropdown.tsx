@@ -26,31 +26,36 @@ const typeColors: Record<string, string> = {
 };
 
 const PIE_COLORS: Record<string, string> = {
-  file: '#22d3d8',
-  conversation: '#2dd4bf',
-  tool_output: '#14b8a6',
-  summary: '#f59e0b',
+  file: '#0ea5e9',
+  conversation: '#22c55e',
+  tool_output: '#a855f7',
+  summary: '#f97316',
 };
+
+const REMAINING_COLOR = '#3f3f46';
 
 function PieChart({
   segments,
+  maxTokens,
 }: Readonly<{
   segments: { type: string; tokens: number }[];
+  maxTokens: number;
 }>) {
-  const total = segments.reduce((s, seg) => s + seg.tokens, 0);
-  if (total === 0) {
-    return (
-      <div className="w-16 h-16 rounded-full bg-gray-800 flex items-center justify-center shrink-0">
-        <span className="text-[10px] text-gray-500">—</span>
-      </div>
-    );
-  }
+  const usedTokens = segments.reduce((s, seg) => s + seg.tokens, 0);
+  const remainingTokens = Math.max(0, maxTokens - usedTokens);
+  const total = maxTokens;
   const cx = 32;
   const cy = 32;
   const r = 28;
   const tau = 2 * Math.PI;
   let acc = -Math.PI / 2;
-  const paths = segments.map((seg, i) => {
+
+  const allSegments = [
+    ...segments.filter((s) => s.tokens > 0),
+    ...(remainingTokens > 0 ? [{ type: '_remaining', tokens: remainingTokens }] : []),
+  ];
+
+  const paths = allSegments.map((seg) => {
     const pct = seg.tokens / total;
     const start = acc;
     acc += pct * tau;
@@ -60,19 +65,17 @@ function PieChart({
     const y2 = cy + r * Math.sin(acc);
     const large = pct > 0.5 ? 1 : 0;
     const d = `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`;
+    const fill = seg.type === '_remaining' ? REMAINING_COLOR : PIE_COLORS[seg.type] ?? PIE_COLORS.file;
+    const opacity = seg.type === '_remaining' ? 0.5 : 0.9;
     return (
-      <path
-        key={seg.type}
-        d={d}
-        fill={PIE_COLORS[seg.type] ?? PIE_COLORS.file}
-        opacity={0.9}
-      />
+      <path key={seg.type} d={d} fill={fill} opacity={opacity} />
     );
   });
 
   return (
     <svg width={64} height={64} viewBox="0 0 64 64" className="shrink-0">
       {paths}
+      <circle cx={cx} cy={cy} r={r} fill="none" stroke="#52525b" strokeWidth={1.5} />
     </svg>
   );
 }
@@ -198,11 +201,11 @@ export function ContextDropdown({
       <div className="bg-gray-850 border border-gray-700/60 rounded-2xl shadow-2xl shadow-black/40 overflow-hidden">
         <div className="p-4 border-b border-gray-700/40">
           <div className="flex items-start gap-4">
-            <PieChart segments={pieSegments} />
+            <PieChart segments={pieSegments} maxTokens={maxTokens} />
             <div className="flex-1 min-w-0">
               <span className="text-xs font-medium text-gray-300">Context by category</span>
               <div className="mt-2 space-y-1">
-                {pieSegments.map((seg, i) => (
+                {pieSegments.map((seg) => (
                   <div key={seg.type} className="flex items-center justify-between text-[10px]">
                     <div className="flex items-center gap-1.5">
                       <span
@@ -214,7 +217,19 @@ export function ContextDropdown({
                     <span className="text-gray-500 font-mono">{seg.tokens.toLocaleString()}</span>
                   </div>
                 ))}
-                {pieSegments.length === 0 && (
+                {Math.max(0, maxTokens - totalTokens) > 0 && (
+                  <div className="flex items-center justify-between text-[10px]">
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        className="w-1.5 h-1.5 rounded-full shrink-0"
+                        style={{ backgroundColor: REMAINING_COLOR }}
+                      />
+                      <span className="text-gray-400">Remaining</span>
+                    </div>
+                    <span className="text-gray-500 font-mono">{(maxTokens - totalTokens).toLocaleString()}</span>
+                  </div>
+                )}
+                {pieSegments.length === 0 && totalTokens === 0 && (
                   <span className="text-[10px] text-gray-500">No context yet</span>
                 )}
               </div>
@@ -228,6 +243,7 @@ export function ContextDropdown({
             {top5Items.map((item) => (
               <div
                 key={item.id}
+                title={item.full_name ?? item.name}
                 className={cn(
                   'flex items-center gap-2 px-2 py-1.5 rounded-lg text-[11px]',
                   typeColors[item.type]
