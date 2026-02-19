@@ -6,14 +6,16 @@ import { ResizableLayout } from './components/layout/ResizableLayout';
 import { EnhancedModelPicker } from './components/EnhancedModelPicker';
 import { SettingsModal } from './components/SettingsModal';
 import { useToast } from './hooks/useToast';
-import { useChatHistory, useProjects, useSettings, useAgentEvents } from './api';
+import { api, useChatHistory, useProjects, useSettings, useAgentEvents } from './api';
 import type { AgentEvent, AutoApproveRule } from './api';
+import type { SettingsTabId } from './components/ProviderSettingsDropdown';
 
 export function App() {
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [showModelPicker, setShowModelPicker] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<'openrouter' | 'agent' | 'mcp' | null>(null);
+  const [settingsTab, setSettingsTab] = useState<SettingsTabId | null>(null);
   const [chatWidth, setChatWidth] = useState(33.33);
+  const [showObservationsInChat, setShowObservationsInChat] = useState(false);
   const { showNotification, notificationMessage, showToast } = useToast();
   const [processingChats, setProcessingChats] = useState<Set<string>>(new Set());
 
@@ -48,6 +50,13 @@ export function App() {
     window.addEventListener('message', handler);
     return () => window.removeEventListener('message', handler);
   }, [settings.prefetchSettings]);
+
+  // Fetch memory settings to know whether to show observations in chat
+  useEffect(() => {
+    api.getMemorySettings().then((res) => {
+      if (res.ok) setShowObservationsInChat(!!res.data.show_observations_in_chat);
+    });
+  }, []);
 
   // Bootstrap activeChatId from first available chat when projects load
   useEffect(() => {
@@ -318,6 +327,9 @@ export function App() {
             onDeleteProject={handleDeleteProject}
             onEditMessage={activeChatId != null ? handleEditMessage : undefined}
             verificationIssues={chat.verificationIssues}
+            observationStatus={chat.observationStatus}
+            observation={chat.observation}
+            showObservationsInChat={showObservationsInChat}
           />
         }
         rightPanel={

@@ -61,6 +61,8 @@ import type {
   SetSystemPromptResponse,
   TestConnectionResponse,
   SyncModelsResponse,
+  MemorySettings,
+  SetMemorySettingsRequest,
   MCPServersResponse,
   MCPServer,
   MCPTool,
@@ -68,6 +70,7 @@ import type {
   UpdateMCPServerRequest,
   RefreshMCPResponse,
 } from './types';
+import type { ObservationData } from '../types';
 
 /* ── Retry Configuration ────────────────────────────────────────── */
 
@@ -576,6 +579,23 @@ export class ApiClient {
   /** Set custom system prompt. Empty string resets to default. */
   async setSystemPrompt(req: SetSystemPromptRequest): Promise<ApiResponse<SetSystemPromptResponse>> {
     return this.request('PUT', '/settings/system-prompt', req);
+  }
+
+  /* ── Memory / Observational Memory settings ──────────────────── */
+
+  /** Get memory mode and OM configuration. */
+  async getMemorySettings(): Promise<ApiResponse<MemorySettings>> {
+    return this.request('GET', '/settings/memory');
+  }
+
+  /** Update memory mode and OM configuration. */
+  async setMemorySettings(req: SetMemorySettingsRequest): Promise<ApiResponse<MemorySettings>> {
+    return this.request('POST', '/settings/memory', req);
+  }
+
+  /** Get current observations for a chat. */
+  async getObservations(chatId: string): Promise<ApiResponse<ObservationData>> {
+    return this.request('GET', `/chat/${chatId}/observations`);
   }
 
   /* ── MCP configuration ──────────────────────────────────────── */

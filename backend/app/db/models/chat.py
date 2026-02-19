@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from app.db.models.file_edit import FileEdit
     from app.db.models.file_snapshot import FileSnapshot
     from app.db.models.message import Message
+    from app.db.models.observation import Observation
     from app.db.models.project import Project
     from app.db.models.reasoning_block import ReasoningBlock
     from app.db.models.tool_call import ToolCall
@@ -50,4 +51,8 @@ class Chat(Base):
     )
     file_snapshots: Mapped[list["FileSnapshot"]] = relationship(
         back_populates="chat", cascade="all, delete-orphan", passive_deletes=True
+    )
+    observations: Mapped[list["Observation"]] = relationship(
+        "Observation", cascade="all, delete-orphan", passive_deletes=True,
+        foreign_keys="Observation.chat_id",
     )

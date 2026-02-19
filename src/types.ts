@@ -55,6 +55,17 @@ export interface ContextItem {
   full_name?: string | null;
 }
 
+export interface ObservationData {
+  hasObservations: boolean;
+  generation?: number;
+  content?: string;
+  tokenCount?: number;
+  observedUpToMessageId?: string;
+  currentTask?: string;
+  suggestedResponse?: string;
+  timestamp?: string;
+}
+
 export interface VerificationIssues {
   checkpointId: string;
   summary: string;

@@ -7,13 +7,19 @@ import logging
 import httpx
 
 from app.preprocessors.auto_compaction import AutoCompactionPreprocessor
+from app.preprocessors.base import PreprocessorContext
+from app.preprocessors.observational_memory import ObservationalMemoryPreprocessor
 from app.preprocessors.pipeline import PreprocessorPipeline
+from app.preprocessors.project_context import ProjectContextPreprocessor
 from app.preprocessors.system_prompt import SystemPromptPreprocessor
 from app.preprocessors.token_estimator import TokenEstimatorPreprocessor
 from app.preprocessors.tool_result_pruner import ToolResultPrunerPreprocessor
-from app.preprocessors.base import PreprocessorContext
 from app.schemas.chat import MessageOut
 from app.services.llm_streamer import LLMStreamer
+from app.services.memory import MemoryConfig
+from app.services.memory.observational.background import om_runner
+from app.services.memory.observational.service import ObservationMemoryService
+from app.services.token_counter import count_messages_tokens
 from app.services.tool_executor import ToolExecutor
 from app.utils.ids import generate_id
 from app.utils.time import utc_now_iso
@@ -34,10 +40,11 @@ class AgentLoop:
         api_key_resolver,
         approval_svc,
         event_bus,
-        apply_initial_information,
         get_openrouter_tools,
         default_system_prompt: str,
         session_factory=None,
+        # Kept for backward compatibility; project context is now a pipeline preprocessor
+        apply_initial_information=None,
     ):
         self._chat_repo = chat_repo
         self._project_repo = project_repo
@@ -46,7 +53,6 @@ class AgentLoop:
         self._api_key_resolver = api_key_resolver
         self._approval_svc = approval_svc
         self._event_bus = event_bus
-        self._apply_initial_information = apply_initial_information
         self._get_openrouter_tools = get_openrouter_tools
         self._default_system_prompt = default_system_prompt
         self._session_factory = session_factory
@@ -100,16 +106,27 @@ class AgentLoop:
         project = self._project_repo.get_project(chat_model.project_id)
         if project:
             project_path = project.path
-        openrouter_messages = self._apply_initial_information(
-            openrouter_messages, project_path=project_path
-        )
         tools = self._get_openrouter_tools()
+
+        # Load memory settings
+        mem_cfg = MemoryConfig.from_settings_repo(self._settings_repo)
+
+        # Build preprocessor pipeline
+        memory_preprocessor: ObservationalMemoryPreprocessor | AutoCompactionPreprocessor
+        if mem_cfg.mode == "observational":
+            memory_preprocessor = ObservationalMemoryPreprocessor(self._chat_repo)
+        else:
+            memory_preprocessor = AutoCompactionPreprocessor(threshold_ratio=0.85)
+
         pipeline = PreprocessorPipeline(
             [
                 SystemPromptPreprocessor(default_prompt=self._default_system_prompt),
+                ProjectContextPreprocessor(project_path),   # priority 15: after system prompt
                 TokenEstimatorPreprocessor(),
                 ToolResultPrunerPreprocessor(),
-                AutoCompactionPreprocessor(threshold_ratio=0.85),
+                memory_preprocessor,
+                # Always keep AutoCompaction as last-resort fallback at 95%
+                AutoCompactionPreprocessor(threshold_ratio=0.95),
             ]
         )
         context_limit = settings.contextLimit
@@ -227,6 +244,7 @@ class AgentLoop:
                     }
                     for tc in result.tool_calls
                 ],
+                "_message_id": msg_id,
             }
             openrouter_messages.append(assistant_msg)
 
@@ -236,12 +254,59 @@ class AgentLoop:
                 checkpoint_id=checkpoint_id,
             )
             for tr in tool_results:
-                openrouter_messages.append(tr)
+                tr_with_id = dict(tr)
+                tr_with_id["_message_id"] = msg_id
+                openrouter_messages.append(tr_with_id)
+
+            # After tool results: schedule background observation if OM is enabled
+            if mem_cfg.mode == "observational" and self._session_factory:
+                self._maybe_schedule_observation(
+                    chat_id=chat_id,
+                    messages=openrouter_messages,
+                    model=settings.model,
+                    observer_model=mem_cfg.observer_model,
+                    reflector_model=mem_cfg.reflector_model,
+                    observer_threshold=mem_cfg.observer_threshold,
+                    reflector_threshold=mem_cfg.reflector_threshold,
+                    client=client,
+                )
 
         await self._event_bus.publish(
             chat_id,
             {"type": "agent_done", "payload": {"checkpointId": checkpoint_id}},
         )
+
+    def _maybe_schedule_observation(
+        self,
+        *,
+        chat_id: str,
+        messages: list[dict],
+        model: str,
+        observer_model: str | None,
+        reflector_model: str | None,
+        observer_threshold: int,
+        reflector_threshold: int,
+        client,
+    ) -> None:
+        """Schedule background observation if there are enough unobserved tokens."""
+        latest_obs = self._chat_repo.get_latest_observation(chat_id)
+        svc = ObservationMemoryService(self._chat_repo)
+        _observed, unobserved = svc.get_unobserved_messages(messages, latest_obs)
+        unobserved_tokens = count_messages_tokens(unobserved)
+
+        if unobserved_tokens >= observer_threshold:
+            om_runner.schedule_observation(
+                chat_id=chat_id,
+                messages=list(messages),
+                model=model,
+                observer_model=observer_model,
+                reflector_model=reflector_model,
+                observer_threshold=observer_threshold,
+                reflector_threshold=reflector_threshold,
+                client=client,
+                session_factory=self._session_factory,
+                event_bus=self._event_bus,
+            )
 
     def _assemble_messages(self, chat_id: str, content: str) -> list[dict]:
         """Assemble messages without system prompt; SystemPromptPreprocessor adds it."""
@@ -249,7 +314,11 @@ class AgentLoop:
         openrouter_messages: list[dict] = []
         for m in messages:
             role = "assistant" if m.role == "assistant" else "user"
-            openrouter_messages.append({"role": role, "content": m.content})
+            openrouter_messages.append({
+                "role": role,
+                "content": m.content,
+                "_message_id": m.id,
+            })
         if not openrouter_messages:
             openrouter_messages = [{"role": "user", "content": content}]
         return openrouter_messages

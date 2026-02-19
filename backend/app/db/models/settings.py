@@ -17,4 +17,11 @@ class Settings(Base):
     openai_sub_access_token: Mapped[str | None] = mapped_column(Text, nullable=True)
     openai_sub_refresh_token: Mapped[str | None] = mapped_column(Text, nullable=True)
     system_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Observational Memory settings
+    memory_mode: Mapped[str | None] = mapped_column(Text, nullable=True, default="observational")
+    observer_model: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reflector_model: Mapped[str | None] = mapped_column(Text, nullable=True)
+    observer_threshold: Mapped[int | None] = mapped_column(Integer, nullable=True, default=30000)
+    reflector_threshold: Mapped[int | None] = mapped_column(Integer, nullable=True, default=40000)
+    show_observations_in_chat: Mapped[int | None] = mapped_column(Integer, nullable=True, default=0)
 

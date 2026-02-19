@@ -1,5 +1,6 @@
 from app.db.models.auto_approve_rule import AutoApproveRule as AutoApproveRule
 from app.db.models.chat import Chat as Chat
+from app.db.models.observation import Observation as Observation
 from app.db.models.checkpoint import Checkpoint as Checkpoint
 from app.db.models.context_item import ContextItem as ContextItem
 from app.db.models.file_edit import FileEdit as FileEdit

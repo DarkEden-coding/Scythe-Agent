@@ -105,3 +105,12 @@ class SetSystemPromptRequest(BaseModel):
 
 class SetSystemPromptResponse(BaseModel):
     systemPrompt: str
+
+
+class SetMemorySettingsRequest(BaseModel):
+    memoryMode: str | None = None
+    observerModel: str | None = None
+    reflectorModel: str | None = None
+    observerThreshold: int | None = None
+    reflectorThreshold: int | None = None
+    showObservationsInChat: bool | None = None

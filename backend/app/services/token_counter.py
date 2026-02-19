@@ -25,6 +25,21 @@ def _encoding_for_model(model: str) -> str:
     return _DEFAULT_ENCODING
 
 
+def count_messages_tokens(messages: list[dict]) -> int:
+    """Estimate token count of a list of message dicts (rough: 1 token ≈ 4 chars)."""
+    import json
+
+    total = 0
+    for msg in messages:
+        content = msg.get("content", "")
+        if isinstance(content, str):
+            total += max(1, len(content) // 4) if content else 0
+        elif isinstance(content, list):
+            raw = json.dumps(content)
+            total += max(1, len(raw) // 4) if raw else 0
+    return total
+
+
 class TokenCounter:
     """Counts tokens using provider if available, otherwise tiktoken."""
 

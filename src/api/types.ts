@@ -256,7 +256,16 @@ export type AgentEventType =
   | 'agent_done'
   | 'message_edited'
   | 'verification_issues'
+  | 'observation_status'
   | 'error';
+
+export interface AgentObservationStatusPayload {
+  status: 'observing' | 'observed' | 'reflecting' | 'reflected';
+  chatId: string;
+  tokensSaved?: number;
+  tokensBefore?: number;
+  tokensAfter?: number;
+}
 
 export interface AgentEvent {
   type: AgentEventType;
@@ -273,6 +282,7 @@ export interface AgentEvent {
     | AgentContextPayload
     | AgentChatTitlePayload
     | AgentVerificationIssuesPayload
+    | AgentObservationStatusPayload
     | AgentErrorPayload;
 }
 
@@ -406,6 +416,26 @@ export interface SyncModelsResponse {
   success: boolean;
   models: string[];
   count: number;
+}
+
+/* ── Memory / Observational Memory settings ───────────────────── */
+
+export interface MemorySettings {
+  memory_mode: string;
+  observer_model: string | null;
+  reflector_model: string | null;
+  observer_threshold: number;
+  reflector_threshold: number;
+  show_observations_in_chat: boolean;
+}
+
+export interface SetMemorySettingsRequest {
+  memoryMode?: string;
+  observerModel?: string;
+  reflectorModel?: string;
+  observerThreshold?: number;
+  reflectorThreshold?: number;
+  showObservationsInChat?: boolean;
 }
 
 /* ── MCP configuration ────────────────────────────────────────── */

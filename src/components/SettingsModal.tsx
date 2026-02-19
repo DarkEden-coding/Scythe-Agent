@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Settings, Key, Bot, ChevronRight, FolderOpen, Plug, Zap, Sparkles } from 'lucide-react';
+import { Settings, Key, Bot, ChevronRight, FolderOpen, Plug, Zap, Sparkles, Brain } from 'lucide-react';
 import { cn } from '@/utils/cn';
 import { Modal } from './Modal';
 import { OpenRouterSettingsPanel } from './settings/OpenRouterSettingsPanel';
@@ -7,6 +7,7 @@ import { GroqSettingsPanel } from './settings/GroqSettingsPanel';
 import { OpenAISubSettingsPanel } from './settings/OpenAISubSettingsPanel';
 import { AgentSettingsPanel } from './settings/AgentSettingsPanel';
 import { MCPSettingsPanel } from './settings/MCPSettingsPanel';
+import { MemorySettingsPanel } from './settings/MemorySettingsPanel';
 import type { ProviderId, SettingsTabId } from './ProviderSettingsDropdown';
 
 const PROVIDER_TABS: { id: ProviderId; label: string; icon: React.ReactNode }[] = [
@@ -101,6 +102,9 @@ export function SettingsModal({
     if (activeTab === 'agent') {
       return <AgentSettingsPanel />;
     }
+    if (activeTab === 'memory') {
+      return <MemorySettingsPanel />;
+    }
     return null;
   };
 
@@ -179,6 +183,18 @@ export function SettingsModal({
             >
               <Bot className="w-4 h-4" />
               System Prompt
+            </button>
+            <button
+              onClick={() => setActiveTab('memory')}
+              className={cn(
+                'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
+                activeTab === 'memory'
+                  ? 'bg-violet-500/20 text-violet-300 border border-violet-500/30'
+                  : 'text-gray-400 hover:bg-gray-800/50 hover:text-gray-200',
+              )}
+            >
+              <Brain className="w-4 h-4" />
+              Memory
             </button>
           </nav>
         </aside>

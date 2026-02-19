@@ -22,9 +22,11 @@ import type {
   Checkpoint,
   ContextItem,
   ReasoningBlock,
+  ObservationData,
   VerificationIssues,
 } from '@/types';
-import type { AgentEvent } from '@/api/types';
+import type { AgentEvent, AgentObservationStatusPayload } from '@/api/types';
+import type { ObservationStatus } from '@/components/chat/ObservationStatusIndicator';
 
 export function useChatHistory(chatId: string | null | undefined, client: ApiClient = defaultApi) {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -40,6 +42,8 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [processingChats, setProcessingChats] = useState<Set<string>>(new Set());
+  const [observationStatus, setObservationStatus] = useState<ObservationStatus>('idle');
+  const [observation, setObservation] = useState<ObservationData | null>(null);
 
   const pendingContentDeltas = useRef<Map<string, string>>(new Map());
   const pendingReasoningDeltas = useRef<Map<string, string>>(new Map());
@@ -60,6 +64,8 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
       setStreamingReasoningBlockIds(new Set());
       setContextItems([]);
       setVerificationIssues({});
+      setObservationStatus('idle');
+      setObservation(null);
       setError(null);
       pendingContentDeltas.current.clear();
       pendingReasoningDeltas.current.clear();
@@ -80,11 +86,16 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
     setStreamingReasoningBlockIds(new Set());
     setContextItems([]);
     setVerificationIssues({});
+    setObservation(null);
+    setObservationStatus('idle');
 
-    client.getChatHistory(chatId).then((res) => {
+    Promise.all([
+      client.getChatHistory(chatId),
+      client.getObservations(chatId),
+    ]).then(([histRes, obsRes]) => {
       if (cancelled) return;
-      if (res.ok) {
-        const d = res.data;
+      if (histRes.ok) {
+        const d = histRes.data;
         setMessages(uniqueById(d.messages.map(normalizeMessage)));
         setToolCalls(uniqueById(d.toolCalls.map(normalizeToolCall)));
         setFileEdits(uniqueById(d.fileEdits.map(normalizeFileEdit)));
@@ -95,7 +106,10 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
         setModel(d.model);
         setError(null);
       } else {
-        setError(res.error ?? 'Failed to load chat history');
+        setError(histRes.error ?? 'Failed to load chat history');
+      }
+      if (obsRes.ok && obsRes.data.hasObservations) {
+        setObservation(obsRes.data);
       }
       setLoading(false);
     });
@@ -521,6 +535,23 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
           setReasoningBlocks(uniqueById(payload.revertedHistory.reasoningBlocks.map(normalizeReasoningBlock)));
           break;
         }
+        case 'observation_status': {
+          const payload = event.payload as AgentObservationStatusPayload;
+          if (payload.status === 'observing') {
+            setObservationStatus('observing');
+          } else if (payload.status === 'reflecting') {
+            setObservationStatus('reflecting');
+          } else if (payload.status === 'observed' || payload.status === 'reflected') {
+            setObservationStatus('done');
+            // Refresh observation data
+            if (event.chatId) {
+              client.getObservations(event.chatId).then((res) => {
+                if (res.ok) setObservation(res.data);
+              });
+            }
+          }
+          break;
+        }
         case 'error': {
           const payload = event.payload as {
             message?: string;
@@ -542,7 +573,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
           break;
       }
     },
-    [asDate, scheduleStreamFlush],
+    [asDate, scheduleStreamFlush, client],
   );
 
   return {
@@ -554,6 +585,8 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
     streamingReasoningBlockIds,
     contextItems,
     verificationIssues,
+    observationStatus,
+    observation,
     maxTokens,
     model,
     loading,

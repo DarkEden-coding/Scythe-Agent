@@ -1,7 +1,8 @@
 import { RotateCcw, Bot, MessageSquare } from 'lucide-react';
-import type { Message, Checkpoint, VerificationIssues } from '@/types';
+import type { Message, Checkpoint, VerificationIssues, ObservationData } from '@/types';
 import { MessageBubble } from './MessageBubble';
 import { VerificationIssuesBanner } from './VerificationIssuesBanner';
+import { ObservationMessage } from './ObservationMessage';
 
 interface MessageListProps {
   readonly messages: Message[];
@@ -11,6 +12,8 @@ interface MessageListProps {
   readonly onEditMessage?: (messageId: string, newContent: string) => void;
   readonly getCheckpointForMessage: (messageId: string) => Checkpoint | undefined;
   readonly verificationIssues?: Record<string, VerificationIssues>;
+  readonly observation?: ObservationData | null;
+  readonly showObservationsInChat?: boolean;
 }
 
 export function MessageList({
@@ -21,6 +24,8 @@ export function MessageList({
   onEditMessage,
   getCheckpointForMessage,
   verificationIssues = {},
+  observation = null,
+  showObservationsInChat = false,
 }: MessageListProps) {
   if (!activeChatId) {
     return (
@@ -32,11 +37,17 @@ export function MessageList({
     );
   }
 
+  const showObservation = showObservationsInChat && observation?.hasObservations;
+  const waterlineMessageId = observation?.observedUpToMessageId ?? null;
+  const waterlineIndex = waterlineMessageId
+    ? messages.findIndex((m) => m.id === waterlineMessageId)
+    : -1;
+
   let prevCheckpointId: string | null = null;
 
   return (
     <>
-      {messages.map((message) => {
+      {messages.map((message, index) => {
         const checkpoint = message.checkpointId ? getCheckpointForMessage(message.id) : null;
         const prevCpId = prevCheckpointId;
         if (checkpoint) {
@@ -46,33 +57,38 @@ export function MessageList({
           checkpoint && prevCpId && verificationIssues[prevCpId];
 
         return (
-          <div key={message.id} className="space-y-2">
-            {verificationBanner && (
-              <div className="py-1">
-                <VerificationIssuesBanner
-                  issues={verificationIssues[prevCpId]}
-                  isActive={false}
-                />
-              </div>
-            )}
-            {checkpoint && (
-              <div className="flex items-center gap-2 py-2">
-                <div className="flex-1 h-px bg-gray-700/50" />
-                <div className="flex items-center gap-2 px-2.5 py-1 bg-gray-800 rounded-full border border-gray-700/50 shadow-sm">
-                  <div className="w-1.5 h-1.5 rounded-full bg-aqua-400/60" />
-                  <span className="text-[11px] text-gray-400">{checkpoint.label}</span>
-                  <button
-                    onClick={() => onRevert(checkpoint.id)}
-                    className="flex items-center gap-1 px-1.5 py-0.5 text-[10px] text-amber-400 hover:text-amber-300 hover:bg-gray-700 rounded transition-colors"
-                    title="Revert to this checkpoint"
-                  >
-                    <RotateCcw className="w-2.5 h-2.5" />
-                  </button>
+          <div key={message.id}>
+            <div className="space-y-2">
+              {verificationBanner && (
+                <div className="py-1">
+                  <VerificationIssuesBanner
+                    issues={verificationIssues[prevCpId]}
+                    isActive={false}
+                  />
                 </div>
-                <div className="flex-1 h-px bg-gray-700/50" />
-              </div>
+              )}
+              {checkpoint && (
+                <div className="flex items-center gap-2 py-2">
+                  <div className="flex-1 h-px bg-gray-700/50" />
+                  <div className="flex items-center gap-2 px-2.5 py-1 bg-gray-800 rounded-full border border-gray-700/50 shadow-sm">
+                    <div className="w-1.5 h-1.5 rounded-full bg-aqua-400/60" />
+                    <span className="text-[11px] text-gray-400">{checkpoint.label}</span>
+                    <button
+                      onClick={() => onRevert(checkpoint.id)}
+                      className="flex items-center gap-1 px-1.5 py-0.5 text-[10px] text-amber-400 hover:text-amber-300 hover:bg-gray-700 rounded transition-colors"
+                      title="Revert to this checkpoint"
+                    >
+                      <RotateCcw className="w-2.5 h-2.5" />
+                    </button>
+                  </div>
+                  <div className="flex-1 h-px bg-gray-700/50" />
+                </div>
+              )}
+              <MessageBubble message={message} onEdit={onEditMessage} isProcessing={isProcessing} />
+            </div>
+            {showObservation && observation && index === waterlineIndex && (
+              <ObservationMessage observation={observation} />
             )}
-            <MessageBubble message={message} onEdit={onEditMessage} isProcessing={isProcessing} />
           </div>
         );
       })}

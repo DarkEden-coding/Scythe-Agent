@@ -8,6 +8,7 @@ from app.api.routes.chat import router as chat_router
 from app.api.routes.events import router as events_router
 from app.api.routes.filesystem import router as filesystem_router
 from app.api.routes.mcp import router as mcp_router
+from app.api.routes.observations import router as observations_router
 from app.api.routes.projects import router as projects_router
 from app.api.routes.settings import router as settings_router
 from app.config.settings import get_settings
@@ -113,6 +114,7 @@ def create_app() -> FastAPI:
     app.include_router(settings_router)
     app.include_router(mcp_router)
     app.include_router(chat_router)
+    app.include_router(observations_router)
     app.include_router(events_router)
 
     @app.get("/health")

@@ -9,6 +9,7 @@ from app.db.models.context_item import ContextItem
 from app.db.models.file_edit import FileEdit
 from app.db.models.file_snapshot import FileSnapshot
 from app.db.models.message import Message
+from app.db.models.observation import Observation
 from app.db.models.reasoning_block import ReasoningBlock
 from app.db.models.tool_call import ToolCall
 from app.db.repositories.base_repo import BaseRepository
@@ -347,6 +348,63 @@ class ChatRepository(BaseRepository):
     def delete_file_edit(self, file_edit: FileEdit) -> None:
         self.db.delete(file_edit)
 
+    def get_latest_observation(self, chat_id: str) -> Observation | None:
+        """Return the highest-generation, most-recent observation for a chat."""
+        stmt = (
+            select(Observation)
+            .where(Observation.chat_id == chat_id)
+            .order_by(Observation.generation.desc(), Observation.timestamp.desc())
+        )
+        return self.db.scalars(stmt).first()
+
+    def create_observation(
+        self,
+        *,
+        observation_id: str,
+        chat_id: str,
+        generation: int,
+        content: str,
+        token_count: int,
+        observed_up_to_message_id: str | None,
+        current_task: str | None,
+        suggested_response: str | None,
+        timestamp: str,
+    ) -> Observation:
+        obs = Observation(
+            id=observation_id,
+            chat_id=chat_id,
+            generation=generation,
+            content=content,
+            token_count=token_count,
+            observed_up_to_message_id=observed_up_to_message_id,
+            current_task=current_task,
+            suggested_response=suggested_response,
+            timestamp=timestamp,
+        )
+        self.db.add(obs)
+        return obs
+
+    def delete_observation(self, obs: Observation) -> None:
+        """Delete a specific observation."""
+        self.db.delete(obs)
+
+    def delete_observations_before_generation(
+        self, chat_id: str, generation: int
+    ) -> None:
+        """Delete all observations with generation < given value (cleanup after reflection)."""
+        self.db.execute(
+            delete(Observation).where(
+                Observation.chat_id == chat_id,
+                Observation.generation < generation,
+            )
+        )
+
+    def delete_observations_for_chat(self, chat_id: str) -> None:
+        """Delete all observations for a chat (for revert/delete support)."""
+        self.db.execute(
+            delete(Observation).where(Observation.chat_id == chat_id)
+        )
+
     def delete_after_checkpoint(
         self, *, chat_id: str, cutoff_timestamp: str, checkpoint_id: str
     ) -> None:
@@ -411,4 +469,9 @@ class ChatRepository(BaseRepository):
                     ),
                 ),
             )
+        )
+        # Delete all observations for this chat after a revert; they will be
+        # regenerated on the next agent turn if OM is enabled.
+        self.db.execute(
+            delete(Observation).where(Observation.chat_id == chat_id)
         )

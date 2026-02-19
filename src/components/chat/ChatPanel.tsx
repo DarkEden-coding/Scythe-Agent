@@ -14,14 +14,17 @@ import type {
   Project,
   ProjectChat,
   VerificationIssues,
+  ObservationData,
 } from '@/types';
 import { ContextDropdown } from '@/components/ContextDropdown';
 import { NewEntityModal } from '@/components/projects/NewEntityModal';
 import { DeleteChatConfirmModal } from '@/components/projects/DeleteChatConfirmModal';
 import { MessageList } from './MessageList';
 import { MessageInput } from './MessageInput';
+import { ObservationStatusIndicator } from './ObservationStatusIndicator';
 import { ProjectsTab } from '@/components/projects/ProjectsTab';
 import { cn } from '@/utils/cn';
+import type { ObservationStatus } from './ObservationStatusIndicator';
 
 interface ChatPanelProps {
   readonly messages: Message[];
@@ -46,6 +49,9 @@ interface ChatPanelProps {
   readonly onDeleteProject?: (projectId: string) => Promise<void> | void;
   readonly onEditMessage?: (messageId: string, newContent: string) => void;
   readonly verificationIssues?: Record<string, VerificationIssues>;
+  readonly observationStatus?: ObservationStatus;
+  readonly observation?: ObservationData | null;
+  readonly showObservationsInChat?: boolean;
 }
 
 export function ChatPanel({
@@ -71,6 +77,9 @@ export function ChatPanel({
   onDeleteProject,
   onEditMessage,
   verificationIssues = {},
+  observationStatus = 'idle',
+  observation = null,
+  showObservationsInChat = false,
 }: ChatPanelProps) {
   const [inputValue, setInputValue] = useState('');
   const [activeTab, setActiveTab] = useHashTab<'chat' | 'projects'>('chat', ['chat', 'projects']);
@@ -178,6 +187,7 @@ export function ChatPanel({
                   </button>
                 </div>
               )}
+              <ObservationStatusIndicator status={observationStatus} />
               <ContextDropdown
                 contextItems={contextItems}
                 maxTokens={maxTokens}
@@ -218,6 +228,8 @@ export function ChatPanel({
               onEditMessage={onEditMessage}
               getCheckpointForMessage={getCheckpointForMessage}
               verificationIssues={verificationIssues}
+              observation={observation}
+              showObservationsInChat={showObservationsInChat}
             />
           </div>
           <div className="p-3 border-t border-gray-700/40 bg-gray-850">

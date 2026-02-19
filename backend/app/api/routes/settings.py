@@ -12,6 +12,7 @@ from app.schemas.settings import (
     SetModelRequest,
     SetApiKeyRequest,
     SetSystemPromptRequest,
+    SetMemorySettingsRequest,
     OpenRouterConfigResponse,
     GroqConfigResponse,
     OpenAISubConfigResponse,
@@ -349,4 +350,46 @@ async def sync_openai_sub_models(db: Session = Depends(get_db)):
     except Exception as exc:
         return JSONResponse(
             status_code=500, content=err(f"Sync failed: {exc}").model_dump()
+        )
+
+
+# Memory settings endpoints
+@router.get("/memory")
+def get_memory_settings(db: Session = Depends(get_db)):
+    """Get memory mode and OM configuration."""
+    try:
+        from app.db.repositories.settings_repo import SettingsRepository
+        repo = SettingsRepository(db)
+        data = repo.get_memory_settings()
+        return ok(data)
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500, content=err(f"Failed to get memory settings: {exc}").model_dump()
+        )
+
+
+@router.post("/memory")
+def set_memory_settings(request: SetMemorySettingsRequest, db: Session = Depends(get_db)):
+    """Update memory mode and OM configuration."""
+    try:
+        from app.db.repositories.settings_repo import SettingsRepository
+        from app.utils.time import utc_now_iso
+        repo = SettingsRepository(db)
+        repo.set_memory_settings(
+            memory_mode=request.memoryMode,
+            observer_model=request.observerModel,
+            reflector_model=request.reflectorModel,
+            observer_threshold=request.observerThreshold,
+            reflector_threshold=request.reflectorThreshold,
+            show_observations_in_chat=request.showObservationsInChat,
+            updated_at=utc_now_iso(),
+        )
+        repo.commit()
+        data = repo.get_memory_settings()
+        return ok(data)
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500, content=err(f"Failed to update memory settings: {exc}").model_dump()
         )

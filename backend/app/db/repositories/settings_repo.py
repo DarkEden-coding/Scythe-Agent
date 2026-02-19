@@ -141,6 +141,55 @@ class SettingsRepository(BaseRepository):
         settings.updated_at = updated_at
         return settings
 
+    def get_memory_settings(self) -> dict:
+        """Return memory-related settings as a dict with defaults applied."""
+        s = self.get_settings()
+        if s is None:
+            return {
+                "memory_mode": "observational",
+                "observer_model": None,
+                "reflector_model": None,
+                "observer_threshold": 30000,
+                "reflector_threshold": 40000,
+                "show_observations_in_chat": False,
+            }
+        return {
+            "memory_mode": s.memory_mode or "observational",
+            "observer_model": s.observer_model,
+            "reflector_model": s.reflector_model,
+            "observer_threshold": s.observer_threshold if s.observer_threshold is not None else 30000,
+            "reflector_threshold": s.reflector_threshold if s.reflector_threshold is not None else 40000,
+            "show_observations_in_chat": bool(s.show_observations_in_chat),
+        }
+
+    def set_memory_settings(
+        self,
+        *,
+        memory_mode: str | None = None,
+        observer_model: str | None = None,
+        reflector_model: str | None = None,
+        observer_threshold: int | None = None,
+        reflector_threshold: int | None = None,
+        show_observations_in_chat: bool | None = None,
+        updated_at: str,
+    ) -> None:
+        s = self.get_settings()
+        if s is None:
+            raise ValueError("Settings record missing")
+        if memory_mode is not None:
+            s.memory_mode = memory_mode
+        if observer_model is not None:
+            s.observer_model = observer_model if observer_model.strip() else None
+        if reflector_model is not None:
+            s.reflector_model = reflector_model if reflector_model.strip() else None
+        if observer_threshold is not None:
+            s.observer_threshold = observer_threshold
+        if reflector_threshold is not None:
+            s.reflector_threshold = reflector_threshold
+        if show_observations_in_chat is not None:
+            s.show_observations_in_chat = 1 if show_observations_in_chat else 0
+        s.updated_at = updated_at
+
     def list_auto_approve_rules(self) -> list[AutoApproveRule]:
         return list(self.db.scalars(select(AutoApproveRule).order_by(AutoApproveRule.created_at.asc())).all())
 
