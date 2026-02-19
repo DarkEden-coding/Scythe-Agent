@@ -7,7 +7,14 @@ import {
   Folder,
   Plus,
 } from 'lucide-react';
-import type { Message, Checkpoint, ContextItem, Project, ProjectChat } from '@/types';
+import type {
+  Message,
+  Checkpoint,
+  ContextItem,
+  Project,
+  ProjectChat,
+  VerificationIssues,
+} from '@/types';
 import { ContextDropdown } from '@/components/ContextDropdown';
 import { NewEntityModal } from '@/components/projects/NewEntityModal';
 import { DeleteChatConfirmModal } from '@/components/projects/DeleteChatConfirmModal';
@@ -38,6 +45,7 @@ interface ChatPanelProps {
   readonly onReorderChats?: (projectId: string, chatIds: string[]) => Promise<void> | void;
   readonly onDeleteProject?: (projectId: string) => Promise<void> | void;
   readonly onEditMessage?: (messageId: string, newContent: string) => void;
+  readonly verificationIssues?: Record<string, VerificationIssues>;
 }
 
 export function ChatPanel({
@@ -62,6 +70,7 @@ export function ChatPanel({
   onReorderChats,
   onDeleteProject,
   onEditMessage,
+  verificationIssues = {},
 }: ChatPanelProps) {
   const [inputValue, setInputValue] = useState('');
   const [activeTab, setActiveTab] = useHashTab<'chat' | 'projects'>('chat', ['chat', 'projects']);
@@ -208,6 +217,7 @@ export function ChatPanel({
               onRevert={onRevert}
               onEditMessage={onEditMessage}
               getCheckpointForMessage={getCheckpointForMessage}
+              verificationIssues={verificationIssues}
             />
           </div>
           <div className="p-3 border-t border-gray-700/40 bg-gray-850">

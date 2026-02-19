@@ -60,6 +60,19 @@ class ChatRepository(BaseRepository):
         )
         return list(self.db.scalars(stmt).all())
 
+    def list_file_edits_for_checkpoint(
+        self, chat_id: str, checkpoint_id: str
+    ) -> list[FileEdit]:
+        stmt = (
+            select(FileEdit)
+            .where(
+                FileEdit.chat_id == chat_id,
+                FileEdit.checkpoint_id == checkpoint_id,
+            )
+            .order_by(FileEdit.timestamp.asc())
+        )
+        return list(self.db.scalars(stmt).all())
+
     def list_checkpoints(self, chat_id: str) -> list[Checkpoint]:
         stmt = (
             select(Checkpoint)

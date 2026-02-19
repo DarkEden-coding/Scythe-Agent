@@ -1,6 +1,8 @@
 import { RotateCcw, Bot, MessageSquare } from 'lucide-react';
-import type { Message, Checkpoint } from '@/types';
+import type { Message, Checkpoint, VerificationIssues } from '@/types';
 import { MessageBubble } from './MessageBubble';
+import { VerificationIssuesBanner } from './VerificationIssuesBanner';
+
 interface MessageListProps {
   readonly messages: Message[];
   readonly activeChatId: string | null;
@@ -8,6 +10,7 @@ interface MessageListProps {
   readonly onRevert: (checkpointId: string) => void;
   readonly onEditMessage?: (messageId: string, newContent: string) => void;
   readonly getCheckpointForMessage: (messageId: string) => Checkpoint | undefined;
+  readonly verificationIssues?: Record<string, VerificationIssues>;
 }
 
 export function MessageList({
@@ -17,6 +20,7 @@ export function MessageList({
   onRevert,
   onEditMessage,
   getCheckpointForMessage,
+  verificationIssues = {},
 }: MessageListProps) {
   if (!activeChatId) {
     return (
@@ -28,12 +32,29 @@ export function MessageList({
     );
   }
 
+  let prevCheckpointId: string | null = null;
+
   return (
     <>
       {messages.map((message) => {
         const checkpoint = message.checkpointId ? getCheckpointForMessage(message.id) : null;
+        const prevCpId = prevCheckpointId;
+        if (checkpoint) {
+          prevCheckpointId = checkpoint.id;
+        }
+        const verificationBanner =
+          checkpoint && prevCpId && verificationIssues[prevCpId];
+
         return (
           <div key={message.id} className="space-y-2">
+            {verificationBanner && (
+              <div className="py-1">
+                <VerificationIssuesBanner
+                  issues={verificationIssues[prevCpId]}
+                  isActive={false}
+                />
+              </div>
+            )}
             {checkpoint && (
               <div className="flex items-center gap-2 py-2">
                 <div className="flex-1 h-px bg-gray-700/50" />

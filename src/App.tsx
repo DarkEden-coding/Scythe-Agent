@@ -317,6 +317,7 @@ export function App() {
             onReorderChats={handleReorderChats}
             onDeleteProject={handleDeleteProject}
             onEditMessage={activeChatId != null ? handleEditMessage : undefined}
+            verificationIssues={chat.verificationIssues}
           />
         }
         rightPanel={

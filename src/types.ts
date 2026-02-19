@@ -55,6 +55,14 @@ export interface ContextItem {
   full_name?: string | null;
 }
 
+export interface VerificationIssues {
+  checkpointId: string;
+  summary: string;
+  issueCount: number;
+  fileCount: number;
+  byTool?: Record<string, number>;
+}
+
 export interface ProjectChat {
   id: string;
   title: string;

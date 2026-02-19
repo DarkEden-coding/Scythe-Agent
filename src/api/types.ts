@@ -255,6 +255,7 @@ export type AgentEventType =
   | 'chat_title_updated'
   | 'agent_done'
   | 'message_edited'
+  | 'verification_issues'
   | 'error';
 
 export interface AgentEvent {
@@ -271,7 +272,16 @@ export interface AgentEvent {
     | AgentApprovalPayload
     | AgentContextPayload
     | AgentChatTitlePayload
+    | AgentVerificationIssuesPayload
     | AgentErrorPayload;
+}
+
+export interface AgentVerificationIssuesPayload {
+  checkpointId: string;
+  summary: string;
+  issueCount: number;
+  fileCount: number;
+  byTool?: Record<string, number>;
 }
 
 export interface AgentContentDeltaPayload {

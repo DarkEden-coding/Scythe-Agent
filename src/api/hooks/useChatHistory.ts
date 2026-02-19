@@ -15,7 +15,15 @@ import {
   uniqueById,
   isValidChatId,
 } from '@/api/normalizers';
-import type { Message, ToolCall, FileEdit, Checkpoint, ContextItem, ReasoningBlock } from '@/types';
+import type {
+  Message,
+  ToolCall,
+  FileEdit,
+  Checkpoint,
+  ContextItem,
+  ReasoningBlock,
+  VerificationIssues,
+} from '@/types';
 import type { AgentEvent } from '@/api/types';
 
 export function useChatHistory(chatId: string | null | undefined, client: ApiClient = defaultApi) {
@@ -26,6 +34,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
   const [reasoningBlocks, setReasoningBlocks] = useState<ReasoningBlock[]>([]);
   const [streamingReasoningBlockIds, setStreamingReasoningBlockIds] = useState<Set<string>>(new Set());
   const [contextItems, setContextItems] = useState<ContextItem[]>([]);
+  const [verificationIssues, setVerificationIssues] = useState<Record<string, VerificationIssues>>({});
   const [maxTokens, setMaxTokens] = useState(128_000);
   const [model, setModel] = useState('Claude Sonnet 4');
   const [loading, setLoading] = useState(true);
@@ -50,6 +59,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
       setReasoningBlocks([]);
       setStreamingReasoningBlockIds(new Set());
       setContextItems([]);
+      setVerificationIssues({});
       setError(null);
       pendingContentDeltas.current.clear();
       pendingReasoningDeltas.current.clear();
@@ -69,6 +79,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
     setReasoningBlocks([]);
     setStreamingReasoningBlockIds(new Set());
     setContextItems([]);
+    setVerificationIssues({});
 
     client.getChatHistory(chatId).then((res) => {
       if (cancelled) return;
@@ -488,6 +499,11 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
           setContextItems(payload.contextItems);
           break;
         }
+        case 'verification_issues': {
+          const payload = event.payload as VerificationIssues;
+          setVerificationIssues((prev) => ({ ...prev, [payload.checkpointId]: payload }));
+          break;
+        }
         case 'message_edited': {
           const payload = event.payload as unknown as {
             revertedHistory: {
@@ -537,6 +553,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
     reasoningBlocks,
     streamingReasoningBlockIds,
     contextItems,
+    verificationIssues,
     maxTokens,
     model,
     loading,
