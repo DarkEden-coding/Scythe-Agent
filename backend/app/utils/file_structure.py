@@ -141,6 +141,9 @@ def _walk_declarations(
         logger.debug("tree-sitter walk error: %s", exc)
 
 
+_TINY_FILE_THRESHOLD = 500
+
+
 def get_file_structure(content: str, path: str) -> str:
     """
     Parse file with tree-sitter and return structure (declarations with line ranges).
@@ -153,22 +156,29 @@ def get_file_structure(content: str, path: str) -> str:
         Formatted structure string with 1-based line indices and a hint to use
         read_file with start/end for specific spans.
     """
+    lines = content.splitlines()
+    total = len(lines)
+    if len(content) < _TINY_FILE_THRESHOLD:
+        return (
+            f"File: {path} ({total} lines)\n"
+            "File too small for structure. Call read_file with start and end (e.g. start=1, end="
+            f"{total}) to read the file.\n"
+        )
+
     try:
         from tree_sitter_language_pack import get_parser  # type: ignore[import-untyped]
     except ImportError as e:
         logger.warning("tree-sitter-language-pack not available: %s", e)
-        lines = content.splitlines()
         return (
-            f"File: {path} ({len(lines)} lines)\n"
+            f"File: {path} ({total} lines)\n"
             f"No tree-sitter support. Call read_file with start and end (1-based line numbers) to read specific sections.\n"
         )
 
     ext = "" if "." not in path else "." + path.rsplit(".", 1)[-1].lower()
     lang = _EXT_TO_LANG.get(ext)
     if not lang:
-        lines = content.splitlines()
         return (
-            f"File: {path} ({len(lines)} lines)\n"
+            f"File: {path} ({total} lines)\n"
             "Unsupported extension for structure. Call read_file with start and end to read specific sections.\n"
         )
 
@@ -176,9 +186,8 @@ def get_file_structure(content: str, path: str) -> str:
         parser = get_parser(lang)
     except Exception as exc:
         logger.debug("tree-sitter parser for %s: %s", lang, exc)
-        lines = content.splitlines()
         return (
-            f"File: {path} ({len(lines)} lines)\n"
+            f"File: {path} ({total} lines)\n"
             f"No parser for {lang}. Call read_file with start and end to read specific sections.\n"
         )
 
@@ -188,9 +197,6 @@ def get_file_structure(content: str, path: str) -> str:
 
     decls: list[Declaration] = []
     _walk_declarations(root, source_bytes, lang, decls)
-
-    lines = content.splitlines()
-    total = len(lines)
 
     if not decls:
         return (

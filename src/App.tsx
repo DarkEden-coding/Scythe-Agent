@@ -25,6 +25,30 @@ export function App() {
   const { projects, loading: projectsLoading } = projectsApi;
   const settings = useSettings();
 
+  // OAuth popup: when we load with ?openai-sub in a popup, notify opener and close
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const status = params.get('openai-sub');
+    if (status && window.opener) {
+      window.opener.postMessage({ type: 'openai-sub-auth-done', status }, window.location.origin);
+      window.close();
+    }
+  }, []);
+
+  // OAuth popup: when opener receives auth-done, refresh settings (incl. model list) and notify OpenAISub panel
+  useEffect(() => {
+    const handler = (e: MessageEvent) => {
+      if (e.origin !== window.location.origin) return;
+      const data = e.data;
+      if (data?.type === 'openai-sub-auth-done') {
+        settings.prefetchSettings();
+        window.dispatchEvent(new CustomEvent('openai-sub-auth-done', { detail: { status: data.status } }));
+      }
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, [settings.prefetchSettings]);
+
   // Bootstrap activeChatId from first available chat when projects load
   useEffect(() => {
     if (projectsLoading) return;

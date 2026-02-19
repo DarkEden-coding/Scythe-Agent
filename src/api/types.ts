@@ -365,6 +365,18 @@ export interface GroqConfig {
   modelCount: number;
 }
 
+// 5c. OpenAI Subscription (OAuth) configuration
+export interface OpenAISubConfig {
+  apiKeyMasked: string;
+  connected: boolean;
+  modelCount: number;
+}
+
+export interface OpenAISubAuthStartResponse {
+  authUrl: string;
+  state: string;
+}
+
 export interface SetApiKeyRequest {
   apiKey: string;
 }

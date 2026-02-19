@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import difflib
 import re
+from pathlib import Path
 
 from app.tools.contracts import ToolFileEdit, ToolResult
 from app.tools.path_utils import resolve_path
@@ -78,6 +80,67 @@ def _apply_replace(
     return (new_content, start, new_end)
 
 
+def _edit_file_sync(target: Path, search: str, replace: str) -> ToolResult:
+    """Perform edit in sync context; runs in thread pool."""
+    content = target.read_text(encoding="utf-8")
+    used_fuzzy = False
+
+    if not search:
+        if content:
+            return ToolResult(
+                output="search must be non-empty",
+                file_edits=[],
+                ok=False,
+            )
+        result = (replace, 0, len(replace))
+    else:
+        result = _apply_replace(content, search, replace, fuzzy=False)
+        if result is None:
+            result = _apply_replace(content, search, replace, fuzzy=True)
+            used_fuzzy = result is not None
+
+    if result is None:
+        return ToolResult(
+            output="Search string not found (exact or fuzzy match).",
+            file_edits=[],
+            ok=False,
+        )
+
+    new_content, edit_start, edit_end = result
+    if content == new_content:
+        return ToolResult(output=f"unchanged {target}", file_edits=[])
+
+    target.write_text(new_content, encoding="utf-8")
+
+    diff_lines = list(
+        difflib.unified_diff(
+            content.splitlines(keepends=True),
+            new_content.splitlines(keepends=True),
+            fromfile="before",
+            tofile="after",
+            n=3,
+        )
+    )
+    diff = "".join(diff_lines[:100])
+    file_edit = ToolFileEdit(
+        file_path=str(target),
+        action="modified",
+        diff=diff,
+        original_content=content,
+    )
+
+    output_parts = [f"modified {target}"]
+    if used_fuzzy:
+        output_parts.append(
+            "Fuzzy search was used (whitespace/tab differences ignored)."
+        )
+        context = _extract_context(new_content, edit_start, edit_end)
+        output_parts.append("\n--- edit result (±5 lines) ---")
+        output_parts.append(context)
+        output_parts.append("---")
+    return ToolResult(output="\n".join(output_parts), file_edits=[file_edit])
+
+
 class EditFileTool:
     name = "edit_file"
     description = (
@@ -115,58 +178,4 @@ class EditFileTool:
         if not target.exists():
             return ToolResult(output=f"File not found: {target}", file_edits=[], ok=False)
 
-        content = target.read_text(encoding="utf-8")
-        used_fuzzy = False
-
-        if not search:
-            if content:
-                return ToolResult(output="search must be non-empty", file_edits=[], ok=False)
-            result = (replace, 0, len(replace))
-        else:
-            result = _apply_replace(content, search, replace, fuzzy=False)
-        if result is None:
-            result = _apply_replace(content, search, replace, fuzzy=True)
-            used_fuzzy = result is not None
-
-        if result is None:
-            return ToolResult(
-                output="Search string not found (exact or fuzzy match).",
-                file_edits=[],
-                ok=False,
-            )
-
-        new_content, edit_start, edit_end = result
-        if content == new_content:
-            return ToolResult(output=f"unchanged {target}", file_edits=[])
-
-        target.write_text(new_content, encoding="utf-8")
-
-        diff_lines = list(
-            difflib.unified_diff(
-                content.splitlines(keepends=True),
-                new_content.splitlines(keepends=True),
-                fromfile="before",
-                tofile="after",
-                n=3,
-            )
-        )
-        diff = "".join(diff_lines[:100])
-
-        file_edit = ToolFileEdit(
-            file_path=str(target),
-            action="modified",
-            diff=diff,
-            original_content=content,
-        )
-
-        output_parts = [f"modified {target}"]
-        if used_fuzzy:
-            output_parts.append(
-                "Fuzzy search was used (whitespace/tab differences ignored)."
-            )
-            context = _extract_context(new_content, edit_start, edit_end)
-            output_parts.append("\n--- edit result (±5 lines) ---")
-            output_parts.append(context)
-            output_parts.append("---")
-
-        return ToolResult(output="\n".join(output_parts), file_edits=[file_edit])
+        return await asyncio.to_thread(_edit_file_sync, target, search, replace)

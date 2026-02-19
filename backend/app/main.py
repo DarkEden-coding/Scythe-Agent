@@ -52,6 +52,15 @@ async def lifespan(_: FastAPI):
         else:
             logger.info("No Groq API key configured - skipping model sync")
 
+        from app.providers.openai_sub.model_catalog import OpenAISubModelCatalogService
+
+        openai_sub_client = resolver.create_client("openai-sub")
+        if openai_sub_client:
+            catalog = OpenAISubModelCatalogService(session, client=openai_sub_client)
+            await catalog.sync_models_on_startup()
+        else:
+            logger.info("No OpenAI Subscription configured - skipping model sync")
+
     with session_factory() as session:
         try:
             manager = get_mcp_client_manager()
@@ -70,7 +79,18 @@ async def lifespan(_: FastAPI):
         except Exception:
             logger.warning("MCP tool discovery failed during startup", exc_info=True)
 
+    settings = get_settings()
+    if settings.oauth_redirect_uri:
+        from app.providers.openai_sub.callback_proxy import start_callback_proxy
+
+        start_callback_proxy(settings.oauth_redirect_uri, settings.oauth_redirect_base)
+
     yield
+
+    if settings.oauth_redirect_uri:
+        from app.providers.openai_sub.callback_proxy import stop_callback_proxy
+
+        stop_callback_proxy()
 
 
 def create_app() -> FastAPI:

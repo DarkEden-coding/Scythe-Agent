@@ -17,6 +17,7 @@ export {
   useSettings,
   useOpenRouter,
   useGroq,
+  useOpenAISub,
   useAgentEvents,
 } from './hooks';
 

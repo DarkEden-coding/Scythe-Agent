@@ -92,6 +92,32 @@ class SettingsRepository(BaseRepository):
             return None
         return settings.groq_api_key
 
+    def set_openai_sub_tokens(
+        self, access_token: str | None, refresh_token: str | None, updated_at: str
+    ) -> Settings:
+        """Set OpenAI subscription OAuth tokens (encrypted)."""
+        settings = self.get_settings()
+        if settings is None:
+            raise ValueError("Settings record missing")
+        settings.openai_sub_access_token = access_token
+        settings.openai_sub_refresh_token = refresh_token
+        settings.updated_at = updated_at
+        return settings
+
+    def get_openai_sub_access_token(self) -> str | None:
+        """Get the OpenAI subscription access token (encrypted)."""
+        settings = self.get_settings()
+        if settings is None:
+            return None
+        return settings.openai_sub_access_token
+
+    def get_openai_sub_refresh_token(self) -> str | None:
+        """Get the OpenAI subscription refresh token (encrypted)."""
+        settings = self.get_settings()
+        if settings is None:
+            return None
+        return settings.openai_sub_refresh_token
+
     def get_provider_for_model(self, model_label: str) -> str | None:
         """Return the provider id for a model label, or None if not found."""
         models = self.list_models()

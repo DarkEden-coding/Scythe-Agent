@@ -22,6 +22,7 @@ interface ModelInfo {
 const PROVIDER_TABS = [
   { id: 'openrouter', label: 'OpenRouter' },
   { id: 'groq', label: 'Groq' },
+  { id: 'openai-sub', label: 'OpenAI Sub' },
 ] as const;
 
 function normalizeForSearch(s: string): string {

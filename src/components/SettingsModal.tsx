@@ -1,17 +1,18 @@
 import { useState, useEffect } from 'react';
-import { Settings, Key, Bot, ChevronRight, FolderOpen, Plug, Zap } from 'lucide-react';
+import { Settings, Key, Bot, ChevronRight, FolderOpen, Plug, Zap, Sparkles } from 'lucide-react';
 import { cn } from '@/utils/cn';
 import { Modal } from './Modal';
 import { OpenRouterSettingsPanel } from './settings/OpenRouterSettingsPanel';
 import { GroqSettingsPanel } from './settings/GroqSettingsPanel';
+import { OpenAISubSettingsPanel } from './settings/OpenAISubSettingsPanel';
 import { AgentSettingsPanel } from './settings/AgentSettingsPanel';
 import { MCPSettingsPanel } from './settings/MCPSettingsPanel';
 import type { ProviderId, SettingsTabId } from './ProviderSettingsDropdown';
 
-const PROVIDER_TABS: { id: ProviderId | 'mcp'; label: string; icon: React.ReactNode }[] = [
+const PROVIDER_TABS: { id: ProviderId; label: string; icon: React.ReactNode }[] = [
   { id: 'openrouter', label: 'OpenRouter', icon: <Key className="w-4 h-4 text-cyan-400" /> },
   { id: 'groq', label: 'Groq', icon: <Zap className="w-4 h-4 text-amber-400" /> },
-  { id: 'mcp', label: 'MCP', icon: <Plug className="w-4 h-4 text-cyan-400" /> },
+  { id: 'openai-sub', label: 'OpenAI Sub', icon: <Sparkles className="w-4 h-4 text-emerald-400" /> },
 ];
 
 interface SettingsModalProps {
@@ -69,6 +70,17 @@ export function SettingsModal({
               >
                 Read the Groq docs
               </a>
+            </p>
+          }
+        />
+      );
+    }
+    if (activeTab === 'openai-sub') {
+      return (
+        <OpenAISubSettingsPanel
+          footer={
+            <p className="text-xs text-gray-400">
+              Uses your ChatGPT Plus/Pro/Team subscription via OAuth. No API key needed.
             </p>
           }
         />
@@ -143,7 +155,19 @@ export function SettingsModal({
               Agent
             </span>
           </div>
-          <nav className="px-2">
+          <nav className="px-2 space-y-0.5">
+            <button
+              onClick={() => setActiveTab('mcp')}
+              className={cn(
+                'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
+                activeTab === 'mcp'
+                  ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
+                  : 'text-gray-400 hover:bg-gray-800/50 hover:text-gray-200',
+              )}
+            >
+              <Plug className="w-4 h-4" />
+              MCP
+            </button>
             <button
               onClick={() => setActiveTab('agent')}
               className={cn(

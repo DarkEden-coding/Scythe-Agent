@@ -4,6 +4,9 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
 from app.api.envelope import err, ok
+from fastapi.responses import RedirectResponse
+
+from app.config.settings import get_settings
 from app.schemas.settings import (
     SetAutoApproveRequest,
     SetModelRequest,
@@ -11,9 +14,11 @@ from app.schemas.settings import (
     SetSystemPromptRequest,
     OpenRouterConfigResponse,
     GroqConfigResponse,
+    OpenAISubConfigResponse,
     SetApiKeyResponse,
     TestConnectionResponse,
     SyncModelsResponse,
+    OpenAISubAuthStartResponse,
 )
 from app.services.settings_service import SettingsService
 
@@ -21,7 +26,7 @@ router = APIRouter(prefix="/api/settings", tags=["settings"])
 
 
 @router.get("")
-def get_settings(db: Session = Depends(get_db)):
+def get_settings_route(db: Session = Depends(get_db)):
     try:
         data = SettingsService(db).get_settings()
         return ok(data.model_dump())
@@ -214,6 +219,129 @@ async def sync_groq_models(db: Session = Depends(get_db)):
     try:
         service = SettingsService(db)
         models = await service.sync_groq_models()
+        response = SyncModelsResponse(success=True, models=models, count=len(models))
+        return ok(response.model_dump())
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500, content=err(f"Sync failed: {exc}").model_dump()
+        )
+
+
+# OpenAI Subscription (OAuth + Responses API) configuration endpoints
+@router.get("/openai-sub")
+def get_openai_sub_config(db: Session = Depends(get_db)):
+    """Get OpenAI Subscription config (OAuth status, model count)."""
+    try:
+        config = SettingsService(db).get_openai_sub_config()
+        response = OpenAISubConfigResponse(**config)
+        return ok(response.model_dump())
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500, content=err(f"Failed to get config: {exc}").model_dump()
+        )
+
+
+@router.get("/openai-sub/auth/start")
+def openai_sub_auth_start():
+    """Start OAuth flow: return auth URL and state for PKCE."""
+    import secrets
+
+    from app.providers.openai_sub.oauth import build_auth_url
+
+    settings = get_settings()
+    redirect_uri = (
+        settings.oauth_redirect_uri
+        if settings.oauth_redirect_uri
+        else f"{settings.oauth_redirect_base.rstrip('/')}/api/settings/openai-sub/callback"
+    )
+    state = secrets.token_urlsafe(32)
+    auth_url = build_auth_url(redirect_uri, state)
+    response = OpenAISubAuthStartResponse(authUrl=auth_url, state=state)
+    return ok(response.model_dump())
+
+
+@router.get("/openai-sub/callback")
+async def openai_sub_callback(
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+    db: Session = Depends(get_db),
+):
+    """OAuth callback: exchange code for tokens, store, redirect to frontend."""
+    from app.providers.openai_sub.oauth import consume_verifier, exchange_code_for_token
+
+    settings = get_settings()
+    redirect_uri = (
+        settings.oauth_redirect_uri
+        if settings.oauth_redirect_uri
+        else f"{settings.oauth_redirect_base.rstrip('/')}/api/settings/openai-sub/callback"
+    )
+    frontend_base = settings.frontend_base.rstrip("/")
+
+    if error:
+        return RedirectResponse(
+            url=f"{frontend_base}/?openai-sub=error&message={error}",
+            status_code=302,
+        )
+    if not code or not state:
+        return RedirectResponse(
+            url=f"{frontend_base}/?openai-sub=error&message=missing_code_or_state",
+            status_code=302,
+        )
+
+    verifier = consume_verifier(state)
+    if not verifier:
+        return RedirectResponse(
+            url=f"{frontend_base}/?openai-sub=error&message=invalid_state",
+            status_code=302,
+        )
+
+    try:
+        token_data = await exchange_code_for_token(code, redirect_uri, verifier)
+        access_token = token_data.get("access_token")
+        refresh_token = token_data.get("refresh_token")
+        if not access_token:
+            return RedirectResponse(
+                url=f"{frontend_base}/?openai-sub=error&message=no_access_token",
+                status_code=302,
+            )
+        service = SettingsService(db)
+        service.set_openai_sub_tokens(access_token, refresh_token)
+        await service.sync_openai_sub_models()
+    except Exception as exc:
+        return RedirectResponse(
+            url=f"{frontend_base}/?openai-sub=error&message={str(exc)[:100]}",
+            status_code=302,
+        )
+
+    return RedirectResponse(
+        url=f"{frontend_base}/?openai-sub=success",
+        status_code=302,
+    )
+
+
+@router.post("/openai-sub/test")
+async def test_openai_sub_connection(db: Session = Depends(get_db)):
+    """Test connection using stored OAuth token."""
+    try:
+        service = SettingsService(db)
+        success, error = await service.test_openai_sub_connection()
+        response = TestConnectionResponse(success=success, error=error)
+        return ok(response.model_dump())
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500, content=err(f"Test failed: {exc}").model_dump()
+        )
+
+
+@router.post("/openai-sub/sync")
+async def sync_openai_sub_models(db: Session = Depends(get_db)):
+    """Manually trigger OpenAI Subscription model sync."""
+    try:
+        service = SettingsService(db)
+        models = await service.sync_openai_sub_models()
         response = SyncModelsResponse(success=True, models=models, count=len(models))
         return ok(response.model_dump())
     except ValueError as exc:

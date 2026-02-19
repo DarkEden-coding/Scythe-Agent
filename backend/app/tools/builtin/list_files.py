@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 from app.tools.contracts import ToolResult
@@ -41,6 +42,20 @@ def _walk_with_depth_and_ignore(
     return items
 
 
+def _list_files_sync(base: Path, recursive: bool) -> list[str]:
+    """List files; runs in thread pool."""
+    if recursive:
+        items = _walk_with_depth_and_ignore(base, _MAX_DEPTH, _MAX_ENTRIES)
+    else:
+        items = sorted(
+            str(p) for p in base.iterdir() if p.name not in IGNORED_DIR_NAMES
+        )
+    if len(items) > _MAX_ENTRIES:
+        items = items[:_MAX_ENTRIES]
+        items.append(f"... truncated at {_MAX_ENTRIES} entries")
+    return items
+
+
 class ListFilesTool:
     name = "list_files"
     description = (
@@ -78,13 +93,7 @@ class ListFilesTool:
         if not base.exists() or not base.is_dir():
             return ToolResult(output=f"Directory not found: {base}", file_edits=[], ok=False)
 
-        if bool(payload.get("recursive", False)):
-            items = _walk_with_depth_and_ignore(base, _MAX_DEPTH, _MAX_ENTRIES)
-        else:
-            items = sorted(
-                str(p) for p in base.iterdir() if p.name not in IGNORED_DIR_NAMES
-            )
-        if len(items) > _MAX_ENTRIES:
-            items = items[:_MAX_ENTRIES]
-            items.append(f"... truncated at {_MAX_ENTRIES} entries")
+        items = await asyncio.to_thread(
+            _list_files_sync, base, bool(payload.get("recursive", False))
+        )
         return ToolResult(output="\n".join(items), file_edits=[])

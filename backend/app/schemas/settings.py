@@ -67,6 +67,17 @@ class GroqConfigResponse(BaseModel):
     modelCount: int
 
 
+class OpenAISubConfigResponse(BaseModel):
+    apiKeyMasked: str
+    connected: bool
+    modelCount: int
+
+
+class OpenAISubAuthStartResponse(BaseModel):
+    authUrl: str
+    state: str
+
+
 class SetApiKeyRequest(BaseModel):
     apiKey: str = Field(min_length=1)
 

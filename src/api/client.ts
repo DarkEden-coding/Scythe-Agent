@@ -53,6 +53,8 @@ import type {
   AgentEvent,
   OpenRouterConfig,
   GroqConfig,
+  OpenAISubConfig,
+  OpenAISubAuthStartResponse,
   SetApiKeyRequest,
   SetApiKeyResponse,
   SetSystemPromptRequest,
@@ -543,6 +545,32 @@ export class ApiClient {
   /** Manually trigger Groq model sync. */
   async syncGroqModels(): Promise<ApiResponse<SyncModelsResponse>> {
     return this.request('POST', '/settings/groq/sync');
+  }
+
+  /* ── OpenAI Subscription configuration ───────────────────────── */
+
+  /** Get OpenAI Subscription config (OAuth status, model count). */
+  async getOpenAISubConfig(): Promise<ApiResponse<OpenAISubConfig>> {
+    return this.request('GET', '/settings/openai-sub');
+  }
+
+  /** Start OAuth flow: get auth URL to open in browser. */
+  async getOpenAISubAuthStart(): Promise<
+    ApiResponse<OpenAISubAuthStartResponse>
+  > {
+    return this.request('GET', '/settings/openai-sub/auth/start');
+  }
+
+  /** Test connection using stored OAuth token. */
+  async testOpenAISubConnection(): Promise<
+    ApiResponse<TestConnectionResponse>
+  > {
+    return this.request('POST', '/settings/openai-sub/test');
+  }
+
+  /** Manually trigger OpenAI Subscription model sync. */
+  async syncOpenAISubModels(): Promise<ApiResponse<SyncModelsResponse>> {
+    return this.request('POST', '/settings/openai-sub/sync');
   }
 
   /** Set custom system prompt. Empty string resets to default. */

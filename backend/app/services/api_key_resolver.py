@@ -8,13 +8,14 @@ from typing import TYPE_CHECKING
 
 from app.db.repositories.settings_repo import SettingsRepository
 from app.providers.groq.client import GroqClient
+from app.providers.openai_sub.client import OpenAISubClient
 from app.providers.openrouter.client import OpenRouterClient
 from app.utils.encryption import decrypt, mask_api_key
 
 if TYPE_CHECKING:
     from typing import Union
 
-    LLMClient = Union[OpenRouterClient, GroqClient]
+    LLMClient = Union[OpenRouterClient, GroqClient, OpenAISubClient]
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,9 @@ class APIKeyResolver:
         elif provider == "groq":
             encrypted_key = self._repo.get_groq_api_key()
             env_key = os.getenv("GROQ_API_KEY")
+        elif provider == "openai-sub":
+            encrypted_key = self._repo.get_openai_sub_access_token()
+            env_key = os.getenv("OPENAI_SUB_ACCESS_TOKEN")
         else:
             return None
         if encrypted_key:
@@ -69,4 +73,9 @@ class APIKeyResolver:
             if not key:
                 return None
             return GroqClient(api_key=key)
+        if provider == "openai-sub":
+            token = self.resolve("openai-sub")
+            if not token:
+                return None
+            return OpenAISubClient(access_token=token)
         return None

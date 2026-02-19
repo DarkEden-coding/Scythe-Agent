@@ -282,6 +282,72 @@ class SettingsService:
             logger.error(f"Groq connection test failed: {e}")
             return False, str(e)
 
+    def get_openai_sub_config(self) -> dict:
+        """Get OpenAI Subscription config (OAuth status, model count)."""
+        from app.services.api_key_resolver import APIKeyResolver
+
+        resolver = APIKeyResolver(self.repo)
+        has_token, masked = resolver.resolve_masked("openai-sub")
+        models = self.repo.list_models()
+        model_count = len([m for m in models if m.provider == "openai-sub"])
+
+        return {
+            "connected": has_token,
+            "apiKeyMasked": masked if masked else "Signed in (OAuth)" if has_token else "",
+            "modelCount": model_count,
+        }
+
+    def set_openai_sub_tokens(
+        self, access_token: str | None, refresh_token: str | None
+    ) -> dict:
+        """Store OpenAI subscription OAuth tokens (encrypted)."""
+        if not access_token:
+            raise ValueError("Access token cannot be empty")
+        try:
+            encrypted_access = encrypt(access_token)
+        except Exception as e:
+            logger.error("Failed to encrypt OpenAI Sub access token: %s", e)
+            raise ValueError("Failed to encrypt token") from e
+        encrypted_refresh = None
+        if refresh_token:
+            try:
+                encrypted_refresh = encrypt(refresh_token)
+            except Exception as e:
+                logger.warning("Failed to encrypt refresh token: %s", e)
+        self.repo.set_openai_sub_tokens(
+            encrypted_access, encrypted_refresh, updated_at=self._now()
+        )
+        self.repo.commit()
+        return {"success": True}
+
+    async def sync_openai_sub_models(self) -> list[str]:
+        """Sync OpenAI Subscription models from API."""
+        from app.providers.openai_sub.model_catalog import OpenAISubModelCatalogService
+        from app.services.api_key_resolver import APIKeyResolver
+
+        resolver = APIKeyResolver(self.repo)
+        client = resolver.create_client("openai-sub")
+        catalog = OpenAISubModelCatalogService(self.repo.db, client=client)
+        return await catalog.sync_models_on_startup(force_refresh=True)
+
+    async def test_openai_sub_connection(self) -> tuple[bool, str | None]:
+        """Test connection using stored OAuth token."""
+        from app.providers.openai_sub.client import OpenAISubClient
+        from app.services.api_key_resolver import APIKeyResolver
+
+        resolver = APIKeyResolver(self.repo)
+        client = resolver.create_client("openai-sub")
+        if not client:
+            return False, "Not signed in"
+        try:
+            models = await client.get_models()
+            if models:
+                return True, None
+            return False, "No models returned"
+        except Exception as e:
+            logger.error("OpenAI Sub connection test failed: %s", e)
+            return False, str(e)
+
     async def sync_groq_models(self) -> list[str]:
         """
         Manually trigger Groq model sync.

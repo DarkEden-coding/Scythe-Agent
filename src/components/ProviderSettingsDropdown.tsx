@@ -1,27 +1,26 @@
 import { useState, useRef, useEffect } from 'react';
-import { Settings, ChevronDown, Key, Bot, Plug, Zap } from 'lucide-react';
+import { Settings, ChevronDown, Key, Bot, Plug } from 'lucide-react';
 import { cn } from '../utils/cn';
 
-export type ProviderId = 'openrouter' | 'groq';
+export type ProviderId = 'openrouter' | 'groq' | 'openai-sub';
 
 export type SettingsTabId = ProviderId | 'agent' | 'mcp';
 
-interface ProviderOption {
+interface DropdownOption {
   id: SettingsTabId;
   label: string;
   icon?: React.ReactNode;
 }
 
-const PROVIDER_OPTIONS: ProviderOption[] = [
-  { id: 'openrouter', label: 'OpenRouter', icon: <Key className="w-4 h-4 text-cyan-400" /> },
-  { id: 'groq', label: 'Groq', icon: <Zap className="w-4 h-4 text-amber-400" /> },
+const DROPDOWN_OPTIONS: DropdownOption[] = [
+  { id: 'openrouter', label: 'Providers', icon: <Key className="w-4 h-4 text-cyan-400" /> },
   { id: 'mcp', label: 'MCP', icon: <Plug className="w-4 h-4 text-cyan-400" /> },
   { id: 'agent', label: 'System Prompt', icon: <Bot className="w-4 h-4 text-cyan-400" /> },
 ];
 
 interface ProviderSettingsDropdownProps {
-  onSelectProvider: (tab: SettingsTabId) => void;
-  title?: string;
+  readonly onSelectProvider: (tab: SettingsTabId) => void;
+  readonly title?: string;
 }
 
 export function ProviderSettingsDropdown({
@@ -64,7 +63,7 @@ export function ProviderSettingsDropdown({
           <div className="px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wider border-b border-gray-700/50 mb-1">
             Settings
           </div>
-          {PROVIDER_OPTIONS.map((opt) => (
+          {DROPDOWN_OPTIONS.map((opt) => (
             <button
               key={opt.id}
               onClick={() => handleSelect(opt.id)}
