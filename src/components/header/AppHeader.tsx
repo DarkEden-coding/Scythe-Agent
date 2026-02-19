@@ -1,4 +1,4 @@
-import { Bot, Terminal, ChevronDown } from 'lucide-react';
+import { Terminal, ChevronDown } from 'lucide-react';
 import { ChatTabBar } from './ChatTabBar';
 import { ProviderSettingsDropdown, type SettingsTabId } from '@/components/ProviderSettingsDropdown';
 import type { ProjectChat } from '@/types';
@@ -35,10 +35,8 @@ export function AppHeader({
   return (
     <header className="flex items-center justify-between gap-3 px-5 py-2.5 bg-gray-900/80 border-b border-gray-700/30 min-h-0">
       <div className="flex items-center gap-3 min-w-0 flex-1">
-        <div className="flex items-center justify-center w-8 h-8 bg-linear-to-br from-aqua-400 to-aqua-600 rounded-xl shadow-lg shadow-aqua-500/20 shrink-0">
-          <Bot className="w-4.5 h-4.5 text-gray-950" />
-        </div>
-        <h1 className="text-sm font-semibold text-gray-200 shrink-0">Agentic Coder</h1>
+        <img src="/images/logo.png" alt="Scythe Agent" className="w-8 h-8 rounded-xl shrink-0 object-contain" />
+        <h1 className="text-sm font-semibold text-gray-200 shrink-0">Scythe Agent</h1>
         <div className="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden">
           <ChatTabBar
             chats={currentProjectChats}

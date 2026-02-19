@@ -1,4 +1,4 @@
-# API Reference — Agentic Coding Interface
+# API Reference — Scythe Agent
 
 > **Version:** 1.0.0  
 > **Base URL:** `http://localhost:3001/api` (configurable)  
