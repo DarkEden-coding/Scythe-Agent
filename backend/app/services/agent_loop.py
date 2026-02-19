@@ -196,6 +196,17 @@ class AgentLoop:
                 )
 
             if result.finish_reason == "stop" or not result.tool_calls:
+                if not has_content:
+                    openrouter_messages.append(
+                        {"role": "assistant", "content": response_text or ""}
+                    )
+                    openrouter_messages.append(
+                        {
+                            "role": "user",
+                            "content": "You used no tools and provided no response. You must use tools for every response except your last response, which must have text content to the user.",
+                        }
+                    )
+                    continue
                 await self._event_bus.publish(
                     chat_id,
                     {"type": "agent_done", "payload": {"checkpointId": checkpoint_id}},
