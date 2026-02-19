@@ -332,7 +332,6 @@ class SettingsService:
 
     async def test_openai_sub_connection(self) -> tuple[bool, str | None]:
         """Test connection using stored OAuth token."""
-        from app.providers.openai_sub.client import OpenAISubClient
         from app.services.api_key_resolver import APIKeyResolver
 
         resolver = APIKeyResolver(self.repo)

@@ -15,7 +15,9 @@ TOOL USAGE: Always use tool calls in every message except your last message. In 
 
 CREATING NEW FILES: To create a new file, first use execute_command with `touch /path/to/file` to create an empty file, then use edit_file with search="" (empty string) and replace="your content" to populate it. Never try to create files via echo/redirect in execute_command—use touch + edit_file instead.
 
-WORKFLOW: The user may need to approve tool calls before they run. Prefer small, focused operations. Explain your reasoning when making changes. Use list_files to explore the project structure before reading or editing."""
+WORKFLOW: The user may need to approve tool calls before they run. Prefer small, focused operations. Explain your reasoning when making changes. Use list_files to explore the project structure before reading or editing.
+
+KEEP USER INFORMED: During longer tasks, send occasional short text updates alongside your tool calls so the user sees what you are doing. Combine brief status messages (e.g., "Checking the API routes...", "Applying the fix now") with tool calls in the same turn. Avoid long silent stretches—small updates help the user stay aware of agent activity."""
 
 
 class SystemPromptPreprocessor:
@@ -30,7 +32,7 @@ class SystemPromptPreprocessor:
     async def process(
         self,
         ctx: PreprocessorContext,
-        provider: LLMProvider,
+        _provider: LLMProvider,
     ) -> PreprocessorContext:
         prompt = ctx.system_prompt or self._default_prompt
         first = ctx.messages[0] if ctx.messages else None

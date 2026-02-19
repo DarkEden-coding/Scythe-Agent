@@ -1,14 +1,14 @@
-from app.db.models.auto_approve_rule import AutoApproveRule
-from app.db.models.chat import Chat
-from app.db.models.checkpoint import Checkpoint
-from app.db.models.context_item import ContextItem
-from app.db.models.file_edit import FileEdit
-from app.db.models.file_snapshot import FileSnapshot
-from app.db.models.mcp_server import MCPServer
-from app.db.models.mcp_tool_cache import MCPToolCache
-from app.db.models.message import Message
-from app.db.models.project import Project
-from app.db.models.provider_model_cache import ProviderModelCache
-from app.db.models.reasoning_block import ReasoningBlock
-from app.db.models.settings import Settings
-from app.db.models.tool_call import ToolCall
+from app.db.models.auto_approve_rule import AutoApproveRule as AutoApproveRule
+from app.db.models.chat import Chat as Chat
+from app.db.models.checkpoint import Checkpoint as Checkpoint
+from app.db.models.context_item import ContextItem as ContextItem
+from app.db.models.file_edit import FileEdit as FileEdit
+from app.db.models.file_snapshot import FileSnapshot as FileSnapshot
+from app.db.models.mcp_server import MCPServer as MCPServer
+from app.db.models.mcp_tool_cache import MCPToolCache as MCPToolCache
+from app.db.models.message import Message as Message
+from app.db.models.project import Project as Project
+from app.db.models.provider_model_cache import ProviderModelCache as ProviderModelCache
+from app.db.models.reasoning_block import ReasoningBlock as ReasoningBlock
+from app.db.models.settings import Settings as Settings
+from app.db.models.tool_call import ToolCall as ToolCall

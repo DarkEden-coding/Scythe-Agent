@@ -12,7 +12,7 @@ from app.api.routes.projects import router as projects_router
 from app.api.routes.settings import router as settings_router
 from app.config.settings import get_settings
 from app.db.seed import seed_app_data
-from app.db.session import get_engine, get_sessionmaker
+from app.db.session import get_sessionmaker
 from app.mcp.client_manager import get_mcp_client_manager
 from app.mcp.transports import *  # noqa: F401, F403 - registers stdio transport
 from app.middleware.error_handler import ServiceError, catch_all_handler, service_error_handler

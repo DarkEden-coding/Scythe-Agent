@@ -15,7 +15,6 @@ from app.schemas.chat import (
     EditMessageResponse,
     GetChatHistoryResponse,
     MessageOut,
-    RevertToCheckpointResponse,
     SendMessageResponse,
 )
 from app.services.agent_loop import AgentLoop

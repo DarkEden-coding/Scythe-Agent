@@ -1,8 +1,7 @@
-from datetime import datetime, timezone
+from datetime import datetime
 
 from sqlalchemy import and_, delete, or_
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from app.db.models.chat import Chat
 from app.db.models.checkpoint import Checkpoint

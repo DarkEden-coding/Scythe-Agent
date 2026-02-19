@@ -7,13 +7,12 @@ import logging
 
 from sqlalchemy.orm import Session
 
-log = logging.getLogger(__name__)
-
 from app.db.repositories.mcp_repo import MCPRepository
 from app.mcp.client_manager import get_mcp_client_manager
-from app.tools.mcp_bridge import build_mcp_tool_name
 from app.tools.registry import get_tool_registry
 from app.utils.ids import generate_id
+
+log = logging.getLogger(__name__)
 
 
 class MCPService:

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import delete, select
-from sqlalchemy.orm import Session
+from sqlalchemy import select
 
 from app.db.models.mcp_server import MCPServer
 from app.db.models.mcp_tool_cache import MCPToolCache

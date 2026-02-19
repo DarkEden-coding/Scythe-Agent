@@ -18,7 +18,7 @@ class ToolResultPrunerPreprocessor:
     async def process(
         self,
         ctx: PreprocessorContext,
-        provider: LLMProvider,
+        _provider: LLMProvider,
     ) -> PreprocessorContext:
         for msg in ctx.messages:
             if msg.get("role") == "tool":

@@ -6,7 +6,6 @@ from app.db.repositories.chat_repo import ChatRepository
 from app.db.repositories.project_repo import ProjectRepository
 from app.schemas.chat import (
     CheckpointOut,
-    ContextItemOut,
     FileEditOut,
     GetChatHistoryResponse,
     MessageOut,

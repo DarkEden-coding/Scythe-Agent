@@ -1,8 +1,5 @@
-import json
-import time
 import asyncio
 
-from app.db.session import get_sessionmaker
 from app.services.event_bus import get_event_bus
 
 
@@ -54,24 +51,23 @@ def test_auto_approve_rule_matcher_fields(client) -> None:
 
 
 def test_approve_reject_transitions(client) -> None:
-    send = client.post("/api/chat/chat-1/messages", json={"content": "approve/reject seed"}).json()["data"]
+    client.post("/api/chat/chat-1/messages", json={"content": "approve/reject seed"}).json()["data"]
     history = client.get("/api/chat/chat-1/history").json()["data"]
-    checkpoint_id = send["checkpoint"]["id"]
     pending = [t for t in history["toolCalls"] if t.get("status") == "pending"]
     pending_for_checkpoint = [t for t in pending if t.get("input", {}).get("path") == "plans/backend-python-mvp-plan.md"]
     assert pending_for_checkpoint
     approve_id = pending_for_checkpoint[-1]["id"]
 
-    approve_res = client.post(f"/api/chat/chat-1/approve", json={"toolCallId": approve_id})
+    approve_res = client.post("/api/chat/chat-1/approve", json={"toolCallId": approve_id})
     assert approve_res.status_code == 200
     approve_data = approve_res.json()["data"]
     assert approve_data["toolCall"]["status"] in {"completed", "error"}
 
-    send2 = client.post("/api/chat/chat-1/messages", json={"content": "reject seed"}).json()["data"]
+    client.post("/api/chat/chat-1/messages", json={"content": "reject seed"}).json()["data"]
     history2 = client.get("/api/chat/chat-1/history").json()["data"]
     pending2 = [t for t in history2["toolCalls"] if t.get("status") == "pending"]
     reject_id = pending2[-1]["id"]
-    reject_res = client.post(f"/api/chat/chat-1/reject", json={"toolCallId": reject_id, "reason": "deny"})
+    reject_res = client.post("/api/chat/chat-1/reject", json={"toolCallId": reject_id, "reason": "deny"})
     assert reject_res.status_code == 200
     reject_data = reject_res.json()["data"]
     assert reject_data["status"] == "rejected"
@@ -105,11 +101,11 @@ def test_revert_consistency(client) -> None:
 def test_revert_file_consistency(client) -> None:
     history = client.get("/api/chat/chat-1/history").json()["data"]
     if not history["fileEdits"]:
-        send = client.post("/api/chat/chat-1/messages", json={"content": "file edit seed"}).json()["data"]
+        client.post("/api/chat/chat-1/messages", json={"content": "file edit seed"}).json()["data"]
         tool_calls = client.get("/api/chat/chat-1/history").json()["data"]["toolCalls"]
         pending = [t for t in tool_calls if t["status"] == "pending"]
         if pending:
-            client.post(f"/api/chat/chat-1/approve", json={"toolCallId": pending[-1]["id"]})
+            client.post("/api/chat/chat-1/approve", json={"toolCallId": pending[-1]["id"]})
         history = client.get("/api/chat/chat-1/history").json()["data"]
 
     if history["fileEdits"]:

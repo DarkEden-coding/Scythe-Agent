@@ -1,5 +1,4 @@
 from sqlalchemy import delete, select
-from sqlalchemy.orm import Session
 
 from app.db.models.auto_approve_rule import AutoApproveRule
 from app.db.models.provider_model_cache import ProviderModelCache

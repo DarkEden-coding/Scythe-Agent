@@ -15,7 +15,7 @@ class TokenEstimatorPreprocessor:
     async def process(
         self,
         ctx: PreprocessorContext,
-        provider: LLMProvider,
+        _provider: LLMProvider,
     ) -> PreprocessorContext:
         total = 0
         for msg in ctx.messages:

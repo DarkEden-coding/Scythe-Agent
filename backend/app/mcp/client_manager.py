@@ -7,11 +7,7 @@ from typing import Protocol
 
 from sqlalchemy.orm import Session
 
-logger = logging.getLogger(__name__)
-
 from app.db.models.mcp_tool_cache import MCPToolCache
-
-MCP_TOOL_CACHE_TTL_SECONDS = 300
 from app.db.repositories.mcp_repo import MCPRepository
 from app.mcp.protocol_models import (
     MCPToolCallResult,
@@ -19,6 +15,9 @@ from app.mcp.protocol_models import (
     parse_tool_call_result,
     parse_tools_list_response,
 )
+
+logger = logging.getLogger(__name__)
+MCP_TOOL_CACHE_TTL_SECONDS = 300
 # Transports are registered at import time (stdio, http); tests can override via register_transport_factory
 _transport_factory_registry: dict[str, type] = {}
 

@@ -6,11 +6,11 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from app.config.settings import get_settings
-
-MODEL_CACHE_TTL_SECONDS = 300
 from app.db.models.provider_model_cache import ProviderModelCache
 from app.db.repositories.settings_repo import SettingsRepository
 from app.providers.openrouter.client import OpenRouterClient
+
+MODEL_CACHE_TTL_SECONDS = 300
 
 
 class OpenRouterModelCatalogService:
