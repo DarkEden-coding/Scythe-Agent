@@ -5,10 +5,19 @@ import { AppHeader } from './components/header/AppHeader';
 import { ResizableLayout } from './components/layout/ResizableLayout';
 import { EnhancedModelPicker } from './components/EnhancedModelPicker';
 import { SettingsModal } from './components/SettingsModal';
+import { Modal } from './components/Modal';
 import { useToast } from './hooks/useToast';
 import { api, useChatHistory, useProjects, useSettings, useAgentEvents } from './api';
-import type { AgentEvent, AutoApproveRule } from './api';
+import type { AgentEvent, AgentPausePayload, AutoApproveRule } from './api';
 import type { SettingsTabId } from './components/ProviderSettingsDropdown';
+
+interface IterationLimitPauseState {
+  chatId: string;
+  checkpointId: string;
+  iteration: number;
+  maxIterations: number;
+  message: string;
+}
 
 export function App() {
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
@@ -18,6 +27,8 @@ export function App() {
   const [showObservationsInChat, setShowObservationsInChat] = useState(false);
   const { showNotification, notificationMessage, showToast } = useToast();
   const [processingChats, setProcessingChats] = useState<Set<string>>(new Set());
+  const [iterationLimitPause, setIterationLimitPause] = useState<IterationLimitPauseState | null>(null);
+  const [continuingPausedRun, setContinuingPausedRun] = useState(false);
 
   const isProcessing = activeChatId != null && processingChats.has(activeChatId);
 
@@ -97,6 +108,28 @@ export function App() {
       if (event.type === 'agent_done') {
         removeProcessing(event.chatId);
       }
+      if (event.type === 'agent_paused') {
+        removeProcessing(event.chatId);
+        const payload = event.payload as AgentPausePayload;
+        if (payload.reason === 'max_iterations') {
+          if (event.chatId === activeChatId) {
+            setIterationLimitPause({
+              chatId: event.chatId,
+              checkpointId: payload.checkpointId,
+              iteration: payload.iteration ?? payload.maxIterations ?? 0,
+              maxIterations: payload.maxIterations ?? 0,
+              message:
+                payload.message ??
+                'The agent reached its iteration limit and paused. Do you want to continue?',
+            });
+          }
+        } else if (payload.reason === 'repetitive_tool_calls' && event.chatId === activeChatId) {
+          showToast(
+            payload.message ??
+              'Agent paused after calling the same tool with similar arguments repeatedly.',
+          );
+        }
+      }
       if (event.type === 'error' && !(event.payload as { toolCallId?: string })?.toolCallId) {
         removeProcessing(event.chatId);
         if (event.chatId === activeChatId) {
@@ -144,6 +177,25 @@ export function App() {
     const res = await chat.retryObservation();
     if (!res.ok) showToast(`Error: ${res.error}`);
   }, [chat, showToast]);
+
+  const handleContinuePausedRun = useCallback(async () => {
+    if (iterationLimitPause == null) return;
+    setContinuingPausedRun(true);
+    setProcessingChats((prev) => new Set(prev).add(iterationLimitPause.chatId));
+    const res = await chat.continueAgent();
+    if (res.ok) {
+      setIterationLimitPause(null);
+      showToast('Continuing agent run');
+    } else {
+      showToast(`Error: ${res.error}`);
+      setProcessingChats((prev) => {
+        const next = new Set(prev);
+        next.delete(iterationLimitPause.chatId);
+        return next;
+      });
+    }
+    setContinuingPausedRun(false);
+  }, [chat, iterationLimitPause, showToast]);
 
   const handleApproveCommand = async (toolCallId: string) => {
     if (activeChatId != null) {
@@ -420,6 +472,43 @@ export function App() {
         initialTab={settingsTab}
         activeChatId={activeChatId}
       />
+      <Modal
+        visible={iterationLimitPause != null}
+        onClose={() => setIterationLimitPause(null)}
+        title="Iteration Limit Reached"
+        subtitle={`Checkpoint ${iterationLimitPause?.checkpointId ?? ''}`}
+        maxWidth="max-w-lg"
+        footer={
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              className="px-3 py-2 text-sm rounded-lg border border-gray-600 text-gray-200 hover:bg-gray-700/40"
+              onClick={() => setIterationLimitPause(null)}
+            >
+              Stop Here
+            </button>
+            <button
+              type="button"
+              className="px-3 py-2 text-sm rounded-lg bg-cyan-500 text-gray-950 font-medium hover:bg-cyan-400 disabled:opacity-60"
+              onClick={handleContinuePausedRun}
+              disabled={continuingPausedRun}
+            >
+              {continuingPausedRun ? 'Continuing…' : 'Continue'}
+            </button>
+          </div>
+        }
+      >
+        <div className="px-6 py-5 space-y-2">
+          <p className="text-sm text-gray-200">
+            {iterationLimitPause?.message ??
+              'The agent reached its iteration limit and paused. Continue from this checkpoint?'}
+          </p>
+          <p className="text-xs text-gray-400">
+            Limit: {iterationLimitPause?.maxIterations ?? 0} iterations
+            {iterationLimitPause?.iteration ? ` (reached ${iterationLimitPause.iteration})` : ''}
+          </p>
+        </div>
+      </Modal>
     </div>
   );
 }

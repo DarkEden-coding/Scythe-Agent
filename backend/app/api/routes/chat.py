@@ -67,6 +67,17 @@ async def send_message(
         return _internal_error(exc)
 
 
+@router.post("/{chat_id}/continue")
+async def continue_agent(chat_id: str, db: Session = Depends(get_db)):
+    try:
+        data = await ChatService(db).continue_agent(chat_id=chat_id)
+        return ok(data.model_dump())
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
+    except Exception as exc:
+        return _internal_error(exc)
+
+
 @router.put("/{chat_id}/messages/{message_id}")
 async def edit_message(
     chat_id: str, message_id: str, request: EditMessageRequest, db: Session = Depends(get_db)

@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+from difflib import SequenceMatcher
 
 import httpx
 
@@ -17,6 +19,8 @@ from app.utils.ids import generate_id
 from app.utils.time import utc_now_iso
 
 logger = logging.getLogger(__name__)
+REPETITIVE_TOOL_CALL_STREAK_LIMIT = 5
+REPETITIVE_TOOL_ARG_SIMILARITY = 0.92
 
 
 class AgentLoop:
@@ -123,6 +127,9 @@ class AgentLoop:
         iteration = 0
         reasoning_param = {"effort": "medium"}
         _cancelled = False
+        last_tool_name: str | None = None
+        last_tool_args = ""
+        repeated_tool_streak = 0
 
         try:
             while iteration < max_iterations:
@@ -198,6 +205,9 @@ class AgentLoop:
                     )
 
                 if result.finish_reason == "stop" or not result.tool_calls:
+                    last_tool_name = None
+                    last_tool_args = ""
+                    repeated_tool_streak = 0
                     conversation_messages.append(
                         {"role": "assistant", "content": response_text or ""}
                     )
@@ -211,6 +221,31 @@ class AgentLoop:
                         }
                     )
                     continue
+
+                for tc in result.tool_calls:
+                    tc_name = tc.get("function", {}).get("name", "unknown")
+                    tc_args = self._canonicalize_tool_arguments(
+                        tc.get("function", {}).get("arguments", "{}")
+                    )
+                    if (
+                        tc_name == last_tool_name
+                        and self._tool_args_are_similar(tc_args, last_tool_args)
+                    ):
+                        repeated_tool_streak += 1
+                    else:
+                        last_tool_name = tc_name
+                        last_tool_args = tc_args
+                        repeated_tool_streak = 1
+
+                    if repeated_tool_streak >= REPETITIVE_TOOL_CALL_STREAK_LIMIT:
+                        await self._pause_for_repetitive_tool_loop(
+                            chat_id=chat_id,
+                            checkpoint_id=checkpoint_id,
+                            chat_model=chat_model,
+                            tool_name=tc_name,
+                            repeat_count=repeated_tool_streak,
+                        )
+                        return
 
                 assistant_msg = {
                     "role": "assistant",
@@ -283,13 +318,31 @@ class AgentLoop:
                         )
 
             # Max iterations reached
+            pause_message = (
+                f"Agent paused after reaching the iteration cap ({max_iterations}) "
+                "before calling submit_task."
+            )
+            await self._event_bus.publish(
+                chat_id,
+                {
+                    "type": "agent_paused",
+                    "payload": {
+                        "reason": "max_iterations",
+                        "checkpointId": checkpoint_id,
+                        "iteration": iteration,
+                        "maxIterations": max_iterations,
+                        "message": pause_message,
+                    },
+                },
+            )
             await self._event_bus.publish(
                 chat_id,
                 {"type": "agent_done", "payload": {"checkpointId": checkpoint_id}},
             )
             logger.info(
-                "Conversation ended: max iterations reached (iteration=%d) chat_id=%s checkpoint_id=%s",
+                "Conversation ended: max iterations reached before submit_task (iteration=%d, max_iterations=%d) chat_id=%s checkpoint_id=%s",
                 iteration,
+                max_iterations,
                 chat_id,
                 checkpoint_id,
             )
@@ -352,3 +405,85 @@ class AgentLoop:
             self._chat_repo.update_chat_timestamp(chat_model, ts)
         self._chat_repo.commit()
         message_out.content = final_text
+
+    def _canonicalize_tool_arguments(self, raw_args: object) -> str:
+        """Normalize tool arguments for loop detection comparisons."""
+        if isinstance(raw_args, (dict, list)):
+            return json.dumps(raw_args, sort_keys=True, separators=(",", ":"))
+        if not isinstance(raw_args, str):
+            return str(raw_args)
+        text = raw_args.strip()
+        if not text:
+            return "{}"
+        try:
+            parsed = json.loads(text)
+            return json.dumps(parsed, sort_keys=True, separators=(",", ":"))
+        except json.JSONDecodeError:
+            return text
+
+    def _tool_args_are_similar(self, current: str, previous: str) -> bool:
+        if not current or not previous:
+            return current == previous
+        if current == previous:
+            return True
+        similarity = SequenceMatcher(None, previous, current).ratio()
+        return similarity >= REPETITIVE_TOOL_ARG_SIMILARITY
+
+    async def _pause_for_repetitive_tool_loop(
+        self,
+        *,
+        chat_id: str,
+        checkpoint_id: str,
+        chat_model,
+        tool_name: str,
+        repeat_count: int,
+    ) -> None:
+        warning_text = (
+            f"I paused because I called `{tool_name}` with very similar arguments "
+            f"{repeat_count} times in a row. Tell me how you'd like to proceed."
+        )
+        msg_id = generate_id("msg")
+        ts = utc_now_iso()
+        message_out = MessageOut(
+            id=msg_id,
+            role="agent",
+            content="",
+            timestamp=ts,
+            checkpointId=None,
+        )
+        self._finalize_message(
+            chat_id=chat_id,
+            msg_id=msg_id,
+            ts=ts,
+            final_text=warning_text,
+            chat_model=chat_model,
+            message_out=message_out,
+        )
+        await self._event_bus.publish(
+            chat_id,
+            {"type": "message", "payload": {"message": message_out.model_dump()}},
+        )
+        await self._event_bus.publish(
+            chat_id,
+            {
+                "type": "agent_paused",
+                "payload": {
+                    "reason": "repetitive_tool_calls",
+                    "checkpointId": checkpoint_id,
+                    "toolName": tool_name,
+                    "repeatCount": repeat_count,
+                    "message": warning_text,
+                },
+            },
+        )
+        await self._event_bus.publish(
+            chat_id,
+            {"type": "agent_done", "payload": {"checkpointId": checkpoint_id}},
+        )
+        logger.info(
+            "Conversation ended: repetitive tool loop detected chat_id=%s checkpoint_id=%s tool=%s repeat_count=%d",
+            chat_id,
+            checkpoint_id,
+            tool_name,
+            repeat_count,
+        )

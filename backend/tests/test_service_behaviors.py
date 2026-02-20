@@ -1,5 +1,6 @@
 import asyncio
 
+import app.services.chat_service as chat_service_module
 from app.db.repositories.chat_repo import ChatRepository
 from app.db.session import get_sessionmaker
 from app.services.event_bus import get_event_bus
@@ -159,3 +160,38 @@ def test_sse_ordering_and_disconnect_cleanup(client) -> None:
     assert second["type"] == "checkpoint"
     assert first["sequence"] < second["sequence"]
     assert delta >= 1
+
+
+def test_continue_agent_schedules_latest_checkpoint(client, monkeypatch) -> None:
+    captured: dict[str, str] = {}
+    history_before = client.get("/api/chat/chat-1/history").json()["data"]
+    latest_checkpoint = history_before["checkpoints"][-1]["id"]
+    message_by_id = {m["id"]: m["content"] for m in history_before["messages"]}
+    latest_checkpoint_message_id = history_before["checkpoints"][-1]["messageId"]
+    expected_content = message_by_id.get(latest_checkpoint_message_id, "")
+
+    def _fake_schedule_background_task(
+        *,
+        chat_id: str,
+        checkpoint_id: str,
+        content: str,
+        session_factory,
+        event_bus,
+        task_manager,
+    ) -> None:
+        captured["chat_id"] = chat_id
+        captured["checkpoint_id"] = checkpoint_id
+        captured["content"] = content
+
+    monkeypatch.setattr(chat_service_module, "_schedule_background_task", _fake_schedule_background_task)
+
+    response = client.post("/api/chat/chat-1/continue")
+    assert response.status_code == 200
+    body = response.json()
+    _assert_envelope(body)
+    data = body["data"]
+    assert data["started"] is True
+    assert data["checkpointId"] == latest_checkpoint
+    assert captured["chat_id"] == "chat-1"
+    assert captured["checkpoint_id"] == latest_checkpoint
+    assert captured["content"] == expected_content

@@ -208,6 +208,23 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
     [chatId, client],
   );
 
+  const continueAgent = useCallback(async () => {
+    if (!isValidChatId(chatId)) {
+      return { ok: false as const, data: null, error: 'No chat selected', timestamp: new Date().toISOString() };
+    }
+    setPersistentError(null);
+    setProcessingChats((prev) => new Set(prev).add(chatId));
+    try {
+      return await client.continueAgent(chatId);
+    } finally {
+      setProcessingChats((prev) => {
+        const next = new Set(prev);
+        next.delete(chatId);
+        return next;
+      });
+    }
+  }, [chatId, client]);
+
   const isChatProcessing = useCallback(
     (targetChatId?: string) => {
       const id = targetChatId ?? chatId;
@@ -745,6 +762,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
     loading,
     error,
     sendMessage,
+    continueAgent,
     approveCommand,
     rejectCommand,
     summarizeContext,

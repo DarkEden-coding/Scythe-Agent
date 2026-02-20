@@ -16,6 +16,7 @@ import type {
   ApiResponse,
   SendMessageRequest,
   SendMessageResponse,
+  ContinueAgentResponse,
   ApproveCommandRequest,
   ApproveCommandResponse,
   RejectCommandRequest,
@@ -387,6 +388,21 @@ export class ApiClient {
       return res;
     } finally {
       this.endSession(req.chatId);
+    }
+  }
+
+  /** Continue a paused agent run for a chat without posting a new user message. */
+  async continueAgent(chatId: string): Promise<ApiResponse<ContinueAgentResponse>> {
+    this.startSession(chatId);
+    try {
+      return await this.request<ContinueAgentResponse>(
+        'POST',
+        `/chat/${chatId}/continue`,
+        undefined,
+        `send-${chatId}`,
+      );
+    } finally {
+      this.endSession(chatId);
     }
   }
 

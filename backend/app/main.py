@@ -30,8 +30,31 @@ from app.tools.registry import get_tool_registry
 logger = logging.getLogger(__name__)
 
 
+def _configure_app_logging() -> None:
+    """Ensure app.* logs are visible under the same sink as uvicorn error logs."""
+    app_logger = logging.getLogger("app")
+    uvicorn_error_logger = logging.getLogger("uvicorn.error")
+
+    if uvicorn_error_logger.handlers:
+        app_logger.handlers = list(uvicorn_error_logger.handlers)
+        app_logger.setLevel(uvicorn_error_logger.level or logging.INFO)
+        app_logger.propagate = False
+        return
+
+    if not app_logger.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(
+            logging.Formatter("%(levelname)s:     %(name)s - %(message)s")
+        )
+        app_logger.addHandler(handler)
+    app_logger.setLevel(logging.INFO)
+    app_logger.propagate = False
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    _configure_app_logging()
+
     # Build app-scoped container and set adapter hooks.
     container = AppContainer(
         event_bus=EventBus(),

@@ -9,6 +9,7 @@ from app.db.repositories.settings_repo import SettingsRepository
 from app.db.session import get_sessionmaker
 from app.initial_information import apply_initial_information
 from app.schemas.chat import (
+    ContinueAgentResponse,
     CheckpointOut,
     EditMessageResponse,
     GetChatHistoryResponse,
@@ -74,6 +75,32 @@ class ChatService:
     async def cancel_agent(self, chat_id: str) -> bool:
         """Cancel the running agent for this chat. Returns True if a task was cancelled."""
         return await self._deny_pending_and_cancel_agent(chat_id, "User cancelled")
+
+    async def continue_agent(self, chat_id: str) -> ContinueAgentResponse:
+        """Resume agent execution for an existing chat/checkpoint without creating a new user message."""
+        chat = self.repo.get_chat(chat_id)
+        if chat is None:
+            raise ValueError(f"Chat not found: {chat_id}")
+
+        await self._deny_pending_and_cancel_agent(chat_id, "User requested continue")
+
+        checkpoints = self.repo.list_checkpoints(chat_id)
+        if not checkpoints:
+            raise ValueError(f"No checkpoint found for chat: {chat_id}")
+        checkpoint = checkpoints[-1]
+
+        source_message = self.repo.get_message(checkpoint.message_id)
+        content = source_message.content if source_message is not None else ""
+
+        _schedule_background_task(
+            chat_id=chat_id,
+            checkpoint_id=checkpoint.id,
+            content=content,
+            session_factory=get_sessionmaker(),
+            event_bus=self.event_bus,
+            task_manager=self.task_manager,
+        )
+        return ContinueAgentResponse(started=True, checkpointId=checkpoint.id)
 
     async def send_message(self, chat_id: str, content: str) -> SendMessageResponse:
         chat = self.repo.get_chat(chat_id)

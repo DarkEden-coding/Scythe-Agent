@@ -87,6 +87,11 @@ class SendMessageResponse(BaseModel):
     checkpoint: CheckpointOut | None = None
 
 
+class ContinueAgentResponse(BaseModel):
+    started: bool
+    checkpointId: str
+
+
 class ApproveCommandRequest(BaseModel):
     toolCallId: str = Field(min_length=1)
 

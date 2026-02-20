@@ -40,6 +40,11 @@ export interface SendMessageResponse {
   checkpoint?: Checkpoint;
 }
 
+export interface ContinueAgentResponse {
+  started: boolean;
+  checkpointId: string;
+}
+
 // 2. Approve / reject a pending tool call
 export interface ApproveCommandRequest {
   chatId: string;
@@ -259,6 +264,7 @@ export type AgentEventType =
   | 'context_update'
   | 'chat_title_updated'
   | 'agent_done'
+  | 'agent_paused'
   | 'message_edited'
   | 'verification_issues'
   | 'observation_status'
@@ -288,8 +294,19 @@ export interface AgentEvent {
     | AgentContextPayload
     | AgentChatTitlePayload
     | AgentVerificationIssuesPayload
+    | AgentPausePayload
     | AgentObservationStatusPayload
     | AgentErrorPayload;
+}
+
+export interface AgentPausePayload {
+  reason: 'max_iterations' | 'repetitive_tool_calls' | string;
+  checkpointId: string;
+  message?: string;
+  iteration?: number;
+  maxIterations?: number;
+  toolName?: string;
+  repeatCount?: number;
 }
 
 export interface AgentVerificationIssuesPayload {
