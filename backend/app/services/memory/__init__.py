@@ -13,7 +13,8 @@ class MemoryConfig:
     observer_model: str | None = None
     reflector_model: str | None = None
     observer_threshold: int = 30000
-    reflector_threshold: int = 40000
+    buffer_tokens: int = 6000
+    reflector_threshold: int = 8000
     show_observations_in_chat: bool = False
 
     @classmethod
@@ -25,7 +26,8 @@ class MemoryConfig:
             observer_model=mem.get("observer_model"),
             reflector_model=mem.get("reflector_model"),
             observer_threshold=mem.get("observer_threshold", 30000),
-            reflector_threshold=mem.get("reflector_threshold", 40000),
+            buffer_tokens=mem.get("buffer_tokens", 6000),
+            reflector_threshold=mem.get("reflector_threshold", 8000),
             show_observations_in_chat=mem.get("show_observations_in_chat", False),
         )
 

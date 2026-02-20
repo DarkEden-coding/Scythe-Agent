@@ -4,6 +4,7 @@ import asyncio
 from types import SimpleNamespace
 
 from app.services.memory.observational.background import OMBackgroundRunner
+from app.services.memory.observational.service import BufferedObservationChunk
 
 
 class _DummySessionContext:
@@ -51,15 +52,32 @@ def test_observation_skip_emits_terminal_status(monkeypatch) -> None:
         def get_unobserved_messages(self, _messages, _latest_obs):
             return [], [{"role": "user", "content": "hello", "_message_id": "msg-1"}]
 
-        async def run_observer(self, **_kwargs):
-            raise AssertionError("Observer should not run when threshold is not met")
+        def get_observational_state(self, _chat_id: str, *, default_buffer_tokens: int):
+            return {
+                "buffer": {
+                    "tokens": default_buffer_tokens,
+                    "lastBoundary": 0,
+                    "upToMessageId": None,
+                    "upToTimestamp": None,
+                    "chunks": [],
+                }
+            }
+
+        def split_messages_by_waterline(self, _messages, **_kwargs):
+            return [], list(_messages)
+
+        def save_observational_state(self, *_args, **_kwargs):
+            return None
+
+        def update_state_from_observation(self, *, state, observation):
+            return state
 
     import app.db.repositories.chat_repo as chat_repo_module
     import app.services.memory.observational.background as bg_module
 
     monkeypatch.setattr(chat_repo_module, "ChatRepository", FakeRepo)
     monkeypatch.setattr(bg_module, "ObservationMemoryService", FakeSvc)
-    monkeypatch.setattr(bg_module, "count_messages_tokens", lambda _messages: 12)
+    monkeypatch.setattr(bg_module, "count_messages_tokens", lambda _messages, **_kwargs: 12)
 
     runner = OMBackgroundRunner()
     bus = _EventCollector()
@@ -71,6 +89,7 @@ def test_observation_skip_emits_terminal_status(monkeypatch) -> None:
             observer_model=None,
             reflector_model=None,
             observer_threshold=30,
+            buffer_tokens=100,
             reflector_threshold=50,
             client=object(),
             session_factory=_session_factory,
@@ -106,8 +125,40 @@ def test_reflector_none_still_emits_reflected(monkeypatch) -> None:
         def get_unobserved_messages(self, _messages, _latest_obs):
             return [], [{"role": "user", "content": "hello", "_message_id": "msg-1"}]
 
-        async def run_observer(self, **_kwargs):
-            return SimpleNamespace(token_count=80)
+        def get_observational_state(self, _chat_id: str, *, default_buffer_tokens: int):
+            return {
+                "buffer": {
+                    "tokens": default_buffer_tokens,
+                    "lastBoundary": 0,
+                    "upToMessageId": None,
+                    "upToTimestamp": None,
+                    "chunks": [],
+                }
+            }
+
+        def split_messages_by_waterline(self, _messages, **_kwargs):
+            return [], list(_messages)
+
+        def save_observational_state(self, *_args, **_kwargs):
+            return None
+
+        def update_state_from_observation(self, *, state, observation):
+            return state
+
+        async def run_observer_for_chunk(self, **_kwargs):
+            return BufferedObservationChunk(
+                content="summary",
+                token_count=80,
+                observed_up_to_message_id="msg-1",
+                observed_up_to_timestamp="2026-02-20T00:01:00+00:00",
+            )
+
+        def activate_buffered_observations(self, **_kwargs):
+            return SimpleNamespace(
+                token_count=80,
+                observed_up_to_message_id="msg-1",
+                timestamp="2026-02-20T00:01:00+00:00",
+            )
 
         async def run_reflector(self, **_kwargs):
             return None
@@ -117,7 +168,7 @@ def test_reflector_none_still_emits_reflected(monkeypatch) -> None:
 
     monkeypatch.setattr(chat_repo_module, "ChatRepository", FakeRepo)
     monkeypatch.setattr(bg_module, "ObservationMemoryService", FakeSvc)
-    monkeypatch.setattr(bg_module, "count_messages_tokens", lambda _messages: 120)
+    monkeypatch.setattr(bg_module, "count_messages_tokens", lambda _messages, **_kwargs: 120)
 
     runner = OMBackgroundRunner()
     bus = _EventCollector()
@@ -129,6 +180,7 @@ def test_reflector_none_still_emits_reflected(monkeypatch) -> None:
             observer_model=None,
             reflector_model=None,
             observer_threshold=30,
+            buffer_tokens=6,
             reflector_threshold=40,
             client=object(),
             session_factory=_session_factory,
@@ -137,7 +189,7 @@ def test_reflector_none_still_emits_reflected(monkeypatch) -> None:
     )
 
     statuses = [e["payload"]["status"] for e in bus.events if e.get("type") == "observation_status"]
-    assert statuses == ["observing", "observed", "reflecting", "reflected"]
+    assert statuses == ["observing", "observed", "observed", "reflecting", "reflected"]
 
 
 def test_tool_activity_can_trigger_observer(monkeypatch) -> None:
@@ -173,9 +225,41 @@ def test_tool_activity_can_trigger_observer(monkeypatch) -> None:
         def get_unobserved_messages(self, _messages, _latest_obs):
             return [], list(_messages)
 
-        async def run_observer(self, **_kwargs):
-            called["observer"] += 1
+        def get_observational_state(self, _chat_id: str, *, default_buffer_tokens: int):
+            return {
+                "buffer": {
+                    "tokens": default_buffer_tokens,
+                    "lastBoundary": 0,
+                    "upToMessageId": None,
+                    "upToTimestamp": None,
+                    "chunks": [],
+                }
+            }
+
+        def split_messages_by_waterline(self, _messages, **_kwargs):
+            return [], list(_messages)
+
+        def save_observational_state(self, *_args, **_kwargs):
             return None
+
+        def update_state_from_observation(self, *, state, observation):
+            return state
+
+        async def run_observer_for_chunk(self, **_kwargs):
+            called["observer"] += 1
+            return BufferedObservationChunk(
+                content="summary",
+                token_count=10,
+                observed_up_to_message_id="msg-1",
+                observed_up_to_timestamp="2026-02-20T00:01:00+00:00",
+            )
+
+        def activate_buffered_observations(self, **_kwargs):
+            return SimpleNamespace(
+                token_count=10,
+                observed_up_to_message_id="msg-1",
+                timestamp="2026-02-20T00:01:00+00:00",
+            )
 
     import app.db.repositories.chat_repo as chat_repo_module
     import app.services.memory.observational.background as bg_module
@@ -185,7 +269,7 @@ def test_tool_activity_can_trigger_observer(monkeypatch) -> None:
     monkeypatch.setattr(
         bg_module,
         "count_messages_tokens",
-        lambda messages: 20 if any(m.get("role") == "tool" for m in messages) else 1,
+        lambda messages, **_kwargs: 20 if any(m.get("role") == "tool" for m in messages) else 1,
     )
 
     runner = OMBackgroundRunner()
@@ -198,6 +282,7 @@ def test_tool_activity_can_trigger_observer(monkeypatch) -> None:
             observer_model=None,
             reflector_model=None,
             observer_threshold=10,
+            buffer_tokens=2,
             reflector_threshold=40,
             client=object(),
             session_factory=_session_factory,
@@ -206,7 +291,7 @@ def test_tool_activity_can_trigger_observer(monkeypatch) -> None:
     )
 
     statuses = [e["payload"]["status"] for e in bus.events if e.get("type") == "observation_status"]
-    assert statuses == ["observing", "observed"]
+    assert statuses == ["observing", "observed", "observed"]
     assert called["observer"] == 1
 
 
@@ -233,6 +318,7 @@ def test_schedule_coalesces_and_reruns_latest(monkeypatch) -> None:
             observer_model=None,
             reflector_model=None,
             observer_threshold=10,
+            buffer_tokens=2,
             reflector_threshold=40,
             client=object(),
             session_factory=_session_factory,
@@ -247,6 +333,7 @@ def test_schedule_coalesces_and_reruns_latest(monkeypatch) -> None:
             observer_model=None,
             reflector_model=None,
             observer_threshold=10,
+            buffer_tokens=2,
             reflector_threshold=40,
             client=object(),
             session_factory=_session_factory,
@@ -282,6 +369,7 @@ def test_cancel_clears_pending_reschedule(monkeypatch) -> None:
             observer_model=None,
             reflector_model=None,
             observer_threshold=10,
+            buffer_tokens=2,
             reflector_threshold=40,
             client=object(),
             session_factory=_session_factory,
@@ -295,6 +383,7 @@ def test_cancel_clears_pending_reschedule(monkeypatch) -> None:
             observer_model=None,
             reflector_model=None,
             observer_threshold=10,
+            buffer_tokens=2,
             reflector_threshold=40,
             client=object(),
             session_factory=_session_factory,

@@ -94,7 +94,7 @@ class ContextBudgetManager:
         context_limit: int,
         threshold_ratio: float,
     ) -> tuple[list[dict], dict]:
-        tokens = count_messages_tokens(messages)
+        tokens = count_messages_tokens(messages, model=model)
         if tokens < int(context_limit * threshold_ratio):
             return messages, {"compaction_applied": False}
 
@@ -161,20 +161,26 @@ class ContextBudgetManager:
         metadata.update(mem_result.metadata)
 
         # First token pass after pruning + memory.
-        tokens_after_memory = count_messages_tokens(messages)
+        tokens_after_memory = count_messages_tokens(messages, model=model)
         metadata["tokens_after_memory"] = tokens_after_memory
 
-        messages, compact_meta = await self._compact_if_needed(
-            messages=messages,
-            provider=provider,
-            model=model,
-            context_limit=context_limit,
-            threshold_ratio=0.95,
-        )
-        metadata.update(compact_meta)
+        if mem_cfg.mode == "observational":
+            metadata.update({
+                "compaction_applied": False,
+                "compaction_skipped": "observational_memory",
+            })
+        else:
+            messages, compact_meta = await self._compact_if_needed(
+                messages=messages,
+                provider=provider,
+                model=model,
+                context_limit=context_limit,
+                threshold_ratio=0.95,
+            )
+            metadata.update(compact_meta)
 
         # Final token pass.
-        estimated_tokens = count_messages_tokens(messages)
+        estimated_tokens = count_messages_tokens(messages, model=model)
         metadata["estimated_tokens"] = estimated_tokens
         metadata["memory_mode"] = mem_cfg.mode
 

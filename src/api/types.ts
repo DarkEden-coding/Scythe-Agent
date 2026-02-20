@@ -440,6 +440,7 @@ export interface MemorySettings {
   observer_model: string | null;
   reflector_model: string | null;
   observer_threshold: number;
+  buffer_tokens: number;
   reflector_threshold: number;
   show_observations_in_chat: boolean;
 }
@@ -449,6 +450,7 @@ export interface SetMemorySettingsRequest {
   observerModel?: string;
   reflectorModel?: string;
   observerThreshold?: number;
+  bufferTokens?: number;
   reflectorThreshold?: number;
   showObservationsInChat?: boolean;
 }

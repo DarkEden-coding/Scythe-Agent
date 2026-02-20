@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 
@@ -25,19 +26,50 @@ def _encoding_for_model(model: str) -> str:
     return _DEFAULT_ENCODING
 
 
-def count_messages_tokens(messages: list[dict]) -> int:
-    """Estimate token count of a list of message dicts (rough: 1 token ≈ 4 chars)."""
-    import json
+def count_messages_tokens(messages: list[dict], model: str | None = None) -> int:
+    """Estimate token count for chat messages using tiktoken when available."""
+    if not messages:
+        return 0
 
-    total = 0
-    for msg in messages:
-        content = msg.get("content", "")
-        if isinstance(content, str):
-            total += max(1, len(content) // 4) if content else 0
-        elif isinstance(content, list):
-            raw = json.dumps(content)
-            total += max(1, len(raw) // 4) if raw else 0
-    return total
+    # Try tiktoken first for better threshold fidelity.
+    try:
+        import tiktoken
+
+        enc_name = _encoding_for_model(model or "")
+        enc = tiktoken.get_encoding(enc_name)
+        total = 0
+        # Rough chat framing overhead per message + final assistant priming.
+        message_overhead = 4
+        for msg in messages:
+            total += message_overhead
+            role = str(msg.get("role", ""))
+            if role:
+                total += len(enc.encode(role))
+            content = msg.get("content", "")
+            if isinstance(content, str):
+                total += len(enc.encode(content)) if content else 0
+            elif isinstance(content, list):
+                raw = json.dumps(content)
+                total += len(enc.encode(raw)) if raw else 0
+            elif content is not None:
+                raw = str(content)
+                total += len(enc.encode(raw)) if raw else 0
+        total += 2
+        return max(0, total)
+    except Exception:
+        # Fallback for environments without tiktoken.
+        total = 0
+        for msg in messages:
+            content = msg.get("content", "")
+            if isinstance(content, str):
+                total += max(1, len(content) // 4) if content else 0
+            elif isinstance(content, list):
+                raw = json.dumps(content)
+                total += max(1, len(raw) // 4) if raw else 0
+            elif content is not None:
+                raw = str(content)
+                total += max(1, len(raw) // 4) if raw else 0
+        return total
 
 
 class TokenCounter:

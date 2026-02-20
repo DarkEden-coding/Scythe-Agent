@@ -153,15 +153,23 @@ class SettingsRepository(BaseRepository):
                 "observer_model": None,
                 "reflector_model": None,
                 "observer_threshold": 30000,
-                "reflector_threshold": 40000,
+                "buffer_tokens": 6000,
+                "reflector_threshold": 8000,
                 "show_observations_in_chat": False,
             }
+        observer_threshold = s.observer_threshold if s.observer_threshold is not None else 30000
+        buffer_tokens = (
+            s.buffer_tokens
+            if s.buffer_tokens is not None
+            else max(1000, observer_threshold // 5)
+        )
         return {
             "memory_mode": s.memory_mode or "observational",
             "observer_model": s.observer_model,
             "reflector_model": s.reflector_model,
-            "observer_threshold": s.observer_threshold if s.observer_threshold is not None else 30000,
-            "reflector_threshold": s.reflector_threshold if s.reflector_threshold is not None else 40000,
+            "observer_threshold": observer_threshold,
+            "buffer_tokens": buffer_tokens,
+            "reflector_threshold": s.reflector_threshold if s.reflector_threshold is not None else 8000,
             "show_observations_in_chat": bool(s.show_observations_in_chat),
         }
 
@@ -172,6 +180,7 @@ class SettingsRepository(BaseRepository):
         observer_model: str | None = None,
         reflector_model: str | None = None,
         observer_threshold: int | None = None,
+        buffer_tokens: int | None = None,
         reflector_threshold: int | None = None,
         show_observations_in_chat: bool | None = None,
         updated_at: str,
@@ -187,6 +196,10 @@ class SettingsRepository(BaseRepository):
             s.reflector_model = reflector_model if reflector_model.strip() else None
         if observer_threshold is not None:
             s.observer_threshold = observer_threshold
+        if buffer_tokens is not None:
+            if buffer_tokens <= 0:
+                raise ValueError("bufferTokens must be greater than 0")
+            s.buffer_tokens = buffer_tokens
         if reflector_threshold is not None:
             s.reflector_threshold = reflector_threshold
         if show_observations_in_chat is not None:

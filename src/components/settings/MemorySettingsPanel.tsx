@@ -12,7 +12,8 @@ const DEFAULT_SETTINGS: MemorySettings = {
   observer_model: null,
   reflector_model: null,
   observer_threshold: 30000,
-  reflector_threshold: 40000,
+  buffer_tokens: 6000,
+  reflector_threshold: 8000,
   show_observations_in_chat: false,
 };
 
@@ -35,8 +36,15 @@ export function MemorySettingsPanel({ activeChatId = null }: MemorySettingsPanel
     setLoading(true);
     const res = await api.getMemorySettings();
     if (res.ok) {
-      setSettings(res.data);
-      setOriginal(res.data);
+      const normalized: MemorySettings = {
+        ...res.data,
+        buffer_tokens:
+          typeof res.data.buffer_tokens === 'number'
+            ? res.data.buffer_tokens
+            : Math.max(500, Math.floor((res.data.observer_threshold ?? 30000) * 0.2)),
+      };
+      setSettings(normalized);
+      setOriginal(normalized);
     }
     setLoading(false);
   }, []);
@@ -72,6 +80,7 @@ export function MemorySettingsPanel({ activeChatId = null }: MemorySettingsPanel
     (settings.observer_model ?? '') !== (original.observer_model ?? '') ||
     (settings.reflector_model ?? '') !== (original.reflector_model ?? '') ||
     settings.observer_threshold !== original.observer_threshold ||
+    settings.buffer_tokens !== original.buffer_tokens ||
     settings.reflector_threshold !== original.reflector_threshold ||
     settings.show_observations_in_chat !== original.show_observations_in_chat;
 
@@ -89,13 +98,21 @@ export function MemorySettingsPanel({ activeChatId = null }: MemorySettingsPanel
       observerModel: settings.observer_model ?? '',
       reflectorModel: settings.reflector_model ?? '',
       observerThreshold: settings.observer_threshold,
+      bufferTokens: settings.buffer_tokens,
       reflectorThreshold: settings.reflector_threshold,
       showObservationsInChat: settings.show_observations_in_chat,
     });
     setSaving(false);
     if (res.ok) {
-      setSettings(res.data);
-      setOriginal(res.data);
+      const normalized: MemorySettings = {
+        ...res.data,
+        buffer_tokens:
+          typeof res.data.buffer_tokens === 'number'
+            ? res.data.buffer_tokens
+            : Math.max(500, Math.floor((res.data.observer_threshold ?? 30000) * 0.2)),
+      };
+      setSettings(normalized);
+      setOriginal(normalized);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
     } else {
@@ -337,10 +354,10 @@ export function MemorySettingsPanel({ activeChatId = null }: MemorySettingsPanel
                 Thresholds (tokens)
               </p>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-gray-400 mb-1">
-                    Observer Threshold
+                    Activation Threshold
                   </label>
                   <input
                     type="number"
@@ -360,7 +377,36 @@ export function MemorySettingsPanel({ activeChatId = null }: MemorySettingsPanel
                       'focus:outline-none focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/30',
                     )}
                   />
-                  <p className="text-xs text-gray-600 mt-0.5">Tokens before Observer runs</p>
+                  <p className="text-xs text-gray-600 mt-0.5">
+                    Unobserved tokens before buffered chunks are activated
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-gray-400 mb-1">
+                    Buffer Tokens
+                  </label>
+                  <input
+                    type="number"
+                    min={500}
+                    max={100000}
+                    step={500}
+                    value={settings.buffer_tokens}
+                    onChange={(e) =>
+                      setSettings((s) => ({
+                        ...s,
+                        buffer_tokens: parseInt(e.target.value, 10) || 6000,
+                      }))
+                    }
+                    className={cn(
+                      'w-full px-3 py-2 bg-gray-900/50 border border-gray-700/50 rounded-lg',
+                      'text-sm text-gray-200',
+                      'focus:outline-none focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/30',
+                    )}
+                  />
+                  <p className="text-xs text-gray-600 mt-0.5">
+                    Async chunk size for passive observation
+                  </p>
                 </div>
 
                 <div>
@@ -376,7 +422,7 @@ export function MemorySettingsPanel({ activeChatId = null }: MemorySettingsPanel
                     onChange={(e) =>
                       setSettings((s) => ({
                         ...s,
-                        reflector_threshold: parseInt(e.target.value, 10) || 40000,
+                        reflector_threshold: parseInt(e.target.value, 10) || 8000,
                       }))
                     }
                     className={cn(

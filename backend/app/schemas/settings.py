@@ -117,5 +117,6 @@ class SetMemorySettingsRequest(BaseModel):
     observerModel: str | None = None
     reflectorModel: str | None = None
     observerThreshold: int | None = None
+    bufferTokens: int | None = None
     reflectorThreshold: int | None = None
     showObservationsInChat: bool | None = None

@@ -111,6 +111,12 @@ REFLECTOR_USER_TEMPLATE = """\
 Restructure and compress the above observations. Target: reduce by 40-60% while preserving all 🔴 Critical items and all specific details (file paths, function names, error messages).\
 """
 
+OBSERVATION_CONTINUATION_HINT = (
+    "This message is not from the user. Conversation history was compacted into "
+    "<observations> due to context limits. Continue naturally from prior context. "
+    "Do not greet as if this is a new conversation."
+)
+
 
 def build_observer_prompt(
     existing_observation: str | None,
@@ -132,9 +138,6 @@ def build_observer_prompt(
         if isinstance(content, list):
             import json
             content = json.dumps(content)
-        # Truncate very long tool outputs for observation purposes
-        if len(content) > 2000:
-            content = content[:2000] + f"\n... [truncated, {len(content)} chars total]"
         new_messages_lines.append(f"[{role}]: {content}")
 
     user_content = OBSERVER_USER_TEMPLATE.format(

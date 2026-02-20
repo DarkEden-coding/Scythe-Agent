@@ -65,6 +65,7 @@ class ObservationalMemoryStrategy:
             observer_model=mem_cfg.observer_model,
             reflector_model=mem_cfg.reflector_model,
             observer_threshold=mem_cfg.observer_threshold,
+            buffer_tokens=mem_cfg.buffer_tokens,
             reflector_threshold=mem_cfg.reflector_threshold,
             client=client,
             session_factory=session_factory,

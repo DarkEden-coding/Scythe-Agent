@@ -383,6 +383,7 @@ def set_memory_settings(request: SetMemorySettingsRequest, db: Session = Depends
             observer_model=request.observerModel,
             reflector_model=request.reflectorModel,
             observer_threshold=request.observerThreshold,
+            buffer_tokens=request.bufferTokens,
             reflector_threshold=request.reflectorThreshold,
             show_observations_in_chat=request.showObservationsInChat,
             updated_at=utc_now_iso(),

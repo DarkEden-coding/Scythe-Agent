@@ -663,3 +663,6 @@ class ChatRepository(BaseRepository):
         self.db.execute(
             delete(Observation).where(Observation.chat_id == chat_id)
         )
+        self.db.execute(
+            delete(MemoryState).where(MemoryState.chat_id == chat_id)
+        )
