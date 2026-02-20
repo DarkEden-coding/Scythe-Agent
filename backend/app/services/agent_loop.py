@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 import httpx
@@ -121,7 +122,7 @@ class AgentLoop:
 
         iteration = 0
         reasoning_param = {"effort": "medium"}
-        _ran_agent = False
+        _cancelled = False
 
         try:
             while iteration < max_iterations:
@@ -217,7 +218,6 @@ class AgentLoop:
                         chat_id,
                         checkpoint_id,
                     )
-                    _ran_agent = True
                     return  # finally block fires and schedules observation
 
                 assistant_msg = {
@@ -248,8 +248,27 @@ class AgentLoop:
                     tr_with_id["_message_id"] = msg_id
                     conversation_messages.append(tr_with_id)
 
+                # Queue OM updates during long-running loops so threshold-triggered
+                # observation does not depend on turn completion.
+                if self._session_factory:
+                    try:
+                        strategy = get_memory_strategy(mem_cfg.mode)
+                        strategy.maybe_update(
+                            chat_id=chat_id,
+                            model=settings.model,
+                            mem_cfg=mem_cfg,
+                            client=client,
+                            session_factory=self._session_factory,
+                            event_bus=self._event_bus,
+                        )
+                    except Exception:
+                        logger.warning(
+                            "Failed mid-turn observation schedule for chat=%s",
+                            chat_id,
+                            exc_info=True,
+                        )
+
             # Max iterations reached
-            _ran_agent = True
             await self._event_bus.publish(
                 chat_id,
                 {"type": "agent_done", "payload": {"checkpointId": checkpoint_id}},
@@ -260,9 +279,14 @@ class AgentLoop:
                 chat_id,
                 checkpoint_id,
             )
+        except asyncio.CancelledError:
+            _cancelled = True
+            raise
         finally:
-            # Schedule observation once after the agent run completes (not mid-loop)
-            if _ran_agent and self._session_factory:
+            # Schedule observation once after a non-cancelled run exit.
+            # This covers normal completion and error exits that still produced
+            # useful chat/tool history, while avoiding stale writes on user cancel.
+            if not _cancelled and self._session_factory:
                 try:
                     strategy = get_memory_strategy(mem_cfg.mode)
                     strategy.maybe_update(

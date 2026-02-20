@@ -210,6 +210,103 @@ def test_tool_activity_can_trigger_observer(monkeypatch) -> None:
     assert called["observer"] == 1
 
 
+def test_schedule_coalesces_and_reruns_latest(monkeypatch) -> None:
+    calls: list[str] = []
+
+    async def fake_cycle(self, **kwargs):
+        calls.append(kwargs["model"])
+        await asyncio.sleep(0.03)
+
+    monkeypatch.setattr(
+        OMBackgroundRunner,
+        "_run_observation_cycle",
+        fake_cycle,
+    )
+
+    async def _scenario() -> None:
+        runner = OMBackgroundRunner()
+        bus = _EventCollector()
+
+        runner.schedule_observation(
+            chat_id="chat-1",
+            model="m1",
+            observer_model=None,
+            reflector_model=None,
+            observer_threshold=10,
+            reflector_threshold=40,
+            client=object(),
+            session_factory=_session_factory,
+            event_bus=bus,
+        )
+        await asyncio.sleep(0.001)
+
+        # While m1 is still running, queue a newer request.
+        runner.schedule_observation(
+            chat_id="chat-1",
+            model="m2",
+            observer_model=None,
+            reflector_model=None,
+            observer_threshold=10,
+            reflector_threshold=40,
+            client=object(),
+            session_factory=_session_factory,
+            event_bus=bus,
+        )
+
+        await asyncio.sleep(0.08)
+        assert calls == ["m1", "m2"]
+
+    asyncio.run(_scenario())
+
+
+def test_cancel_clears_pending_reschedule(monkeypatch) -> None:
+    calls: list[str] = []
+
+    async def fake_cycle(self, **kwargs):
+        calls.append(kwargs["model"])
+        await asyncio.sleep(0.2)
+
+    monkeypatch.setattr(
+        OMBackgroundRunner,
+        "_run_observation_cycle",
+        fake_cycle,
+    )
+
+    async def _scenario() -> None:
+        runner = OMBackgroundRunner()
+        bus = _EventCollector()
+
+        runner.schedule_observation(
+            chat_id="chat-1",
+            model="m1",
+            observer_model=None,
+            reflector_model=None,
+            observer_threshold=10,
+            reflector_threshold=40,
+            client=object(),
+            session_factory=_session_factory,
+            event_bus=bus,
+        )
+        await asyncio.sleep(0.001)
+
+        runner.schedule_observation(
+            chat_id="chat-1",
+            model="m2",
+            observer_model=None,
+            reflector_model=None,
+            observer_threshold=10,
+            reflector_threshold=40,
+            client=object(),
+            session_factory=_session_factory,
+            event_bus=bus,
+        )
+        runner.cancel("chat-1")
+        await asyncio.sleep(0.05)
+        assert calls == ["m1"]
+
+    asyncio.run(_scenario())
+
+
 def test_cancel_route_cancels_observation_runner(client, monkeypatch) -> None:
     calls: list[str] = []
     monkeypatch.setattr(

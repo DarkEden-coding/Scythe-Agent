@@ -17,6 +17,7 @@ class OMBackgroundRunner:
 
     def __init__(self) -> None:
         self._running_tasks: dict[str, asyncio.Task] = {}
+        self._pending_requests: dict[str, dict] = {}
 
     def schedule_observation(
         self,
@@ -31,37 +32,62 @@ class OMBackgroundRunner:
         session_factory,
         event_bus,
     ) -> None:
-        """Fire-and-forget: run Observer then Reflector if needed."""
-        # Cancel any existing task for this chat
+        """Fire-and-forget: run Observer then Reflector if needed.
+
+        Coalesces concurrent schedule requests per chat: when a run is already
+        in progress, keep only the latest request and run it right after the
+        current cycle completes.
+        """
+        request = {
+            "chat_id": chat_id,
+            "model": model,
+            "observer_model": observer_model,
+            "reflector_model": reflector_model,
+            "observer_threshold": observer_threshold,
+            "reflector_threshold": reflector_threshold,
+            "client": client,
+            "session_factory": session_factory,
+            "event_bus": event_bus,
+        }
+
         existing = self._running_tasks.get(chat_id)
         if existing and not existing.done():
-            existing.cancel()
+            self._pending_requests[chat_id] = request
+            return
 
+        self._start_task(request)
+
+    def cancel(self, chat_id: str) -> None:
+        """Cancel running OM task (used on agent cancel/revert)."""
+        self._pending_requests.pop(chat_id, None)
+        task = self._running_tasks.pop(chat_id, None)
+        if task and not task.done():
+            task.cancel()
+
+    def _start_task(self, request: dict) -> None:
+        chat_id = request["chat_id"]
         task = asyncio.create_task(
             self._run_observation_cycle(
-                chat_id=chat_id,
-                model=model,
-                observer_model=observer_model,
-                reflector_model=reflector_model,
-                observer_threshold=observer_threshold,
-                reflector_threshold=reflector_threshold,
-                client=client,
-                session_factory=session_factory,
-                event_bus=event_bus,
+                chat_id=request["chat_id"],
+                model=request["model"],
+                observer_model=request["observer_model"],
+                reflector_model=request["reflector_model"],
+                observer_threshold=request["observer_threshold"],
+                reflector_threshold=request["reflector_threshold"],
+                client=request["client"],
+                session_factory=request["session_factory"],
+                event_bus=request["event_bus"],
             )
         )
         self._running_tasks[chat_id] = task
 
-        def _cleanup(t: asyncio.Task) -> None:
+        def _cleanup(_t: asyncio.Task) -> None:
             self._running_tasks.pop(chat_id, None)
+            pending = self._pending_requests.pop(chat_id, None)
+            if pending is not None:
+                self._start_task(pending)
 
         task.add_done_callback(_cleanup)
-
-    def cancel(self, chat_id: str) -> None:
-        """Cancel running OM task (used on agent cancel/revert)."""
-        task = self._running_tasks.pop(chat_id, None)
-        if task and not task.done():
-            task.cancel()
 
     async def _run_observation_cycle(
         self,

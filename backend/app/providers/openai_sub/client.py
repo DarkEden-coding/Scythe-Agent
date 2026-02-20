@@ -529,16 +529,70 @@ class OpenAISubClient:
             self._access_token, self._session_id, account_id=self._account_id
         )
         async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(
-                f"{CODEX_API_BASE}/responses",
-                headers=headers,
-                json=payload,
-            )
-            response.raise_for_status()
-            body = response.json()
+            try:
+                response = await client.post(
+                    f"{CODEX_API_BASE}/responses",
+                    headers=headers,
+                    json=payload,
+                )
+                response.raise_for_status()
+                body = response.json()
+            except httpx.HTTPStatusError as exc:
+                if (
+                    exc.response.status_code == 400
+                    and "stream must be set to true"
+                    in (exc.response.text or "").lower()
+                ):
+                    logger.info(
+                        "OpenAI Sub non-stream completion rejected for model=%s; "
+                        "falling back to stream mode",
+                        model,
+                    )
+                    return await self._create_chat_completion_via_stream(
+                        model=model,
+                        messages=messages,
+                        max_tokens=max_tokens,
+                        temperature=temperature,
+                        tools=tools,
+                    )
+                raise
         output = body.get("output") or (body.get("response") or {}).get("output") or []
         text, _, _ = _extract_from_responses_output(output)
         return text
+
+    async def _create_chat_completion_via_stream(
+        self,
+        *,
+        model: str,
+        messages: list[dict],
+        max_tokens: int,
+        temperature: float,
+        tools: list[dict] | None,
+    ) -> str:
+        """Compatibility path when upstream requires stream=true."""
+        parts: list[str] = []
+        finish_content = ""
+        async for ev in self.create_chat_completion_stream(
+            model=model,
+            messages=messages,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            tools=tools,
+            reasoning=None,
+            tool_choice=None,
+        ):
+            if ev.get("type") == "content":
+                delta = ev.get("delta")
+                if isinstance(delta, str) and delta:
+                    parts.append(delta)
+            elif ev.get("type") == "finish":
+                c = ev.get("content")
+                if isinstance(c, str) and c:
+                    finish_content = c
+        text = "".join(parts).strip()
+        if text:
+            return text
+        return finish_content.strip()
 
     async def create_chat_completion_stream(
         self,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 # backend/app/tools/ -> backend/
@@ -36,6 +37,37 @@ _BLOCKED_PREFIXES = [
     "/dev",
 ]
 
+# Some providers occasionally stream argument fragments with trailing JSON
+# delimiters (e.g. `/path/File.java}},`). Strip only clearly synthetic suffixes.
+_TRAILING_DELIMITER_CLUSTER = re.compile(r"^(?P<core>.+?)(?P<noise>[{}\[\],]+)$")
+
+
+def sanitize_raw_path(raw_path: str) -> str:
+    """Normalize path text from tool payloads before security checks."""
+    value = str(raw_path or "").strip()
+    if not value:
+        return value
+
+    # Drop simple wrappers often introduced by quoting/formatting.
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'", "`"}:
+        value = value[1:-1].strip()
+    else:
+        value = value.rstrip(' \t\r\n,;"\'`')
+        if value and value[0] in {'"', "'", "`"}:
+            value = value[1:].lstrip()
+
+    match = _TRAILING_DELIMITER_CLUSTER.match(value)
+    if not match:
+        return value
+
+    noise = match.group("noise")
+    # Keep single trailing braces (valid on POSIX). Trim only multi-char clusters.
+    if len(noise) >= 2:
+        core = match.group("core").rstrip()
+        if core:
+            return core
+    return value
+
 
 def resolve_path(
     raw_path: str,
@@ -57,7 +89,8 @@ def resolve_path(
         Resolved absolute Path. Raises ValueError if path is restricted or
         not absolute.
     """
-    target = Path(raw_path).expanduser()
+    normalized_path = sanitize_raw_path(raw_path)
+    target = Path(normalized_path).expanduser()
     if not target.is_absolute():
         raise ValueError(
             "Path must be absolute. Use the project root path from the project "
@@ -66,7 +99,9 @@ def resolve_path(
     target = target.resolve()
     for prefix in _BLOCKED_PREFIXES:
         if str(target).startswith(prefix):
-            raise ValueError(f"Access denied: {raw_path} is in a restricted directory")
+            raise ValueError(
+                f"Access denied: {normalized_path} is in a restricted directory"
+            )
     try:
         target.relative_to(get_tool_outputs_root())
     except ValueError:
@@ -81,7 +116,7 @@ def resolve_path(
             target.relative_to(base)
         except ValueError:
             raise ValueError(
-                f"Path {raw_path} is outside the project root. "
+                f"Path {normalized_path} is outside the project root. "
                 f"Only paths under {base} are allowed."
             )
     return target
