@@ -21,7 +21,6 @@ class ToolCall(Base):
     status: Mapped[str] = mapped_column(Text, nullable=False)
     input_json: Mapped[str] = mapped_column(Text, nullable=False)
     output_text: Mapped[str | None] = mapped_column(Text, nullable=True)
-    output_file_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     timestamp: Mapped[str] = mapped_column(Text, nullable=False)
     duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     parallel: Mapped[int | None] = mapped_column(Integer, nullable=True)

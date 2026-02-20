@@ -85,7 +85,8 @@ def test_env() -> None:
 
 @pytest.fixture
 def client() -> TestClient:
-    reset_mcp_client_manager()
-    reset_tool_registry()
     app = create_app()
-    return TestClient(app)
+    with TestClient(app) as test_client:
+        reset_mcp_client_manager()
+        reset_tool_registry()
+        yield test_client

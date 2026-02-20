@@ -5,17 +5,18 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from app.core.container import get_container
 from app.services.memory.observational.service import ObservationError, ObservationMemoryService
 from app.services.token_counter import count_messages_tokens
 
 logger = logging.getLogger(__name__)
 
-# Module-level singleton: maps chat_id → running asyncio.Task
-_running_tasks: dict[str, asyncio.Task] = {}
-
 
 class OMBackgroundRunner:
     """Manages async Observer/Reflector tasks per chat."""
+
+    def __init__(self) -> None:
+        self._running_tasks: dict[str, asyncio.Task] = {}
 
     def schedule_observation(
         self,
@@ -32,7 +33,7 @@ class OMBackgroundRunner:
     ) -> None:
         """Fire-and-forget: run Observer then Reflector if needed."""
         # Cancel any existing task for this chat
-        existing = _running_tasks.get(chat_id)
+        existing = self._running_tasks.get(chat_id)
         if existing and not existing.done():
             existing.cancel()
 
@@ -49,16 +50,16 @@ class OMBackgroundRunner:
                 event_bus=event_bus,
             )
         )
-        _running_tasks[chat_id] = task
+        self._running_tasks[chat_id] = task
 
         def _cleanup(t: asyncio.Task) -> None:
-            _running_tasks.pop(chat_id, None)
+            self._running_tasks.pop(chat_id, None)
 
         task.add_done_callback(_cleanup)
 
     def cancel(self, chat_id: str) -> None:
         """Cancel running OM task (used on agent cancel/revert)."""
-        task = _running_tasks.pop(chat_id, None)
+        task = self._running_tasks.pop(chat_id, None)
         if task and not task.done():
             task.cancel()
 
@@ -93,11 +94,23 @@ class OMBackgroundRunner:
                         "role": role,
                         "content": m.content,
                         "_message_id": m.id,
+                        "_timestamp": m.timestamp,
                     })
 
-                # Check how many tokens are unobserved
                 latest_obs = repo.get_latest_observation(chat_id)
-                _observed, unobserved = svc.get_unobserved_messages(db_messages, latest_obs)
+                supplemental = self._build_supplemental_activity(
+                    chat_id=chat_id,
+                    repo=repo,
+                    latest_observation_timestamp=(latest_obs.timestamp if latest_obs else None),
+                )
+                observation_messages = db_messages + supplemental
+
+                # Check how many tokens are unobserved. Supplemental activity rows
+                # intentionally do not carry `_message_id`, so they remain unobserved
+                # until a newer observation timestamp is written.
+                _observed, unobserved = svc.get_unobserved_messages(
+                    observation_messages, latest_obs
+                )
                 unobserved_tokens = count_messages_tokens(unobserved)
 
                 if unobserved_tokens < observer_threshold:
@@ -134,7 +147,7 @@ class OMBackgroundRunner:
                 try:
                     new_obs = await svc.run_observer(
                         chat_id=chat_id,
-                        messages=db_messages,
+                        messages=observation_messages,
                         model=model,
                         observer_model=observer_model,
                         client=client,
@@ -278,6 +291,56 @@ class OMBackgroundRunner:
                 },
             )
 
+    def _build_supplemental_activity(
+        self,
+        *,
+        chat_id: str,
+        repo,
+        latest_observation_timestamp: str | None,
+    ) -> list[dict]:
+        """Build synthetic rows from tool calls/reasoning created since last observation."""
+        supplemental: list[dict] = []
 
-# Module-level singleton instance
-om_runner = OMBackgroundRunner()
+        for tc in repo.list_tool_calls(chat_id):
+            if (
+                latest_observation_timestamp is not None
+                and tc.timestamp <= latest_observation_timestamp
+            ):
+                continue
+
+            parts = [
+                f"Tool call: {tc.name}",
+                f"Input: {tc.input_json}",
+            ]
+            if tc.output_text:
+                parts.append(f"Output: {tc.output_text}")
+            supplemental.append(
+                {
+                    "role": "tool",
+                    "content": "\n".join(parts),
+                    "_timestamp": tc.timestamp,
+                }
+            )
+
+        for rb in repo.list_reasoning_blocks(chat_id):
+            if (
+                latest_observation_timestamp is not None
+                and rb.timestamp <= latest_observation_timestamp
+            ):
+                continue
+            supplemental.append(
+                {
+                    "role": "reasoning",
+                    "content": rb.content,
+                    "_timestamp": rb.timestamp,
+                }
+            )
+
+        supplemental.sort(key=lambda row: str(row.get("_timestamp") or ""))
+        return supplemental
+
+def get_om_background_runner() -> OMBackgroundRunner:
+    container = get_container()
+    if container is None:
+        raise RuntimeError("AppContainer is not initialized")
+    return container.om_runner

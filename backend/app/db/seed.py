@@ -4,7 +4,7 @@ import json
 import os
 import logging
 
-from sqlalchemy import select
+from sqlalchemy import select, inspect, text
 from sqlalchemy.orm import Session
 
 from app.config.settings import get_settings
@@ -19,7 +19,18 @@ from app.db.models.settings import Settings
 logger = logging.getLogger(__name__)
 
 
+def _ensure_settings_schema(db: Session) -> None:
+    """Apply lightweight startup-safe schema guards for settings table."""
+    bind = db.get_bind()
+    inspector = inspect(bind)
+    columns = {c["name"] for c in inspector.get_columns("settings")}
+    if "active_model_provider" not in columns:
+        db.execute(text("ALTER TABLE settings ADD COLUMN active_model_provider TEXT"))
+        logger.info("Added missing settings.active_model_provider column during startup seed")
+
+
 def seed_app_data(db: Session) -> None:
+    _ensure_settings_schema(db)
     settings = get_settings()
     now = utc_now_iso()
 
@@ -28,6 +39,7 @@ def seed_app_data(db: Session) -> None:
             Settings(
                 id=1,
                 active_model=settings.default_active_model,
+                active_model_provider="openrouter",
                 context_limit=settings.default_context_limit,
                 updated_at=now,
             )

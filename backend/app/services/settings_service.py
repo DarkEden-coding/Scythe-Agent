@@ -2,6 +2,7 @@ import logging
 
 from sqlalchemy.orm import Session
 
+from app.db.models.provider_model_cache import ProviderModelCache
 from app.utils.encryption import encrypt
 from app.utils.ids import generate_id
 from app.utils.time import utc_now_iso
@@ -42,6 +43,7 @@ class SettingsService:
         self.app_settings = get_settings()
 
     def get_settings(self) -> GetSettingsResponse:
+        self.ensure_active_model_valid()
         settings_row = self.repo.get_settings()
         if settings_row is None:
             raise ValueError("Settings record missing")
@@ -49,11 +51,15 @@ class SettingsService:
         available_models = self._available_models()
         models_by_provider = self._models_by_provider()
         model_metadata = self._model_metadata()
-        if settings_row.active_model not in set(available_models):
-            self.ensure_active_model_valid()
-            settings_row = self.repo.get_settings()
-            if settings_row is None:
-                raise ValueError("Settings record missing")
+        model_metadata_by_key = self._model_metadata_by_key()
+        active_provider = settings_row.active_model_provider or self.repo.get_provider_for_model(
+            settings_row.active_model
+        )
+        model_key = (
+            self._to_model_key(active_provider, settings_row.active_model)
+            if active_provider
+            else None
+        )
 
         rules = self.repo.list_auto_approve_rules()
 
@@ -64,9 +70,12 @@ class SettingsService:
         )
         return GetSettingsResponse(
             model=settings_row.active_model,
+            modelProvider=active_provider,
+            modelKey=model_key,
             availableModels=available_models,
             modelsByProvider=models_by_provider,
             modelMetadata=model_metadata,
+            modelMetadataByKey=model_metadata_by_key,
             contextLimit=settings_row.context_limit,
             autoApproveRules=[
                 AutoApproveRuleOut(
@@ -83,6 +92,17 @@ class SettingsService:
 
     def _now(self) -> str:
         return utc_now_iso()
+
+    @staticmethod
+    def _to_model_key(provider: str, label: str) -> str:
+        return f"{provider}::{label}"
+
+    @staticmethod
+    def _parse_model_key(model_key: str) -> tuple[str, str] | None:
+        provider, sep, label = model_key.partition("::")
+        if not sep or not provider.strip() or not label.strip():
+            return None
+        return provider.strip(), label.strip()
 
     def _available_models(self) -> list[str]:
         models = self.repo.list_models()
@@ -108,26 +128,51 @@ class SettingsService:
         models = self.repo.list_models()
         result: dict[str, ModelMetadata] = {}
         for m in models:
-            meta: dict = {}
-            if m.context_limit is not None:
-                meta["contextLimit"] = m.context_limit
-            try:
-                raw = json.loads(m.raw_json) if m.raw_json else {}
-                pricing = raw.get("pricing") if isinstance(raw, dict) else {}
-                if isinstance(pricing, dict):
-                    prompt = _parse_price(pricing.get("prompt"))
-                    completion = _parse_price(pricing.get("completion"))
-                    if prompt is not None or completion is not None:
-                        avg_per_token = ((prompt or 0) + (completion or 0)) / 2
-                        meta["pricePerMillion"] = round(avg_per_token * 1_000_000, 4)
-            except (json.JSONDecodeError, TypeError):
-                pass
-            result[m.label] = ModelMetadata(**meta)
+            if m.label in result:
+                continue
+            result[m.label] = self._extract_model_metadata(m, json)
         return result
 
-    def _lookup_context_limit(self, model_label: str) -> int:
+    def _model_metadata_by_key(self) -> dict[str, ModelMetadata]:
+        """Return metadata keyed by stable model key provider::label."""
+        import json
+
+        models = self.repo.list_models()
+        result: dict[str, ModelMetadata] = {}
+        for m in models:
+            result[self._to_model_key(m.provider, m.label)] = self._extract_model_metadata(
+                m, json
+            )
+        return result
+
+    def _extract_model_metadata(self, model: ProviderModelCache, json_module) -> ModelMetadata:
+        meta: dict = {}
+        if model.context_limit is not None:
+            meta["contextLimit"] = model.context_limit
+        try:
+            raw = json_module.loads(model.raw_json) if model.raw_json else {}
+            pricing = raw.get("pricing") if isinstance(raw, dict) else {}
+            if isinstance(pricing, dict):
+                prompt = _parse_price(pricing.get("prompt"))
+                completion = _parse_price(pricing.get("completion"))
+                if prompt is not None or completion is not None:
+                    avg_per_token = ((prompt or 0) + (completion or 0)) / 2
+                    meta["pricePerMillion"] = round(avg_per_token * 1_000_000, 4)
+        except (json_module.JSONDecodeError, TypeError):
+            pass
+        return ModelMetadata(**meta)
+
+    def _lookup_context_limit(self, model_label: str, provider: str | None = None) -> int:
         """Look up the context_limit for a model from ProviderModelCache."""
         models = self.repo.list_models()
+        if provider:
+            for m in models:
+                if (
+                    m.provider == provider
+                    and m.label == model_label
+                    and m.context_limit is not None
+                ):
+                    return m.context_limit
         for m in models:
             if m.label == model_label and m.context_limit is not None:
                 return m.context_limit
@@ -138,39 +183,134 @@ class SettingsService:
         if settings_row is None:
             raise ValueError("Settings record missing")
 
-        available = self._available_models()
-        available_set = set(available)
-        target = settings_row.active_model
-        if target not in available_set:
-            if self.app_settings.default_active_model in available_set:
-                target = self.app_settings.default_active_model
-            elif available:
-                target = available[0]
-            else:
-                target = self.app_settings.default_active_model
+        models = self.repo.list_models()
+        if not models:
+            target_model = self.app_settings.default_active_model
+            target_provider = settings_row.active_model_provider or "openrouter"
+            if (
+                settings_row.active_model != target_model
+                or settings_row.active_model_provider != target_provider
+                or settings_row.context_limit != self.app_settings.default_context_limit
+            ):
+                self.repo.set_active_model(
+                    target_model, updated_at=self._now(), provider=target_provider
+                )
+                self.repo.set_context_limit(self.app_settings.default_context_limit)
+                self.repo.commit()
+            return target_model
 
-        if target != settings_row.active_model:
-            self.repo.set_active_model(target, updated_at=self._now())
+        try:
+            target = self._resolve_model_selection(
+                model=settings_row.active_model,
+                provider=settings_row.active_model_provider,
+                model_key=None,
+                models=models,
+                settings_row=settings_row,
+            )
+        except ValueError:
+            target = self._resolve_fallback_model(models)
+        target_context_limit = target.context_limit or self.app_settings.default_context_limit
+        if (
+            settings_row.active_model != target.label
+            or settings_row.active_model_provider != target.provider
+            or settings_row.context_limit != target_context_limit
+        ):
+            self.repo.set_active_model(
+                target.label, updated_at=self._now(), provider=target.provider
+            )
+            self.repo.set_context_limit(target_context_limit)
             self.repo.commit()
-        return target
+        return target.label
 
-    def set_model(self, model: str) -> SetModelResponse:
+    def _resolve_fallback_model(self, models: list[ProviderModelCache]) -> ProviderModelCache:
+        default_label = self.app_settings.default_active_model
+        default_candidates = [row for row in models if row.label == default_label]
+        if default_candidates:
+            for preferred_provider in ("openrouter", "groq", "openai-sub"):
+                for row in default_candidates:
+                    if row.provider == preferred_provider:
+                        return row
+            return sorted(default_candidates, key=lambda row: (row.provider, row.id))[0]
+
+        for preferred_provider in ("openrouter", "groq", "openai-sub"):
+            provider_rows = [row for row in models if row.provider == preferred_provider]
+            if provider_rows:
+                return sorted(provider_rows, key=lambda row: row.label)[0]
+        return sorted(models, key=lambda row: (row.provider, row.label, row.id))[0]
+
+    def _resolve_model_selection(
+        self,
+        *,
+        model: str,
+        provider: str | None,
+        model_key: str | None,
+        models: list[ProviderModelCache],
+        settings_row,
+    ) -> ProviderModelCache:
+        selected_provider = provider
+        selected_model = model.strip()
+        if model_key:
+            parsed = self._parse_model_key(model_key.strip())
+            if parsed is None:
+                raise ValueError(f"Invalid model key: {model_key}")
+            selected_provider, selected_model = parsed
+
+        if selected_provider:
+            for row in models:
+                if row.provider == selected_provider and row.label == selected_model:
+                    return row
+            raise ValueError(
+                f"Model is not available for provider {selected_provider}: {selected_model}"
+            )
+
+        candidates = [row for row in models if row.label == selected_model]
+        if not candidates:
+            raise ValueError(f"Model is not available: {selected_model}")
+        if len(candidates) == 1:
+            return candidates[0]
+
+        active_provider = settings_row.active_model_provider
+        if active_provider:
+            for row in candidates:
+                if row.provider == active_provider:
+                    return row
+
+        for preferred_provider in ("openrouter", "groq", "openai-sub"):
+            for row in candidates:
+                if row.provider == preferred_provider:
+                    return row
+
+        return sorted(candidates, key=lambda row: (row.provider, row.id))[0]
+
+    def set_model(
+        self, model: str, provider: str | None = None, model_key: str | None = None
+    ) -> SetModelResponse:
         settings_row = self.repo.get_settings()
         if settings_row is None:
             raise ValueError("Settings record missing")
 
-        available = self._available_models()
-        if model not in set(available):
-            raise ValueError(f"Model is not available: {model}")
+        models = self.repo.list_models()
+        if not models:
+            raise ValueError("No models are available")
+
+        target = self._resolve_model_selection(
+            model=model,
+            provider=provider,
+            model_key=model_key,
+            models=models,
+            settings_row=settings_row,
+        )
 
         previous_model = settings_row.active_model
         # Look up the new model's context_limit and update the settings row
-        new_context_limit = self._lookup_context_limit(model)
-        self.repo.set_active_model(model, updated_at=self._now())
+        new_context_limit = self._lookup_context_limit(target.label, provider=target.provider)
+        self.repo.set_active_model(
+            target.label, updated_at=self._now(), provider=target.provider
+        )
         self.repo.set_context_limit(new_context_limit)
         self.repo.commit()
         return SetModelResponse(
-            model=model, previousModel=previous_model, contextLimit=new_context_limit
+            model=target.label, previousModel=previous_model, contextLimit=new_context_limit
         )
 
     def get_auto_approve_rules(self) -> GetAutoApproveResponse:

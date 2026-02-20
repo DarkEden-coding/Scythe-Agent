@@ -87,6 +87,8 @@ export interface GetAutoApproveResponse {
 // 4. Change model
 export interface ChangeModelRequest {
   model: string;
+  provider?: string;
+  modelKey?: string;
 }
 
 export interface ChangeModelResponse {
@@ -364,9 +366,12 @@ export interface ModelMetadata {
 
 export interface GetSettingsResponse {
   model: string;
+  modelProvider?: string | null;
+  modelKey?: string | null;
   availableModels: string[];
   modelsByProvider: Record<string, string[]>;
   modelMetadata: Record<string, ModelMetadata>;
+  modelMetadataByKey: Record<string, ModelMetadata>;
   contextLimit: number;
   autoApproveRules: AutoApproveRule[];
   systemPrompt: string;
@@ -446,6 +451,26 @@ export interface SetMemorySettingsRequest {
   observerThreshold?: number;
   reflectorThreshold?: number;
   showObservationsInChat?: boolean;
+}
+
+export interface ChatObservationSnapshot {
+  id: string;
+  generation: number;
+  tokenCount: number;
+  observedUpToMessageId?: string | null;
+  currentTask?: string | null;
+  suggestedResponse?: string | null;
+  content: string;
+  timestamp: string;
+}
+
+export interface ChatMemoryStateResponse {
+  hasMemoryState: boolean;
+  strategy?: string;
+  stateJson?: string;
+  state?: Record<string, unknown>;
+  observations?: ChatObservationSnapshot[];
+  updatedAt?: string;
 }
 
 /* ── MCP configuration ────────────────────────────────────────── */

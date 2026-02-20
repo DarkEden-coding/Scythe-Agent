@@ -94,10 +94,6 @@ export function App() {
         projectsApi.refresh();
         return;
       }
-      if (event.type === 'approval_required') {
-        // Agent is waiting for user input; stop "thinking" state until user approves/rejects.
-        removeProcessing(event.chatId);
-      }
       if (event.type === 'agent_done') {
         removeProcessing(event.chatId);
       }
@@ -411,8 +407,10 @@ export function App() {
         visible={showModelPicker}
         onClose={() => setShowModelPicker(false)}
         currentModel={settings.currentModel}
+        currentModelProvider={settings.currentModelProvider}
+        currentModelKey={settings.currentModelKey}
         modelsByProvider={settings.modelsByProvider}
-        modelMetadata={settings.modelMetadata}
+        modelMetadataByKey={settings.modelMetadataByKey}
         loading={settings.loading}
         changeModel={settings.changeModel}
       />
@@ -420,6 +418,7 @@ export function App() {
         visible={settingsTab != null}
         onClose={() => setSettingsTab(null)}
         initialTab={settingsTab}
+        activeChatId={activeChatId}
       />
     </div>
   );

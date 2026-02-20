@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime, timezone
 
@@ -160,6 +161,21 @@ class ObservationMemoryService:
             timestamp=utc_now_iso(),
         )
         self._chat_repo.commit()
+        self._chat_repo.set_memory_state(
+            chat_id=chat_id,
+            strategy="observational",
+            state_json=json.dumps(
+                {
+                    "generation": generation,
+                    "tokenCount": token_count,
+                    "observedUpToMessageId": last_msg_id,
+                    "currentTask": current_task,
+                    "suggestedResponse": suggested_response,
+                }
+            ),
+            updated_at=utc_now_iso(),
+        )
+        self._chat_repo.commit()
         logger.info(
             "Observer created observation for chat=%s gen=%d tokens=%d",
             chat_id,
@@ -225,6 +241,21 @@ class ObservationMemoryService:
         )
         # Delete superseded observations
         self._chat_repo.delete_observations_before_generation(chat_id, new_generation)
+        self._chat_repo.commit()
+        self._chat_repo.set_memory_state(
+            chat_id=chat_id,
+            strategy="observational",
+            state_json=json.dumps(
+                {
+                    "generation": new_generation,
+                    "tokenCount": token_count,
+                    "observedUpToMessageId": latest_obs.observed_up_to_message_id,
+                    "currentTask": current_task,
+                    "suggestedResponse": suggested_response,
+                }
+            ),
+            updated_at=utc_now_iso(),
+        )
         self._chat_repo.commit()
 
         logger.info(

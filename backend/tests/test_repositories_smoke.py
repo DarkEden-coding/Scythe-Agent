@@ -65,6 +65,5 @@ def test_api_key_resolver_resolve_or_raise_when_no_key(monkeypatch: pytest.Monke
         repo = SettingsRepository(db)
         with patch.object(repo, "get_openrouter_api_key", return_value=None):
             resolver = APIKeyResolver(repo)
-            with pytest.raises(ValueError, match="No OpenRouter API key"):
+            with pytest.raises(ValueError, match="No openrouter API key"):
                 resolver.resolve_or_raise()
-

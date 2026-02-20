@@ -83,7 +83,9 @@ def set_system_prompt(request: SetSystemPromptRequest, db: Session = Depends(get
 @router.put("/model")
 def set_model(request: SetModelRequest, db: Session = Depends(get_db)):
     try:
-        data = SettingsService(db).set_model(request.model)
+        data = SettingsService(db).set_model(
+            request.model, provider=request.provider, model_key=request.modelKey
+        )
         return ok(data.model_dump())
     except ValueError as exc:
         return JSONResponse(status_code=400, content=err(str(exc)).model_dump())

@@ -1,8 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Check, Loader2, Brain, Database } from 'lucide-react';
+import { Check, Loader2, Brain, Database, RefreshCw } from 'lucide-react';
 import { api } from '@/api/client';
 import { cn } from '@/utils/cn';
-import type { MemorySettings } from '@/api/types';
+import type {
+  ChatMemoryStateResponse,
+  MemorySettings,
+} from '@/api/types';
 
 const DEFAULT_SETTINGS: MemorySettings = {
   memory_mode: 'observational',
@@ -13,13 +16,20 @@ const DEFAULT_SETTINGS: MemorySettings = {
   show_observations_in_chat: false,
 };
 
-export function MemorySettingsPanel() {
+interface MemorySettingsPanelProps {
+  readonly activeChatId?: string | null;
+}
+
+export function MemorySettingsPanel({ activeChatId = null }: MemorySettingsPanelProps) {
   const [settings, setSettings] = useState<MemorySettings>(DEFAULT_SETTINGS);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [original, setOriginal] = useState<MemorySettings>(DEFAULT_SETTINGS);
+  const [chatMemory, setChatMemory] = useState<ChatMemoryStateResponse | null>(null);
+  const [chatMemoryLoading, setChatMemoryLoading] = useState(false);
+  const [chatMemoryError, setChatMemoryError] = useState<string | null>(null);
 
   const fetchSettings = useCallback(async () => {
     setLoading(true);
@@ -35,6 +45,28 @@ export function MemorySettingsPanel() {
     fetchSettings();
   }, [fetchSettings]);
 
+  const fetchChatMemory = useCallback(async () => {
+    if (!activeChatId) {
+      setChatMemory(null);
+      setChatMemoryError(null);
+      return;
+    }
+    setChatMemoryLoading(true);
+    setChatMemoryError(null);
+    const res = await api.getMemoryState(activeChatId);
+    if (res.ok) {
+      setChatMemory(res.data);
+    } else {
+      setChatMemory(null);
+      setChatMemoryError(res.error ?? 'Failed to load chat memory state');
+    }
+    setChatMemoryLoading(false);
+  }, [activeChatId]);
+
+  useEffect(() => {
+    fetchChatMemory();
+  }, [fetchChatMemory]);
+
   const hasChanges =
     settings.memory_mode !== original.memory_mode ||
     (settings.observer_model ?? '') !== (original.observer_model ?? '') ||
@@ -42,6 +74,11 @@ export function MemorySettingsPanel() {
     settings.observer_threshold !== original.observer_threshold ||
     settings.reflector_threshold !== original.reflector_threshold ||
     settings.show_observations_in_chat !== original.show_observations_in_chat;
+
+  const observationRows = chatMemory?.observations ?? [];
+  const parsedState = chatMemory?.state
+    ? JSON.stringify(chatMemory.state, null, 2)
+    : chatMemory?.stateJson ?? '{}';
 
   const handleSave = async () => {
     setSaveError(null);
@@ -82,6 +119,109 @@ export function MemorySettingsPanel() {
           uses background AI agents to maintain a dense summary, enabling much longer
           conversations without losing context.
         </p>
+
+        <div className="border border-gray-700/40 rounded-xl p-4 bg-gray-900/30 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium text-gray-200">Current Chat Memory Snapshot</p>
+              <p className="text-xs text-gray-500">
+                {activeChatId ? `Chat: ${activeChatId}` : 'No chat selected'}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={fetchChatMemory}
+              disabled={!activeChatId || chatMemoryLoading}
+              className={cn(
+                'inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border',
+                'bg-gray-800/60 border-gray-600/50 text-gray-200 hover:bg-gray-700/60',
+                'disabled:opacity-50 disabled:cursor-not-allowed',
+              )}
+            >
+              {chatMemoryLoading ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <RefreshCw className="w-3.5 h-3.5" />
+              )}
+              Refresh
+            </button>
+          </div>
+
+          {!activeChatId && (
+            <p className="text-xs text-gray-500">
+              Open a chat first to inspect its live memory state and observations.
+            </p>
+          )}
+
+          {chatMemoryError && (
+            <p className="text-xs text-red-300">{chatMemoryError}</p>
+          )}
+
+          {activeChatId && !chatMemoryLoading && !chatMemoryError && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
+                <div className="rounded-lg border border-gray-700/50 bg-gray-900/40 px-3 py-2">
+                  <p className="text-gray-500">Strategy</p>
+                  <p className="text-gray-200 mt-0.5">{chatMemory?.strategy ?? 'none'}</p>
+                </div>
+                <div className="rounded-lg border border-gray-700/50 bg-gray-900/40 px-3 py-2">
+                  <p className="text-gray-500">Memory State</p>
+                  <p className="text-gray-200 mt-0.5">{chatMemory?.hasMemoryState ? 'present' : 'empty'}</p>
+                </div>
+                <div className="rounded-lg border border-gray-700/50 bg-gray-900/40 px-3 py-2">
+                  <p className="text-gray-500">Observations</p>
+                  <p className="text-gray-200 mt-0.5">{observationRows.length}</p>
+                </div>
+              </div>
+
+              {chatMemory?.updatedAt && (
+                <p className="text-xs text-gray-500">
+                  Updated: {new Date(chatMemory.updatedAt).toLocaleString()}
+                </p>
+              )}
+
+              <div>
+                <p className="text-xs font-medium text-gray-400 mb-1">Memory State JSON</p>
+                <pre className="max-h-56 overflow-auto rounded-lg border border-gray-700/50 bg-black/30 p-3 text-[11px] text-gray-300 whitespace-pre-wrap break-words">
+                  {parsedState}
+                </pre>
+              </div>
+
+              <div>
+                <p className="text-xs font-medium text-gray-400 mb-1">Observations</p>
+                {observationRows.length === 0 ? (
+                  <p className="text-xs text-gray-500">No observations stored for this chat yet.</p>
+                ) : (
+                  <div className="space-y-2 max-h-80 overflow-auto pr-1">
+                    {observationRows.map((obs) => (
+                      <div key={obs.id} className="rounded-lg border border-violet-500/20 bg-violet-500/5 p-3">
+                        <div className="flex items-center justify-between gap-2 text-xs">
+                          <span className="text-violet-300">
+                            Gen {obs.generation} • {obs.tokenCount.toLocaleString()} tokens
+                          </span>
+                          <span className="text-gray-500">{new Date(obs.timestamp).toLocaleString()}</span>
+                        </div>
+                        {obs.currentTask && (
+                          <p className="text-xs text-gray-300 mt-2">
+                            <span className="text-gray-500">Task:</span> {obs.currentTask}
+                          </p>
+                        )}
+                        {obs.suggestedResponse && (
+                          <p className="text-xs text-gray-300 mt-1">
+                            <span className="text-gray-500">Hint:</span> {obs.suggestedResponse}
+                          </p>
+                        )}
+                        <pre className="mt-2 text-[11px] text-gray-300 whitespace-pre-wrap break-words max-h-48 overflow-auto">
+                          {obs.content}
+                        </pre>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Memory Mode */}
         <div className="space-y-3">

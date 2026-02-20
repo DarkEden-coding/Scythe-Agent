@@ -1,8 +1,11 @@
 import asyncio
 import time
 
+from app.db.repositories.chat_repo import ChatRepository
+from app.db.session import get_sessionmaker
 from app.utils.mappers import map_file_action_for_ui, map_role_for_ui
 from app.services.event_bus import get_event_bus
+from app.utils.time import utc_now_iso
 
 
 def _assert_envelope(payload: dict) -> None:
@@ -62,9 +65,20 @@ def test_frontend_contract_action_envelopes_and_shapes(client) -> None:
     assert isinstance(history_data["toolCalls"], list)
     assert isinstance(history_data["fileEdits"], list)
 
-    pending = [t for t in history_data["toolCalls"] if t["status"] == "pending"]
-    assert pending
-    tool_call_id = pending[-1]["id"]
+    tool_call_id = "tc-contract-approve"
+    with get_sessionmaker()() as db:
+        repo = ChatRepository(db)
+        repo.create_tool_call(
+            tool_call_id=tool_call_id,
+            chat_id="chat-1",
+            checkpoint_id="cp-1",
+            name="read_file",
+            status="pending",
+            input_json='{"path": "/Users/darkeden/Scythe-Agent/backend/pyproject.toml"}',
+            timestamp=utc_now_iso(),
+            parallel_group=None,
+        )
+        db.commit()
 
     approve = client.post("/api/chat/chat-1/approve", json={"toolCallId": tool_call_id})
     assert approve.status_code == 200
@@ -77,12 +91,20 @@ def test_frontend_contract_action_envelopes_and_shapes(client) -> None:
     assert approve_data["toolCall"]["status"] in {"completed", "error"}
     assert isinstance(approve_data["fileEdits"], list)
 
-    send2 = client.post("/api/chat/chat-1/messages", json={"content": "phase8 reject contract"})
-    assert send2.status_code == 200
-    history2 = client.get("/api/chat/chat-1/history").json()["data"]
-    pending2 = [t for t in history2["toolCalls"] if t["status"] == "pending"]
-    assert pending2
-    reject_id = pending2[-1]["id"]
+    reject_id = "tc-contract-reject"
+    with get_sessionmaker()() as db:
+        repo = ChatRepository(db)
+        repo.create_tool_call(
+            tool_call_id=reject_id,
+            chat_id="chat-1",
+            checkpoint_id="cp-1",
+            name="read_file",
+            status="pending",
+            input_json='{"path": "/Users/darkeden/Scythe-Agent/backend/pyproject.toml"}',
+            timestamp=utc_now_iso(),
+            parallel_group=None,
+        )
+        db.commit()
 
     reject = client.post("/api/chat/chat-1/reject", json={"toolCallId": reject_id, "reason": "phase8"})
     assert reject.status_code == 200
@@ -92,7 +114,7 @@ def test_frontend_contract_action_envelopes_and_shapes(client) -> None:
     assert reject_data == {"toolCallId": reject_id, "status": "rejected"}
 
 
-def test_sse_ordering_sequence_and_disconnect_cleanup_strict() -> None:
+def test_sse_ordering_sequence_and_disconnect_cleanup_strict(client) -> None:
     event_bus = get_event_bus()
 
     async def _assert_ordering_and_cleanup() -> tuple[dict, dict, int, int]:

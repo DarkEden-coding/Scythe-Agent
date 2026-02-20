@@ -92,6 +92,12 @@ class OpenRouterModelCatalogService:
         settings = self.repo.get_settings()
         if settings is None:
             return
+        # Do not overwrite active selections from other providers.
+        if (
+            settings.active_model_provider
+            and settings.active_model_provider != "openrouter"
+        ):
+            return
         available = set(self._available_model_labels())
         fallback_model = self.app_settings.default_active_model
         target_model = settings.active_model
@@ -100,8 +106,13 @@ class OpenRouterModelCatalogService:
                 target_model = fallback_model
             else:
                 target_model = sorted(available)[0] if available else fallback_model
-        if target_model != settings.active_model:
-            self.repo.set_active_model(target_model, updated_at=self._now())
+        if (
+            target_model != settings.active_model
+            or settings.active_model_provider != "openrouter"
+        ):
+            self.repo.set_active_model(
+                target_model, updated_at=self._now(), provider="openrouter"
+            )
             self.repo.commit()
 
     async def sync_models_on_startup(self, *, force_refresh: bool = False) -> list[str]:
@@ -131,4 +142,3 @@ class OpenRouterModelCatalogService:
 
         self.ensure_active_model_valid()
         return self._available_model_labels()
-

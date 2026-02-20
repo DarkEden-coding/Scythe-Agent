@@ -9,6 +9,7 @@ class Settings(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     active_model: Mapped[str] = mapped_column(Text, nullable=False)
+    active_model_provider: Mapped[str | None] = mapped_column(Text, nullable=True)
     context_limit: Mapped[int] = mapped_column(Integer, nullable=False)
     updated_at: Mapped[str] = mapped_column(Text, nullable=False)
     openrouter_api_key: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -24,4 +25,3 @@ class Settings(Base):
     observer_threshold: Mapped[int | None] = mapped_column(Integer, nullable=True, default=30000)
     reflector_threshold: Mapped[int | None] = mapped_column(Integer, nullable=True, default=40000)
     show_observations_in_chat: Mapped[int | None] = mapped_column(Integer, nullable=True, default=0)
-

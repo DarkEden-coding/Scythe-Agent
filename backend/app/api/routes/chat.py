@@ -13,7 +13,7 @@ from app.schemas.chat import (
     SendMessageRequest,
 )
 from app.services.approval_service import ApprovalService
-from app.services.approval_waiter import signal_approved, signal_rejected
+from app.services.approval_waiter import get_approval_waiter
 from app.services.chat_service import ChatService
 from app.middleware.error_handler import full_error_message
 from app.services.revert_service import RevertService
@@ -102,7 +102,7 @@ async def approve(
         tool_call, file_edits = await ApprovalService(db).approve(
             chat_id=chat_id, tool_call_id=request.toolCallId
         )
-        signal_approved(chat_id, request.toolCallId)
+        get_approval_waiter().signal_approved(chat_id, request.toolCallId)
         return ok(
             {
                 "toolCall": tool_call.model_dump(),
@@ -125,7 +125,7 @@ async def reject(
             tool_call_id=request.toolCallId,
             reason=request.reason,
         )
-        signal_rejected(chat_id, request.toolCallId)
+        get_approval_waiter().signal_rejected(chat_id, request.toolCallId)
         return ok({"toolCallId": tool_call.id, "status": "rejected"})
     except ValueError as exc:
         return JSONResponse(status_code=400, content=err(str(exc)).model_dump())

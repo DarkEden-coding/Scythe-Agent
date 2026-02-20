@@ -6,6 +6,8 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Any
 
+from app.core.container import get_container
+
 logger = logging.getLogger(__name__)
 
 
@@ -64,11 +66,8 @@ class EventBus:
             return len(self._subs.get(chat_id, set()))
 
 
-_event_bus: EventBus | None = None
-
-
 def get_event_bus() -> EventBus:
-    global _event_bus
-    if _event_bus is None:
-        _event_bus = EventBus()
-    return _event_bus
+    container = get_container()
+    if container is None:
+        raise RuntimeError("AppContainer is not initialized")
+    return container.event_bus

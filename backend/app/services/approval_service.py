@@ -9,13 +9,13 @@ from app.db.repositories.chat_repo import ChatRepository
 from app.db.repositories.project_repo import ProjectRepository
 from app.db.repositories.settings_repo import SettingsRepository
 from app.schemas.chat import FileEditOut, TodoOut, ToolCallOut
+from app.capabilities.artifacts.store import ArtifactStore
 from app.utils.mappers import map_file_action_for_ui
 from app.utils.time import utc_now_iso
 from app.tools.path_utils import get_tool_outputs_root
 from app.utils.auto_approve import matches_auto_approve_rules
 from app.utils.json_helpers import safe_parse_json
 from app.services.event_bus import EventBus, get_event_bus
-from app.services.output_spillover import maybe_spill
 from app.tools.registry import ToolRegistry, get_tool_registry
 from app.utils.ids import generate_id
 
@@ -33,10 +33,14 @@ class ApprovalService:
         self.settings_repo = SettingsRepository(db)
         self.event_bus = event_bus or get_event_bus()
         self.registry = tool_registry or get_tool_registry()
+        self.artifact_store = ArtifactStore()
 
     def should_auto_approve(self, tool_name: str, input_payload: dict) -> bool:
-        if tool_name == "update_todo_list":
+        entry = next((e for e in self.registry.list_entries() if e.name == tool_name), None)
+        if entry and entry.approval_policy == "always":
             return True
+        if entry and entry.approval_policy == "manual":
+            return False
         if tool_name == "read_file":
             path_val = str(input_payload.get("path", ""))
             if path_val:
@@ -93,13 +97,33 @@ class ApprovalService:
             result = await tool.run(payload, **run_kwargs)
 
             output_to_store = result.output
-            output_file_path = None
+            created_artifacts: list[dict] = []
             if chat:
-                preview, spill_path, _ = maybe_spill(
-                    result.output, chat.project_id
+                preview, artifacts = self.artifact_store.materialize_tool_output(
+                    result.output,
+                    project_id=chat.project_id,
                 )
                 output_to_store = preview
-                output_file_path = spill_path
+                for artifact in artifacts:
+                    self.chat_repo.create_tool_artifact(
+                        artifact_id=generate_id("ta"),
+                        tool_call_id=tool_call.id,
+                        chat_id=chat_id,
+                        project_id=chat.project_id,
+                        artifact_type=artifact.artifact_type,
+                        file_path=artifact.file_path,
+                        line_count=artifact.line_count,
+                        preview_lines=artifact.preview_lines,
+                        created_at=utc_now_iso(),
+                    )
+                    created_artifacts.append(
+                        {
+                            "type": artifact.artifact_type,
+                            "path": artifact.file_path,
+                            "lineCount": artifact.line_count,
+                            "previewLines": artifact.preview_lines,
+                        }
+                    )
 
             for idx, edit in enumerate(result.file_edits):
                 edit_ts = utc_now_iso()
@@ -148,7 +172,6 @@ class ApprovalService:
                 status="error" if not result.ok else "completed",
                 output_text=output_to_store,
                 duration_ms=duration_ms,
-                output_file_path=output_file_path,
             )
             self.chat_repo.commit()
 
@@ -230,12 +253,15 @@ class ApprovalService:
         return tool_out
 
     def _tool_call_out(self, tool_call) -> ToolCallOut:
-        spill_instruction = None
-        if tool_call.output_file_path:
-            spill_instruction = (
-                f"The preceding tool output was truncated. "
-                f"Full output saved to: {tool_call.output_file_path}. "
-                f"Use grep to locate relevant sections, then read_file with start/end (1-based) to read them."
+        artifacts = []
+        for artifact in self.chat_repo.list_tool_artifacts_for_tool_call(tool_call.id):
+            artifacts.append(
+                {
+                    "type": artifact.artifact_type,
+                    "path": artifact.file_path,
+                    "lineCount": artifact.line_count,
+                    "previewLines": artifact.preview_lines,
+                }
             )
         return ToolCallOut(
             id=tool_call.id,
@@ -249,5 +275,5 @@ class ApprovalService:
             if tool_call.parallel is not None
             else None,
             parallelGroupId=tool_call.parallel_group,
-            spillInstruction=spill_instruction,
+            artifacts=artifacts,
         )

@@ -5,6 +5,7 @@ from app.utils.time import utc_now_iso
 
 from sqlalchemy.orm import Session
 
+from app.capabilities.artifacts.store import ArtifactStore
 from app.db.models.chat import Chat
 from app.db.models.project import Project
 from app.db.repositories.project_repo import ProjectRepository
@@ -24,6 +25,7 @@ from app.schemas.projects import (
 class ProjectService:
     def __init__(self, db: Session):
         self.repo = ProjectRepository(db)
+        self._artifact_store = ArtifactStore()
 
     @staticmethod
     def _now() -> str:
@@ -102,8 +104,15 @@ class ProjectService:
         project = self.repo.get_project(project_id)
         if project is None:
             raise ValueError(f"Project not found: {project_id}")
+        from app.db.repositories.chat_repo import ChatRepository
+
+        chat_repo = ChatRepository(self.repo.db)
+        for chat in self.repo.list_chats_for_project(project_id):
+            for artifact in chat_repo.list_tool_artifacts_for_chat(chat.id):
+                self._artifact_store.delete_path(artifact.file_path)
         self.repo.delete_project(project)
         self.repo.commit()
+        self._artifact_store.cleanup_project(project_id)
         return DeleteProjectResponse(deletedProjectId=project_id)
 
     def reorder_projects(self, project_ids: list[str]) -> GetProjectsResponse:
@@ -155,6 +164,11 @@ class ProjectService:
         if chat is None:
             raise ValueError(f"Chat not found: {chat_id}")
         project_id = chat.project_id
+        from app.db.repositories.chat_repo import ChatRepository
+
+        chat_repo = ChatRepository(self.repo.db)
+        for artifact in chat_repo.list_tool_artifacts_for_chat(chat_id):
+            self._artifact_store.delete_path(artifact.file_path)
         self.repo.delete_chat(chat)
         self.repo.commit()
 

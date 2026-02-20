@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 from app.schemas.chat import ToolCallOut
 from app.services.approval_service import ApprovalService
-from app.services.approval_waiter import register_and_wait
+from app.services.approval_waiter import get_approval_waiter
 from app.utils.ids import generate_id
 from app.utils.json_helpers import safe_parse_json
 from app.utils.time import utc_now_iso
@@ -70,15 +70,9 @@ class ToolExecutor:
                 out.append(r)
         return out
 
-    def _tool_result_messages(
-        self, tc_id: str, output: str, spill_instruction: str | None
-    ) -> dict | list[dict]:
-        """Build tool result message(s); adds separate user msg when spill instruction present."""
-        tool_msg = {"role": "tool", "tool_call_id": tc_id, "content": output}
-        if spill_instruction:
-            user_msg = {"role": "user", "content": spill_instruction}
-            return [tool_msg, user_msg]
-        return tool_msg
+    def _tool_result_messages(self, tc_id: str, output: str) -> dict:
+        """Build tool result message for continuation context."""
+        return {"role": "tool", "tool_call_id": tc_id, "content": output}
 
     def _create_tool_call_row(
         self,
@@ -174,9 +168,7 @@ class ToolExecutor:
                 tool_out, _ = await approval_svc.approve(
                     chat_id=chat_id, tool_call_id=tc_db_id
                 )
-                return self._tool_result_messages(
-                    tc_id, tool_out.output or "", tool_out.spillInstruction
-                )
+                return self._tool_result_messages(tc_id, tool_out.output or "")
             except Exception as exc:
                 return await self._handle_approve_error(
                     exc, tc_db_id, tc_name, tc_input, tc_id, chat_id, parallel_group
@@ -196,9 +188,7 @@ class ToolExecutor:
             tool_out, _ = await self._approval_svc.approve(
                 chat_id=chat_id, tool_call_id=tc_db_id
             )
-            return self._tool_result_messages(
-                tc_id, tool_out.output or "", tool_out.spillInstruction
-            )
+            return self._tool_result_messages(tc_id, tool_out.output or "")
         except Exception as exc:
             return await self._handle_approve_error(
                 exc, tc_db_id, tc_name, tc_input, tc_id, chat_id, None
@@ -243,7 +233,7 @@ class ToolExecutor:
             duration=duration_ms,
             isParallel=bool(parallel_group) if parallel_group else None,
             parallelGroupId=parallel_group,
-            spillInstruction=None,
+            artifacts=[],
         )
         await self._event_bus.publish(
             chat_id,
@@ -281,7 +271,7 @@ class ToolExecutor:
         await self._event_bus.publish(
             chat_id, {"type": "approval_required", "payload": payload}
         )
-        result = await register_and_wait(chat_id, tc_db_id)
+        result = await get_approval_waiter().register_and_wait(chat_id, tc_db_id)
         # The approve endpoint runs in a separate DB session, so the
         # identity-map cached object is stale.  Expire it first so
         # get_tool_call hits the database for fresh data.
@@ -297,11 +287,4 @@ class ToolExecutor:
             output = f"Rejected or timed out: {result}"
             if tc_row and tc_row.status == "rejected" and tc_row.output_text:
                 output = tc_row.output_text
-        spill = None
-        if tc_row and tc_row.output_file_path:
-            spill = (
-                f"The preceding tool output was truncated. "
-                f"Full output saved to: {tc_row.output_file_path}. "
-                f"Use grep to locate relevant sections, then read_file with start/end (1-based) to read them."
-            )
-        return self._tool_result_messages(tc_id, output, spill)
+        return self._tool_result_messages(tc_id, output)

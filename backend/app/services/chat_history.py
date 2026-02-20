@@ -55,12 +55,15 @@ class ChatHistoryAssembler:
 
         tool_calls = []
         for t in raw_tool_calls:
-            spill = None
-            if t.output_file_path:
-                spill = (
-                    f"The preceding tool output was truncated. "
-                    f"Full output saved to: {t.output_file_path}. "
-                    f"Use grep to locate relevant sections, then read_file with start/end (1-based) to read them."
+            artifacts = []
+            for artifact in self._chat_repo.list_tool_artifacts_for_tool_call(t.id):
+                artifacts.append(
+                    {
+                        "type": artifact.artifact_type,
+                        "path": artifact.file_path,
+                        "lineCount": artifact.line_count,
+                        "previewLines": artifact.preview_lines,
+                    }
                 )
             tool_calls.append(
                 ToolCallOut(
@@ -73,7 +76,7 @@ class ChatHistoryAssembler:
                     duration=t.duration_ms,
                     isParallel=bool(t.parallel) if t.parallel is not None else None,
                     parallelGroupId=t.parallel_group,
-                    spillInstruction=spill,
+                    artifacts=artifacts,
                 )
             )
 
@@ -147,6 +150,7 @@ class ChatHistoryAssembler:
             chat_repo=self._chat_repo,
             project_repo=self._project_repo,
             token_counter=token_counter,
+            context_limit=settings.contextLimit,
         )
 
         return GetChatHistoryResponse(

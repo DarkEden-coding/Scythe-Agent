@@ -28,11 +28,14 @@ class SettingsRepository(BaseRepository):
             self.db.add(model)
         return models
 
-    def set_active_model(self, model: str, updated_at: str) -> Settings:
+    def set_active_model(
+        self, model: str, updated_at: str, provider: str | None = None
+    ) -> Settings:
         settings = self.get_settings()
         if settings is None:
             raise ValueError("Settings record missing")
         settings.active_model = model
+        settings.active_model_provider = provider
         settings.updated_at = updated_at
         return settings
 

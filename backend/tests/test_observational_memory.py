@@ -33,10 +33,16 @@ def test_observation_skip_emits_terminal_status(monkeypatch) -> None:
             pass
 
         def list_messages(self, _chat_id: str):
-            return [SimpleNamespace(role="user", content="hello", id="msg-1")]
+            return [SimpleNamespace(role="user", content="hello", id="msg-1", timestamp="2026-02-20T00:00:00+00:00")]
 
         def get_latest_observation(self, _chat_id: str):
             return None
+
+        def list_tool_calls(self, _chat_id: str):
+            return []
+
+        def list_reasoning_blocks(self, _chat_id: str):
+            return []
 
     class FakeSvc:
         def __init__(self, _repo) -> None:
@@ -82,10 +88,16 @@ def test_reflector_none_still_emits_reflected(monkeypatch) -> None:
             pass
 
         def list_messages(self, _chat_id: str):
-            return [SimpleNamespace(role="user", content="hello", id="msg-1")]
+            return [SimpleNamespace(role="user", content="hello", id="msg-1", timestamp="2026-02-20T00:00:00+00:00")]
 
         def get_latest_observation(self, _chat_id: str):
             return None
+
+        def list_tool_calls(self, _chat_id: str):
+            return []
+
+        def list_reasoning_blocks(self, _chat_id: str):
+            return []
 
     class FakeSvc:
         def __init__(self, _repo) -> None:
@@ -128,9 +140,82 @@ def test_reflector_none_still_emits_reflected(monkeypatch) -> None:
     assert statuses == ["observing", "observed", "reflecting", "reflected"]
 
 
+def test_tool_activity_can_trigger_observer(monkeypatch) -> None:
+    called = {"observer": 0}
+
+    class FakeRepo:
+        def __init__(self, _session) -> None:
+            pass
+
+        def list_messages(self, _chat_id: str):
+            return [SimpleNamespace(role="user", content="hi", id="msg-1", timestamp="2026-02-20T00:00:00+00:00")]
+
+        def get_latest_observation(self, _chat_id: str):
+            return None
+
+        def list_tool_calls(self, _chat_id: str):
+            return [
+                SimpleNamespace(
+                    name="read_file",
+                    input_json='{"path":"README.md"}',
+                    output_text="x" * 600,
+                    timestamp="2026-02-20T00:01:00+00:00",
+                )
+            ]
+
+        def list_reasoning_blocks(self, _chat_id: str):
+            return []
+
+    class FakeSvc:
+        def __init__(self, _repo) -> None:
+            pass
+
+        def get_unobserved_messages(self, _messages, _latest_obs):
+            return [], list(_messages)
+
+        async def run_observer(self, **_kwargs):
+            called["observer"] += 1
+            return None
+
+    import app.db.repositories.chat_repo as chat_repo_module
+    import app.services.memory.observational.background as bg_module
+
+    monkeypatch.setattr(chat_repo_module, "ChatRepository", FakeRepo)
+    monkeypatch.setattr(bg_module, "ObservationMemoryService", FakeSvc)
+    monkeypatch.setattr(
+        bg_module,
+        "count_messages_tokens",
+        lambda messages: 20 if any(m.get("role") == "tool" for m in messages) else 1,
+    )
+
+    runner = OMBackgroundRunner()
+    bus = _EventCollector()
+
+    asyncio.run(
+        runner._run_observation_cycle(
+            chat_id="chat-1",
+            model="model",
+            observer_model=None,
+            reflector_model=None,
+            observer_threshold=10,
+            reflector_threshold=40,
+            client=object(),
+            session_factory=_session_factory,
+            event_bus=bus,
+        )
+    )
+
+    statuses = [e["payload"]["status"] for e in bus.events if e.get("type") == "observation_status"]
+    assert statuses == ["observing", "observed"]
+    assert called["observer"] == 1
+
+
 def test_cancel_route_cancels_observation_runner(client, monkeypatch) -> None:
     calls: list[str] = []
-    monkeypatch.setattr("app.services.chat_service.om_runner.cancel", lambda chat_id: calls.append(chat_id))
+    monkeypatch.setattr(
+        "app.services.chat_service.get_om_background_runner",
+        lambda: SimpleNamespace(cancel=lambda chat_id: calls.append(chat_id)),
+    )
 
     response = client.post("/api/chat/chat-1/cancel")
     assert response.status_code == 200
@@ -139,7 +224,10 @@ def test_cancel_route_cancels_observation_runner(client, monkeypatch) -> None:
 
 def test_revert_route_cancels_observation_runner(client, monkeypatch) -> None:
     calls: list[str] = []
-    monkeypatch.setattr("app.services.revert_service.om_runner.cancel", lambda chat_id: calls.append(chat_id))
+    monkeypatch.setattr(
+        "app.services.revert_service.get_om_background_runner",
+        lambda: SimpleNamespace(cancel=lambda chat_id: calls.append(chat_id)),
+    )
 
     response = client.post("/api/chat/chat-1/revert/cp-1")
     assert response.status_code == 200
@@ -151,8 +239,8 @@ def test_edit_message_cancels_observation_runner(client, monkeypatch) -> None:
 
     monkeypatch.setattr("app.services.chat_service._schedule_background_task", lambda **_kwargs: None)
     monkeypatch.setattr(
-        "app.services.memory.observational.background.om_runner.cancel",
-        lambda chat_id: calls.append(chat_id),
+        "app.services.chat_service.get_om_background_runner",
+        lambda: SimpleNamespace(cancel=lambda chat_id: calls.append(chat_id)),
     )
 
     seed = client.post(

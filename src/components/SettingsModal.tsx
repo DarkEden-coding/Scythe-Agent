@@ -21,12 +21,14 @@ interface SettingsModalProps {
   readonly onClose: () => void;
   /** Initial tab when opening. Defaults to first provider or agent. */
   readonly initialTab?: SettingsTabId | null;
+  readonly activeChatId?: string | null;
 }
 
 export function SettingsModal({
   visible,
   onClose,
   initialTab = 'openrouter',
+  activeChatId = null,
 }: SettingsModalProps) {
   const [activeTab, setActiveTab] = useState<SettingsTabId>(initialTab ?? 'openrouter');
   const [providersExpanded, setProvidersExpanded] = useState(true);
@@ -103,7 +105,7 @@ export function SettingsModal({
       return <AgentSettingsPanel />;
     }
     if (activeTab === 'memory') {
-      return <MemorySettingsPanel />;
+      return <MemorySettingsPanel activeChatId={activeChatId} />;
     }
     return null;
   };

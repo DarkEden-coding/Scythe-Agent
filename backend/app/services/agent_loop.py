@@ -6,19 +6,11 @@ import logging
 
 import httpx
 
-from app.preprocessors.auto_compaction import AutoCompactionPreprocessor
-from app.preprocessors.base import PreprocessorContext
-from app.preprocessors.observational_memory import ObservationalMemoryPreprocessor
-from app.preprocessors.pipeline import PreprocessorPipeline
-from app.preprocessors.project_context import ProjectContextPreprocessor
-from app.preprocessors.system_prompt import SystemPromptPreprocessor
-from app.preprocessors.todo_injector import TodoInjectorPreprocessor
-from app.preprocessors.token_estimator import TokenEstimatorPreprocessor
-from app.preprocessors.tool_result_pruner import ToolResultPrunerPreprocessor
+from app.capabilities.context_budget.manager import ContextBudgetManager
+from app.capabilities.memory.strategies import get_memory_strategy
 from app.schemas.chat import MessageOut
 from app.services.llm_streamer import LLMStreamer
 from app.services.memory import MemoryConfig
-from app.services.memory.observational.background import om_runner
 from app.services.tool_executor import ToolExecutor
 from app.utils.ids import generate_id
 from app.utils.time import utc_now_iso
@@ -42,8 +34,6 @@ class AgentLoop:
         get_openrouter_tools,
         default_system_prompt: str,
         session_factory=None,
-        # Kept for backward compatibility; project context is now a pipeline preprocessor
-        apply_initial_information=None,
     ):
         self._chat_repo = chat_repo
         self._project_repo = project_repo
@@ -65,7 +55,9 @@ class AgentLoop:
         max_iterations: int,
     ) -> None:
         settings = self._settings_service.get_settings()
-        provider = self._settings_repo.get_provider_for_model(settings.model)
+        provider = settings.modelProvider or self._settings_repo.get_provider_for_model(
+            settings.model
+        )
         if not provider:
             provider = "openrouter"
         client = self._api_key_resolver.create_client(provider)
@@ -106,7 +98,7 @@ class AgentLoop:
             return
 
         settings = self._settings_service.get_settings()
-        openrouter_messages = self._assemble_messages(chat_id, content)
+        conversation_messages = self._assemble_messages(chat_id, content)
         project_path = None
         project = self._project_repo.get_project(chat_model.project_id)
         if project:
@@ -116,26 +108,7 @@ class AgentLoop:
         # Load memory settings
         mem_cfg = MemoryConfig.from_settings_repo(self._settings_repo)
 
-        # Build preprocessor pipeline
-        memory_preprocessor: ObservationalMemoryPreprocessor | AutoCompactionPreprocessor
-        if mem_cfg.mode == "observational":
-            memory_preprocessor = ObservationalMemoryPreprocessor(self._chat_repo)
-        else:
-            memory_preprocessor = AutoCompactionPreprocessor(threshold_ratio=0.85)
-
-        pipeline = PreprocessorPipeline(
-            [
-                SystemPromptPreprocessor(default_prompt=self._default_system_prompt),
-                TodoInjectorPreprocessor(self._chat_repo),
-                ProjectContextPreprocessor(project_path),
-                ToolResultPrunerPreprocessor(),
-                # Memory preprocessor reduces old messages → token estimator sees the result
-                memory_preprocessor,
-                TokenEstimatorPreprocessor(),
-                # Last-resort compaction at 95% if still too long after OM
-                AutoCompactionPreprocessor(threshold_ratio=0.95),
-            ]
-        )
+        context_budget = ContextBudgetManager(self._chat_repo, self._settings_repo)
         context_limit = settings.contextLimit
 
         streamer = LLMStreamer(self._chat_repo, self._event_bus)
@@ -164,21 +137,23 @@ class AgentLoop:
                     checkpointId=None,
                 )
 
-                ctx = PreprocessorContext(
+                prepared = await context_budget.prepare(
                     chat_id=chat_id,
-                    messages=list(openrouter_messages),
+                    base_messages=list(conversation_messages),
+                    default_system_prompt=self._default_system_prompt,
+                    project_path=project_path,
+                    provider=client,
                     model=settings.model,
                     context_limit=context_limit,
                 )
-                ctx = await pipeline.run(ctx, client)
-                openrouter_messages = ctx.messages
+                llm_messages = prepared.messages
 
                 rp = reasoning_param
                 try:
                     result = await streamer.stream_completion(
                         client=client,
                         model=settings.model,
-                        messages=openrouter_messages,
+                        messages=llm_messages,
                         tools=tools if tools else None,
                         reasoning_param=rp,
                         chat_id=chat_id,
@@ -197,7 +172,7 @@ class AgentLoop:
                         result = await streamer.stream_completion(
                             client=client,
                             model=settings.model,
-                            messages=openrouter_messages,
+                            messages=llm_messages,
                             tools=tools if tools else None,
                             reasoning_param=rp,
                             chat_id=chat_id,
@@ -223,10 +198,10 @@ class AgentLoop:
 
                 if result.finish_reason == "stop" or not result.tool_calls:
                     if not has_content:
-                        openrouter_messages.append(
+                        conversation_messages.append(
                             {"role": "assistant", "content": response_text or ""}
                         )
-                        openrouter_messages.append(
+                        conversation_messages.append(
                             {
                                 "role": "user",
                                 "content": "You used no tools and provided no response. You must use tools for every response except your last response, which must have text content to the user.",
@@ -261,7 +236,7 @@ class AgentLoop:
                     ],
                     "_message_id": msg_id,
                 }
-                openrouter_messages.append(assistant_msg)
+                conversation_messages.append(assistant_msg)
 
                 tool_results = await executor.execute_tool_calls(
                     tool_calls_from_stream=result.tool_calls,
@@ -271,7 +246,7 @@ class AgentLoop:
                 for tr in tool_results:
                     tr_with_id = dict(tr)
                     tr_with_id["_message_id"] = msg_id
-                    openrouter_messages.append(tr_with_id)
+                    conversation_messages.append(tr_with_id)
 
             # Max iterations reached
             _ran_agent = True
@@ -287,39 +262,21 @@ class AgentLoop:
             )
         finally:
             # Schedule observation once after the agent run completes (not mid-loop)
-            if _ran_agent and mem_cfg.mode == "observational" and self._session_factory:
+            if _ran_agent and self._session_factory:
                 try:
-                    self._maybe_schedule_observation(
+                    strategy = get_memory_strategy(mem_cfg.mode)
+                    strategy.maybe_update(
                         chat_id=chat_id,
                         model=settings.model,
                         mem_cfg=mem_cfg,
                         client=client,
+                        session_factory=self._session_factory,
+                        event_bus=self._event_bus,
                     )
                 except Exception:
                     logger.warning(
                         "Failed to schedule observation for chat=%s", chat_id, exc_info=True
                     )
-
-    def _maybe_schedule_observation(
-        self,
-        *,
-        chat_id: str,
-        model: str,
-        mem_cfg: "MemoryConfig",
-        client,
-    ) -> None:
-        """Schedule a background observation task after the agent run completes."""
-        om_runner.schedule_observation(
-            chat_id=chat_id,
-            model=model,
-            observer_model=mem_cfg.observer_model,
-            reflector_model=mem_cfg.reflector_model,
-            observer_threshold=mem_cfg.observer_threshold,
-            reflector_threshold=mem_cfg.reflector_threshold,
-            client=client,
-            session_factory=self._session_factory,
-            event_bus=self._event_bus,
-        )
 
     def _assemble_messages(self, chat_id: str, content: str) -> list[dict]:
         """Assemble messages without system prompt; SystemPromptPreprocessor adds it."""

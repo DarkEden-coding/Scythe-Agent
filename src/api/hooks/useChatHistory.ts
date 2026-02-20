@@ -27,7 +27,12 @@ import type {
   ObservationData,
   VerificationIssues,
 } from '@/types';
-import type { AgentErrorPayload, AgentEvent, AgentObservationStatusPayload } from '@/api/types';
+import type {
+  AgentErrorPayload,
+  AgentEvent,
+  AgentObservationStatusPayload,
+  ChatMemoryStateResponse,
+} from '@/api/types';
 import type { ObservationStatus } from '@/components/chat/ObservationStatusIndicator';
 
 interface ChatPersistentError {
@@ -35,6 +40,40 @@ interface ChatPersistentError {
   source?: string;
   retryable?: boolean;
   retryAction?: string;
+}
+
+function toObservationData(memory: ChatMemoryStateResponse): ObservationData | null {
+  if (!memory.hasMemoryState || memory.strategy !== 'observational') return null;
+
+  const state = memory.state ?? {};
+  const generation =
+    typeof state.generation === 'number' ? state.generation : undefined;
+  const tokenCount =
+    typeof state.tokenCount === 'number' ? state.tokenCount : undefined;
+  const observedUpToMessageId =
+    typeof state.observedUpToMessageId === 'string' ? state.observedUpToMessageId : undefined;
+  const currentTask =
+    typeof state.currentTask === 'string' ? state.currentTask : undefined;
+  const suggestedResponse =
+    typeof state.suggestedResponse === 'string' ? state.suggestedResponse : undefined;
+  const content = typeof state.content === 'string' ? state.content : undefined;
+  const timestamp =
+    typeof state.timestamp === 'string'
+      ? state.timestamp
+      : typeof memory.updatedAt === 'string'
+        ? memory.updatedAt
+        : undefined;
+
+  return {
+    hasObservations: true,
+    generation,
+    tokenCount,
+    observedUpToMessageId,
+    currentTask,
+    suggestedResponse,
+    content,
+    timestamp,
+  };
 }
 
 export function useChatHistory(chatId: string | null | undefined, client: ApiClient = defaultApi) {
@@ -59,12 +98,17 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
   const pendingContentDeltas = useRef<Map<string, string>>(new Map());
   const pendingReasoningDeltas = useRef<Map<string, string>>(new Map());
   const streamFlushScheduled = useRef(false);
+  const contextRefreshTimer = useRef<number | null>(null);
   const setMessagesRef = useRef(setMessages);
   const setReasoningBlocksRef = useRef(setReasoningBlocks);
   setMessagesRef.current = setMessages;
   setReasoningBlocksRef.current = setReasoningBlocks;
 
   useEffect(() => {
+    if (contextRefreshTimer.current != null) {
+      window.clearTimeout(contextRefreshTimer.current);
+      contextRefreshTimer.current = null;
+    }
     if (!isValidChatId(chatId)) {
       setLoading(false);
       setMessages([]);
@@ -105,7 +149,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
 
     Promise.all([
       client.getChatHistory(chatId),
-      client.getObservations(chatId),
+      client.getMemoryState(chatId),
     ]).then(([histRes, obsRes]) => {
       if (cancelled) return;
       if (histRes.ok) {
@@ -123,8 +167,9 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
       } else {
         setError(histRes.error ?? 'Failed to load chat history');
       }
-      if (obsRes.ok && obsRes.data.hasObservations) {
-        setObservation(obsRes.data);
+      if (obsRes.ok) {
+        const nextObservation = toObservationData(obsRes.data);
+        setObservation(nextObservation);
       }
       setLoading(false);
     });
@@ -139,6 +184,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
       if (!isValidChatId(chatId)) {
         return { ok: false as const, data: null, error: 'No chat selected', timestamp: new Date().toISOString() };
       }
+      setPersistentError(null);
       setProcessingChats((prev) => new Set(prev).add(chatId));
       try {
         const res = await client.sendMessage({ chatId, content });
@@ -257,6 +303,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
         setCheckpoints(uniqueById(res.data.checkpoints.map(normalizeCheckpoint)));
         setReasoningBlocks(uniqueById(res.data.reasoningBlocks.map(normalizeReasoningBlock)));
         setTodos((res.data.todos ?? []).map(normalizeTodo));
+        setPersistentError(null);
       }
       return res;
     },
@@ -290,6 +337,36 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
     [chatId, client],
   );
 
+  useEffect(() => {
+    return () => {
+      if (contextRefreshTimer.current != null) {
+        window.clearTimeout(contextRefreshTimer.current);
+        contextRefreshTimer.current = null;
+      }
+    };
+  }, []);
+
+  const scheduleContextRefresh = useCallback(
+    (targetChatId?: string | null, immediate = false) => {
+      const resolvedChatId = targetChatId ?? chatId;
+      if (!isValidChatId(resolvedChatId)) return;
+      if (immediate) {
+        if (contextRefreshTimer.current != null) {
+          window.clearTimeout(contextRefreshTimer.current);
+          contextRefreshTimer.current = null;
+        }
+        void refreshContextFromHistory(resolvedChatId);
+        return;
+      }
+      if (contextRefreshTimer.current != null) return;
+      contextRefreshTimer.current = window.setTimeout(() => {
+        contextRefreshTimer.current = null;
+        void refreshContextFromHistory(resolvedChatId);
+      }, 250);
+    },
+    [chatId, refreshContextFromHistory],
+  );
+
   const editMessage = useCallback(
     async (messageId: string, content: string) => {
       if (!isValidChatId(chatId)) {
@@ -304,6 +381,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
         setCheckpoints(uniqueById(d.checkpoints.map(normalizeCheckpoint)));
         setReasoningBlocks(uniqueById(d.reasoningBlocks.map(normalizeReasoningBlock)));
         setTodos((d.todos ?? []).map(normalizeTodo));
+        setPersistentError(null);
         void refreshContextFromHistory(chatId);
       }
       return res;
@@ -315,7 +393,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
     if (!isValidChatId(chatId)) {
       return { ok: false as const, data: null, error: 'No chat selected', timestamp: new Date().toISOString() };
     }
-    const res = await client.retryObservations(chatId);
+    const res = await client.retryMemory(chatId);
     if (res.ok) {
       setPersistentError(null);
       setObservationStatus('observing');
@@ -403,6 +481,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
             }
             return [...prev, { ...message, id: `${message.id}-${Date.now()}` }];
           });
+          scheduleContextRefresh(event.chatId, true);
           break;
         }
         case 'content_delta': {
@@ -411,6 +490,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
             const map = pendingContentDeltas.current;
             map.set(payload.messageId, (map.get(payload.messageId) ?? '') + payload.delta);
             scheduleStreamFlush();
+            scheduleContextRefresh(event.chatId);
           }
           break;
         }
@@ -432,6 +512,9 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
           };
           const tcWithTs = normalizeToolCall(toolCall);
           setToolCalls((prev) => updateById(prev, tcWithTs));
+          if (event.type === 'tool_call_end') {
+            scheduleContextRefresh(event.chatId);
+          }
           const cpId = (payload.toolCall as { checkpointId?: string })?.checkpointId;
           if (cpId && tcWithTs.id) {
             setCheckpoints((prev) =>
@@ -600,11 +683,18 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
             setPersistentError((prev) => (prev?.source === 'observer' || prev?.source === 'reflector' ? null : prev));
             // Refresh observation data
             if (event.chatId) {
-              client.getObservations(event.chatId).then((res) => {
-                if (res.ok) setObservation(res.data);
+              client.getMemoryState(event.chatId).then((res) => {
+                if (res.ok) {
+                  setObservation(toObservationData(res.data));
+                }
               });
             }
           }
+          break;
+        }
+        case 'agent_done': {
+          setPersistentError(null);
+          scheduleContextRefresh(event.chatId, true);
           break;
         }
         case 'error': {
@@ -634,7 +724,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
           break;
       }
     },
-    [asDate, scheduleStreamFlush, client, refreshContextFromHistory],
+    [asDate, scheduleContextRefresh, scheduleStreamFlush, client, refreshContextFromHistory],
   );
 
   return {

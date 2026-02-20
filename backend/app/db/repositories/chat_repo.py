@@ -1,20 +1,19 @@
 from datetime import datetime
-from types import SimpleNamespace
 
 from sqlalchemy import and_, delete, or_
 from sqlalchemy import select
-from sqlalchemy import text
-from sqlalchemy.exc import OperationalError
 
 from app.db.models.chat import Chat
 from app.db.models.checkpoint import Checkpoint
 from app.db.models.context_item import ContextItem
 from app.db.models.file_edit import FileEdit
 from app.db.models.file_snapshot import FileSnapshot
+from app.db.models.memory_state import MemoryState
 from app.db.models.message import Message
 from app.db.models.observation import Observation
 from app.db.models.reasoning_block import ReasoningBlock
 from app.db.models.todo import Todo
+from app.db.models.tool_artifact import ToolArtifact
 from app.db.models.tool_call import ToolCall
 from app.db.repositories.base_repo import BaseRepository
 from app.utils.ids import generate_id
@@ -145,35 +144,7 @@ class ChatRepository(BaseRepository):
             .where(Todo.chat_id == chat_id)
             .order_by(Todo.sort_order.asc(), Todo.timestamp.asc())
         )
-        try:
-            return list(self.db.scalars(stmt).all())
-        except OperationalError as exc:
-            # Backward-compat: DB may not have todos.checkpoint_id yet.
-            if "no such column: todos.checkpoint_id" not in str(exc):
-                raise
-            rows = self.db.execute(
-                text(
-                    """
-                    SELECT id, chat_id, content, status, sort_order, timestamp
-                    FROM todos
-                    WHERE chat_id = :chat_id
-                    ORDER BY sort_order ASC, timestamp ASC
-                    """
-                ),
-                {"chat_id": chat_id},
-            ).mappings().all()
-            return [
-                SimpleNamespace(
-                    id=row["id"],
-                    chat_id=row["chat_id"],
-                    checkpoint_id=None,
-                    content=row["content"],
-                    status=row["status"],
-                    sort_order=row["sort_order"],
-                    timestamp=row["timestamp"],
-                )
-                for row in rows
-            ]
+        return list(self.db.scalars(stmt).all())
 
     def get_current_todos(self, chat_id: str) -> list[dict]:
         """Return the active todo state derived from the latest successful update_todo_list call."""
@@ -219,41 +190,18 @@ class ChatRepository(BaseRepository):
     ) -> None:
         """Replace all todos for a chat with the given items. Each item has content, status, sort_order."""
         normalized_ts = _normalize_ts(timestamp)
-        try:
-            self.db.execute(delete(Todo).where(Todo.chat_id == chat_id))
-            for i, item in enumerate(items):
-                self.db.add(
-                    Todo(
-                        id=generate_id("todo"),
-                        chat_id=chat_id,
-                        content=str(item.get("content", "")),
-                        status=str(item.get("status", "pending")),
-                        sort_order=int(item.get("sort_order", i)),
-                        timestamp=normalized_ts,
-                    )
+        self.db.execute(delete(Todo).where(Todo.chat_id == chat_id))
+        for i, item in enumerate(items):
+            self.db.add(
+                Todo(
+                    id=generate_id("todo"),
+                    chat_id=chat_id,
+                    content=str(item.get("content", "")),
+                    status=str(item.get("status", "pending")),
+                    sort_order=int(item.get("sort_order", i)),
+                    timestamp=normalized_ts,
                 )
-        except OperationalError as exc:
-            # Backward-compat: DB may not have todos.checkpoint_id yet.
-            if "no such column: todos.checkpoint_id" not in str(exc):
-                raise
-            self.db.execute(text("DELETE FROM todos WHERE chat_id = :chat_id"), {"chat_id": chat_id})
-            for i, item in enumerate(items):
-                self.db.execute(
-                    text(
-                        """
-                        INSERT INTO todos (id, chat_id, content, status, sort_order, timestamp)
-                        VALUES (:id, :chat_id, :content, :status, :sort_order, :timestamp)
-                        """
-                    ),
-                    {
-                        "id": generate_id("todo"),
-                        "chat_id": chat_id,
-                        "content": str(item.get("content", "")),
-                        "status": str(item.get("status", "pending")),
-                        "sort_order": int(item.get("sort_order", i)),
-                        "timestamp": normalized_ts,
-                    },
-                )
+            )
 
     def replace_context_items(
         self, chat_id: str, items: list[tuple[str, str, str, int]]
@@ -376,14 +324,11 @@ class ChatRepository(BaseRepository):
         *,
         status: str,
         output_text: str | None = None,
-        output_file_path: str | None = None,
         duration_ms: int | None = None,
     ) -> ToolCall:
         tool_call.status = status
         if output_text is not None:
             tool_call.output_text = output_text
-        if output_file_path is not None:
-            tool_call.output_file_path = output_file_path
         if duration_ms is not None:
             tool_call.duration_ms = duration_ms
         return tool_call
@@ -505,6 +450,78 @@ class ChatRepository(BaseRepository):
     def delete_file_edit(self, file_edit: FileEdit) -> None:
         self.db.delete(file_edit)
 
+    def create_tool_artifact(
+        self,
+        *,
+        artifact_id: str,
+        tool_call_id: str,
+        chat_id: str,
+        project_id: str,
+        artifact_type: str,
+        file_path: str,
+        line_count: int | None,
+        preview_lines: int | None,
+        created_at: str,
+    ) -> ToolArtifact:
+        artifact = ToolArtifact(
+            id=artifact_id,
+            tool_call_id=tool_call_id,
+            chat_id=chat_id,
+            project_id=project_id,
+            artifact_type=artifact_type,
+            file_path=file_path,
+            line_count=line_count,
+            preview_lines=preview_lines,
+            created_at=created_at,
+        )
+        self.db.add(artifact)
+        return artifact
+
+    def list_tool_artifacts_for_tool_call(self, tool_call_id: str) -> list[ToolArtifact]:
+        stmt = (
+            select(ToolArtifact)
+            .where(ToolArtifact.tool_call_id == tool_call_id)
+            .order_by(ToolArtifact.created_at.asc())
+        )
+        return list(self.db.scalars(stmt).all())
+
+    def list_tool_artifacts_for_chat(self, chat_id: str) -> list[ToolArtifact]:
+        stmt = (
+            select(ToolArtifact)
+            .where(ToolArtifact.chat_id == chat_id)
+            .order_by(ToolArtifact.created_at.asc())
+        )
+        return list(self.db.scalars(stmt).all())
+
+    def set_memory_state(
+        self,
+        *,
+        chat_id: str,
+        strategy: str,
+        state_json: str,
+        updated_at: str,
+    ) -> MemoryState:
+        stmt = select(MemoryState).where(MemoryState.chat_id == chat_id)
+        existing = self.db.scalars(stmt).first()
+        if existing is None:
+            existing = MemoryState(
+                id=generate_id("mem"),
+                chat_id=chat_id,
+                strategy=strategy,
+                state_json=state_json,
+                updated_at=updated_at,
+            )
+            self.db.add(existing)
+        else:
+            existing.strategy = strategy
+            existing.state_json = state_json
+            existing.updated_at = updated_at
+        return existing
+
+    def get_memory_state(self, chat_id: str) -> MemoryState | None:
+        stmt = select(MemoryState).where(MemoryState.chat_id == chat_id)
+        return self.db.scalars(stmt).first()
+
     def get_latest_observation(self, chat_id: str) -> Observation | None:
         """Return the highest-generation, most-recent observation for a chat."""
         stmt = (
@@ -513,6 +530,14 @@ class ChatRepository(BaseRepository):
             .order_by(Observation.generation.desc(), Observation.timestamp.desc())
         )
         return self.db.scalars(stmt).first()
+
+    def list_observations(self, chat_id: str) -> list[Observation]:
+        stmt = (
+            select(Observation)
+            .where(Observation.chat_id == chat_id)
+            .order_by(Observation.generation.desc(), Observation.timestamp.desc())
+        )
+        return list(self.db.scalars(stmt).all())
 
     def create_observation(
         self,
@@ -562,6 +587,9 @@ class ChatRepository(BaseRepository):
         """Delete all observations for a chat (for revert/delete support)."""
         self.db.execute(
             delete(Observation).where(Observation.chat_id == chat_id)
+        )
+        self.db.execute(
+            delete(MemoryState).where(MemoryState.chat_id == chat_id)
         )
 
     def delete_after_checkpoint(

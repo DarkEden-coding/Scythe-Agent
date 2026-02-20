@@ -7,6 +7,7 @@ from typing import Protocol
 
 from sqlalchemy.orm import Session
 
+from app.core.container import get_container
 from app.db.models.mcp_tool_cache import MCPToolCache
 from app.db.repositories.mcp_repo import MCPRepository
 from app.mcp.protocol_models import (
@@ -171,17 +172,15 @@ class MCPClientManager:
         raw = await transport.request("tools/call", {"name": tool_name, "arguments": payload})
         return parse_tool_call_result(raw)
 
-
-_manager: MCPClientManager | None = None
-
-
 def get_mcp_client_manager() -> MCPClientManager:
-    global _manager
-    if _manager is None:
-        _manager = MCPClientManager()
-    return _manager
+    container = get_container()
+    if container is None:
+        raise RuntimeError("AppContainer is not initialized")
+    return container.mcp_client_manager
 
 
 def reset_mcp_client_manager() -> None:
-    global _manager
-    _manager = None
+    container = get_container()
+    if container is None:
+        return
+    container.mcp_client_manager = MCPClientManager()

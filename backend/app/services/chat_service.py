@@ -16,9 +16,10 @@ from app.schemas.chat import (
     SendMessageResponse,
 )
 from app.services.approval_service import ApprovalService
+from app.services.agent_task_manager import AgentTaskManager, get_agent_task_manager
 from app.services.chat_history import ChatHistoryAssembler
 from app.services.event_bus import EventBus, get_event_bus
-from app.services.memory.observational.background import om_runner
+from app.services.memory.observational.background import get_om_background_runner
 from app.services.revert_service import RevertService
 from app.services.runtime_orchestrator import run_agent_turn
 from app.services.settings_service import SettingsService
@@ -28,16 +29,19 @@ from app.utils.time import utc_now_iso
 
 logger = logging.getLogger(__name__)
 
-# Maps chat_id → running agent asyncio.Task (for cancellation on edit)
-_running_tasks: dict[str, asyncio.Task] = {}
-
 
 class ChatService:
-    def __init__(self, db: Session, event_bus: EventBus | None = None):
+    def __init__(
+        self,
+        db: Session,
+        event_bus: EventBus | None = None,
+        task_manager: AgentTaskManager | None = None,
+    ):
         self.repo = ChatRepository(db)
         self.settings_repo = SettingsRepository(db)
         self.settings_service = SettingsService(db)
         self.event_bus = event_bus or get_event_bus()
+        self.task_manager = task_manager or get_agent_task_manager()
 
     async def _deny_pending_and_cancel_agent(
         self, chat_id: str, reject_reason: str = "User sent new message"
@@ -45,9 +49,9 @@ class ChatService:
         """Deny any pending tool approvals and cancel the running agent for this chat.
         Returns True if a task was cancelled."""
         # Cancel any in-flight observation cycle for this chat.
-        om_runner.cancel(chat_id)
+        get_om_background_runner().cancel(chat_id)
 
-        existing_task = _running_tasks.pop(chat_id, None)
+        existing_task = self.task_manager.pop(chat_id)
         if existing_task is None or existing_task.done():
             return False
         for tc in self.repo.list_tool_calls(chat_id):
@@ -147,6 +151,7 @@ class ChatService:
             content=content,
             session_factory=get_sessionmaker(),
             event_bus=self.event_bus,
+            task_manager=self.task_manager,
         )
         return SendMessageResponse(message=message_out, checkpoint=checkpoint_out)
 
@@ -162,10 +167,10 @@ class ChatService:
             raise ValueError(f"No checkpoint found for message: {message_id}")
 
         # Prevent stale observation writes while we mutate/revert history.
-        om_runner.cancel(chat_id)
+        get_om_background_runner().cancel(chat_id)
 
         # Cancel any running agent task for this chat
-        existing_task = _running_tasks.pop(chat_id, None)
+        existing_task = self.task_manager.pop(chat_id)
         if existing_task is not None and not existing_task.done():
             existing_task.cancel()
             try:
@@ -205,6 +210,7 @@ class ChatService:
             content=content,
             session_factory=get_sessionmaker(),
             event_bus=self.event_bus,
+            task_manager=self.task_manager,
         )
         return EditMessageResponse(revertedHistory=reverted)
 
@@ -254,6 +260,7 @@ def _schedule_background_task(
     content: str,
     session_factory,
     event_bus: EventBus,
+    task_manager: AgentTaskManager,
 ) -> None:
     """Create and track a background asyncio task for a single agent turn."""
 
@@ -275,6 +282,7 @@ def _schedule_background_task(
                     content=follow_up.content,
                     session_factory=session_factory,
                     event_bus=event_bus,
+                    task_manager=task_manager,
                 )
         except asyncio.CancelledError:
             logger.info(
@@ -331,12 +339,11 @@ def _schedule_background_task(
             )
 
     task = asyncio.create_task(_run())
-    _running_tasks[chat_id] = task
+    task_manager.set(chat_id, task)
 
     def _on_done(t: asyncio.Task) -> None:
         # Only remove if this task is still the tracked one; avoids
         # a race where a stale callback removes a newer task.
-        if _running_tasks.get(chat_id) is t:
-            del _running_tasks[chat_id]
+        task_manager.delete_if_current(chat_id, t)
 
     task.add_done_callback(_on_done)

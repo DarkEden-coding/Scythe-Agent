@@ -63,6 +63,7 @@ import type {
   SyncModelsResponse,
   MemorySettings,
   SetMemorySettingsRequest,
+  ChatMemoryStateResponse,
   MCPServersResponse,
   MCPServer,
   MCPTool,
@@ -70,7 +71,6 @@ import type {
   UpdateMCPServerRequest,
   RefreshMCPResponse,
 } from './types';
-import type { ObservationData } from '../types';
 
 /* ── Retry Configuration ────────────────────────────────────────── */
 
@@ -593,14 +593,14 @@ export class ApiClient {
     return this.request('POST', '/settings/memory', req);
   }
 
-  /** Get current observations for a chat. */
-  async getObservations(chatId: string): Promise<ApiResponse<ObservationData>> {
-    return this.request('GET', `/chat/${chatId}/observations`);
+  /** Get current memory state for a chat. */
+  async getMemoryState(chatId: string): Promise<ApiResponse<ChatMemoryStateResponse>> {
+    return this.request('GET', `/chat/${chatId}/memory`);
   }
 
-  /** Retry the observational memory cycle for a chat. */
-  async retryObservations(chatId: string): Promise<ApiResponse<{ scheduled: boolean }>> {
-    return this.request('POST', `/chat/${chatId}/observations/retry`);
+  /** Retry the active memory cycle for a chat. */
+  async retryMemory(chatId: string): Promise<ApiResponse<{ scheduled: boolean }>> {
+    return this.request('POST', `/chat/${chatId}/memory/retry`);
   }
 
   /* ── MCP configuration ──────────────────────────────────────── */

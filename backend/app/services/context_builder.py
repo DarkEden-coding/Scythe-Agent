@@ -18,11 +18,19 @@ def _truncate_label(s: str, max_len: int = 48) -> str:
     return (s[: max_len - 3] + "...") if len(s) > max_len else s
 
 
+def _truncate_tool_output(content: str, max_chars: int = 4000) -> str:
+    if len(content) <= max_chars:
+        return content
+    return content[:max_chars] + "\n... [truncated]"
+
+
 def build_context_items(
     chat_id: str,
     chat_repo: ChatRepository,
     project_repo: ProjectRepository,
     token_counter: TokenCounter,
+    *,
+    context_limit: int | None = None,
 ) -> list[ContextItemOut]:
     """
     Derive context items from chat data and count tokens per item.
@@ -33,10 +41,15 @@ def build_context_items(
     """
     stored = chat_repo.list_context_items(chat_id)
     if stored:
-        return [
-            ContextItemOut(id=c.id, type=c.type, name=c.label, tokens=c.tokens, full_name=None)
-            for c in stored
-        ]
+        total_stored = sum(max(0, int(c.tokens or 0)) for c in stored)
+        # Ignore stale persisted snapshots when they are far beyond active model budget.
+        if context_limit is None or total_stored <= (context_limit * 2):
+            return [
+                ContextItemOut(id=c.id, type=c.type, name=c.label, tokens=c.tokens, full_name=None)
+                for c in stored
+            ]
+        chat_repo.replace_context_items(chat_id, [])
+        chat_repo.commit()
 
     items: list[ContextItemOut] = []
     chat = chat_repo.get_chat(chat_id)
@@ -84,7 +97,7 @@ def build_context_items(
     for tc in tool_calls:
         payload = f"{tc.name}({tc.input_json})"
         if tc.output_text:
-            payload += f" -> {tc.output_text}"
+            payload += f" -> {_truncate_tool_output(tc.output_text)}"
         tokens = token_counter.count(payload)
         items.append(
             ContextItemOut(

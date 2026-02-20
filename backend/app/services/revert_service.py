@@ -8,7 +8,7 @@ from app.db.repositories.chat_repo import ChatRepository
 from app.db.repositories.project_repo import ProjectRepository
 from app.schemas.chat import FileEditOut, RevertFileResponse, RevertToCheckpointResponse
 from app.services.chat_history import ChatHistoryAssembler
-from app.services.memory.observational.background import om_runner
+from app.services.memory.observational.background import get_om_background_runner
 from app.services.settings_service import SettingsService
 from app.utils.mappers import map_file_action_for_ui
 
@@ -22,7 +22,7 @@ class RevertService:
 
     def revert_to_checkpoint(self, chat_id: str, checkpoint_id: str) -> RevertToCheckpointResponse:
         # Stop any in-flight observation work before mutating chat history.
-        om_runner.cancel(chat_id)
+        get_om_background_runner().cancel(chat_id)
 
         chat = self.repo.get_chat(chat_id)
         if chat is None:
@@ -36,9 +36,8 @@ class RevertService:
             chat_id, checkpoint.timestamp, checkpoint_id
         )
         for tc in tool_calls_to_remove:
-            if tc.output_file_path:
-                spill_path = Path(tc.output_file_path)
-                spill_path.unlink(missing_ok=True)
+            for artifact in self.repo.list_tool_artifacts_for_tool_call(tc.id):
+                Path(artifact.file_path).unlink(missing_ok=True)
 
         # Restore files from snapshots (reverse chronological so last changes are undone first)
         snapshots = self.repo.list_file_snapshots_after_checkpoint(
@@ -77,7 +76,7 @@ class RevertService:
 
     def revert_file(self, chat_id: str, file_edit_id: str) -> RevertFileResponse:
         # Avoid stale observation writes while reverting artifacts.
-        om_runner.cancel(chat_id)
+        get_om_background_runner().cancel(chat_id)
 
         edit = self.repo.get_file_edit(file_edit_id)
         if edit is None or edit.chat_id != chat_id:

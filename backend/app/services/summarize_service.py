@@ -29,6 +29,7 @@ class SummarizeService:
             chat_repo=self.repo,
             project_repo=project_repo,
             token_counter=token_counter,
+            context_limit=settings.contextLimit,
         )
         tokens_before = sum(i.tokens for i in items)
 
@@ -53,4 +54,3 @@ class SummarizeService:
         return SummarizeContextResponse(
             contextItems=out, tokensBefore=tokens_before, tokensAfter=tokens_after
         )
-

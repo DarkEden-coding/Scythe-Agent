@@ -1,21 +1,75 @@
 from __future__ import annotations
 
-from app.tools.builtin.edit_file import EditFileTool
-from app.tools.builtin.execute_command import ExecuteCommandTool
-from app.tools.builtin.grep import GrepTool
-from app.tools.builtin.update_todo_list import UpdateTodoListTool
-from app.tools.builtin.list_files import ListFilesTool
-from app.tools.builtin.read_file import ReadFileTool
+from dataclasses import dataclass
+
+from app.capabilities.tools.interfaces import ToolExecutionContext, ToolPlugin
+from app.capabilities.tools.loader import load_builtin_tool_plugins
+from app.core.container import get_container
 from app.tools.mcp_bridge import MCPBridgeTool
-from app.tools.contracts import Tool
+from app.tools.contracts import Tool, ToolResult
+
+
+@dataclass
+class ToolRegistryEntry:
+    name: str
+    source: str
+    kind: str  # builtin | mcp
+    approval_policy: str = "rules"
+
+
+class _PluginToolAdapter:
+    """Adapter to expose ToolPlugin through the legacy Tool protocol."""
+
+    def __init__(self, plugin: ToolPlugin):
+        self._plugin = plugin
+        self.name = plugin.name
+        self.description = plugin.description
+        self.input_schema = plugin.input_schema
+
+    async def run(
+        self,
+        payload: dict,
+        *,
+        project_root: str | None = None,
+        chat_id: str | None = None,
+        chat_repo=None,
+        checkpoint_id: str | None = None,
+    ) -> ToolResult:
+        result = await self._plugin.handler(
+            payload,
+            ToolExecutionContext(
+                project_root=project_root,
+                chat_id=chat_id,
+                chat_repo=chat_repo,
+                checkpoint_id=checkpoint_id,
+            ),
+        )
+        output = result.output_preview if result.output_preview is not None else result.output
+        if result.error and not output:
+            output = result.error
+        return ToolResult(output=output, file_edits=result.file_edits, ok=result.ok)
 
 
 class ToolRegistry:
     def __init__(self):
         self._tools: dict[str, Tool] = {}
+        self._entries: dict[str, ToolRegistryEntry] = {}
 
-    def register(self, tool: Tool) -> None:
+    def register(
+        self,
+        tool: Tool,
+        *,
+        source: str = "builtin",
+        kind: str = "builtin",
+        approval_policy: str = "rules",
+    ) -> None:
         self._tools[tool.name] = tool
+        self._entries[tool.name] = ToolRegistryEntry(
+            name=tool.name,
+            source=source,
+            kind=kind,
+            approval_policy=approval_policy,
+        )
 
     def get_tool(self, name: str) -> Tool | None:
         return self._tools.get(name)
@@ -23,11 +77,24 @@ class ToolRegistry:
     def list_tools(self) -> list[str]:
         return sorted(self._tools.keys())
 
+    def list_entries(self) -> list[ToolRegistryEntry]:
+        return [self._entries[name] for name in sorted(self._entries.keys())]
+
+    def register_builtin_plugins(self) -> None:
+        for plugin in load_builtin_tool_plugins():
+            self.register(
+                _PluginToolAdapter(plugin),
+                source=plugin.source,
+                kind="builtin",
+                approval_policy=plugin.approval_policy,
+            )
+
     def unregister_mcp_tools(self) -> None:
         """Remove all MCP tools from the registry (names start with mcp__)."""
         to_remove = [k for k in self._tools if k.startswith("mcp__")]
         for k in to_remove:
-            del self._tools[k]
+            self._tools.pop(k, None)
+            self._entries.pop(k, None)
 
     def register_mcp_tools(self, tools: list[dict]) -> None:
         for tool in tools:
@@ -40,26 +107,24 @@ class ToolRegistry:
                 input_schema=schema,
             )
             if bridge.server_id and bridge.tool_name:
-                self.register(bridge)
-
-
-_registry: ToolRegistry | None = None
+                self.register(
+                    bridge,
+                    source=f"mcp:{bridge.server_id}",
+                    kind="mcp",
+                    approval_policy="rules",
+                )
 
 
 def get_tool_registry() -> ToolRegistry:
-    global _registry
-    if _registry is None:
-        registry = ToolRegistry()
-        registry.register(ReadFileTool())
-        registry.register(ListFilesTool())
-        registry.register(EditFileTool())
-        registry.register(ExecuteCommandTool())
-        registry.register(GrepTool())
-        registry.register(UpdateTodoListTool())
-        _registry = registry
-    return _registry
+    container = get_container()
+    if container is None:
+        raise RuntimeError("AppContainer is not initialized")
+    return container.tool_registry
 
 
 def reset_tool_registry() -> None:
-    global _registry
-    _registry = None
+    container = get_container()
+    if container is None:
+        return
+    container.tool_registry = ToolRegistry()
+    container.tool_registry.register_builtin_plugins()

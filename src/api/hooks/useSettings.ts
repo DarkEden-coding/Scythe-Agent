@@ -36,6 +36,12 @@ export function useSettings(client: ApiClient = defaultApi) {
     error: null,
   });
   const [currentModel, setCurrentModel] = useState(cached?.model ?? 'Claude Sonnet 4');
+  const [currentModelProvider, setCurrentModelProvider] = useState<string | null>(
+    cached?.modelProvider ?? null,
+  );
+  const [currentModelKey, setCurrentModelKey] = useState<string | null>(
+    cached?.modelKey ?? null,
+  );
   const [autoApproveRules, setAutoApproveRules] = useState<AutoApproveRule[]>(
     cached?.autoApproveRules ?? [],
   );
@@ -46,6 +52,8 @@ export function useSettings(client: ApiClient = defaultApi) {
     if (res.ok) {
       setState({ data: res.data, loading: false, error: null });
       setCurrentModel(res.data.model);
+      setCurrentModelProvider(res.data.modelProvider ?? null);
+      setCurrentModelKey(res.data.modelKey ?? null);
       setAutoApproveRules(res.data.autoApproveRules);
     } else {
       setState((s) => ({
@@ -66,6 +74,8 @@ export function useSettings(client: ApiClient = defaultApi) {
       if (res.ok) {
         setState({ data: res.data, loading: false, error: null });
         setCurrentModel(res.data.model);
+        setCurrentModelProvider(res.data.modelProvider ?? null);
+        setCurrentModelKey(res.data.modelKey ?? null);
         setAutoApproveRules(res.data.autoApproveRules);
       }
       return res;
@@ -92,12 +102,27 @@ export function useSettings(client: ApiClient = defaultApi) {
   );
 
   const changeModel = useCallback(
-    async (model: string) => {
-      const res = await client.changeModel({ model });
+    async (selection: { model: string; provider?: string; modelKey?: string }) => {
+      const res = await client.changeModel(selection);
       if (res.ok) {
         setCurrentModel(res.data.model);
+        const parsedProvider =
+          selection.provider ??
+          (selection.modelKey?.includes('::')
+            ? selection.modelKey.split('::', 1)[0]
+            : null);
+        setCurrentModelProvider(parsedProvider);
+        setCurrentModelKey(selection.modelKey ?? null);
         if (settingsCache) {
-          settingsCache = { ...settingsCache, data: { ...settingsCache.data, model: res.data.model } };
+          settingsCache = {
+            ...settingsCache,
+            data: {
+              ...settingsCache.data,
+              model: res.data.model,
+              modelProvider: parsedProvider,
+              modelKey: selection.modelKey ?? null,
+            },
+          };
         }
       }
       return res;
@@ -129,9 +154,12 @@ export function useSettings(client: ApiClient = defaultApi) {
     loading: state.loading,
     error: state.error,
     currentModel,
+    currentModelProvider,
+    currentModelKey,
     availableModels: state.data?.availableModels ?? [],
     modelsByProvider: state.data?.modelsByProvider ?? {},
     modelMetadata: state.data?.modelMetadata ?? {},
+    modelMetadataByKey: state.data?.modelMetadataByKey ?? {},
     contextLimit: state.data?.contextLimit ?? 128_000,
     systemPrompt: state.data?.systemPrompt ?? '',
     autoApproveRules,

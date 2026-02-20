@@ -16,9 +16,12 @@ class ModelMetadata(BaseModel):
 
 class GetSettingsResponse(BaseModel):
     model: str
+    modelProvider: str | None = None
+    modelKey: str | None = None
     availableModels: list[str]
     modelsByProvider: dict[str, list[str]]
     modelMetadata: dict[str, ModelMetadata]
+    modelMetadataByKey: dict[str, ModelMetadata]
     contextLimit: int
     autoApproveRules: list[AutoApproveRuleOut]
     systemPrompt: str
@@ -44,6 +47,8 @@ class GetAutoApproveResponse(BaseModel):
 
 class SetModelRequest(BaseModel):
     model: str = Field(min_length=1, max_length=500)
+    provider: str | None = Field(default=None, min_length=1, max_length=64)
+    modelKey: str | None = Field(default=None, min_length=3, max_length=600)
 
 
 class SetModelResponse(BaseModel):

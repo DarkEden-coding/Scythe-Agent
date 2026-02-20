@@ -1,6 +1,9 @@
 import asyncio
 
+from app.db.repositories.chat_repo import ChatRepository
+from app.db.session import get_sessionmaker
 from app.services.event_bus import get_event_bus
+from app.utils.time import utc_now_iso
 
 
 def _assert_envelope(payload: dict) -> None:
@@ -51,22 +54,40 @@ def test_auto_approve_rule_matcher_fields(client) -> None:
 
 
 def test_approve_reject_transitions(client) -> None:
-    client.post("/api/chat/chat-1/messages", json={"content": "approve/reject seed"}).json()["data"]
-    history = client.get("/api/chat/chat-1/history").json()["data"]
-    pending = [t for t in history["toolCalls"] if t.get("status") == "pending"]
-    pending_for_checkpoint = [t for t in pending if t.get("input", {}).get("path") == "plans/backend-python-mvp-plan.md"]
-    assert pending_for_checkpoint
-    approve_id = pending_for_checkpoint[-1]["id"]
+    approve_id = "tc-svc-approve"
+    with get_sessionmaker()() as db:
+        repo = ChatRepository(db)
+        repo.create_tool_call(
+            tool_call_id=approve_id,
+            chat_id="chat-1",
+            checkpoint_id="cp-1",
+            name="read_file",
+            status="pending",
+            input_json='{"path": "/Users/darkeden/Scythe-Agent/backend/pyproject.toml"}',
+            timestamp=utc_now_iso(),
+            parallel_group=None,
+        )
+        db.commit()
 
     approve_res = client.post("/api/chat/chat-1/approve", json={"toolCallId": approve_id})
     assert approve_res.status_code == 200
     approve_data = approve_res.json()["data"]
     assert approve_data["toolCall"]["status"] in {"completed", "error"}
 
-    client.post("/api/chat/chat-1/messages", json={"content": "reject seed"}).json()["data"]
-    history2 = client.get("/api/chat/chat-1/history").json()["data"]
-    pending2 = [t for t in history2["toolCalls"] if t.get("status") == "pending"]
-    reject_id = pending2[-1]["id"]
+    reject_id = "tc-svc-reject"
+    with get_sessionmaker()() as db:
+        repo = ChatRepository(db)
+        repo.create_tool_call(
+            tool_call_id=reject_id,
+            chat_id="chat-1",
+            checkpoint_id="cp-1",
+            name="read_file",
+            status="pending",
+            input_json='{"path": "/Users/darkeden/Scythe-Agent/backend/pyproject.toml"}',
+            timestamp=utc_now_iso(),
+            parallel_group=None,
+        )
+        db.commit()
     reject_res = client.post("/api/chat/chat-1/reject", json={"toolCallId": reject_id, "reason": "deny"})
     assert reject_res.status_code == 200
     reject_data = reject_res.json()["data"]

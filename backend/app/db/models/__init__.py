@@ -4,6 +4,7 @@ from app.db.models.observation import Observation as Observation
 from app.db.models.checkpoint import Checkpoint as Checkpoint
 from app.db.models.context_item import ContextItem as ContextItem
 from app.db.models.file_edit import FileEdit as FileEdit
+from app.db.models.memory_state import MemoryState as MemoryState
 from app.db.models.file_snapshot import FileSnapshot as FileSnapshot
 from app.db.models.mcp_server import MCPServer as MCPServer
 from app.db.models.mcp_tool_cache import MCPToolCache as MCPToolCache
@@ -13,4 +14,5 @@ from app.db.models.provider_model_cache import ProviderModelCache as ProviderMod
 from app.db.models.reasoning_block import ReasoningBlock as ReasoningBlock
 from app.db.models.settings import Settings as Settings
 from app.db.models.todo import Todo as Todo
+from app.db.models.tool_artifact import ToolArtifact as ToolArtifact
 from app.db.models.tool_call import ToolCall as ToolCall

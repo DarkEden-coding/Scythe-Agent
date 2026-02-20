@@ -16,17 +16,18 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column("todos", sa.Column("checkpoint_id", sa.Text(), nullable=True))
-    op.create_foreign_key(
-        "fk_todos_checkpoint_id_checkpoints",
-        "todos",
-        "checkpoints",
-        ["checkpoint_id"],
-        ["id"],
-        ondelete="CASCADE",
-    )
+    with op.batch_alter_table("todos") as batch_op:
+        batch_op.add_column(sa.Column("checkpoint_id", sa.Text(), nullable=True))
+        batch_op.create_foreign_key(
+            "fk_todos_checkpoint_id_checkpoints",
+            "checkpoints",
+            ["checkpoint_id"],
+            ["id"],
+            ondelete="CASCADE",
+        )
 
 
 def downgrade() -> None:
-    op.drop_constraint("fk_todos_checkpoint_id_checkpoints", "todos", type_="foreignkey")
-    op.drop_column("todos", "checkpoint_id")
+    with op.batch_alter_table("todos") as batch_op:
+        batch_op.drop_constraint("fk_todos_checkpoint_id_checkpoints", type_="foreignkey")
+        batch_op.drop_column("checkpoint_id")
