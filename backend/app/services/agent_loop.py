@@ -198,27 +198,19 @@ class AgentLoop:
                     )
 
                 if result.finish_reason == "stop" or not result.tool_calls:
-                    if not has_content:
-                        conversation_messages.append(
-                            {"role": "assistant", "content": response_text or ""}
-                        )
-                        conversation_messages.append(
-                            {
-                                "role": "user",
-                                "content": "You used no tools and provided no response. You must use tools for every response except your last response, which must have text content to the user.",
-                            }
-                        )
-                        continue
-                    await self._event_bus.publish(
-                        chat_id,
-                        {"type": "agent_done", "payload": {"checkpointId": checkpoint_id}},
+                    conversation_messages.append(
+                        {"role": "assistant", "content": response_text or ""}
                     )
-                    logger.info(
-                        "Conversation ended: responded with text and no tools chat_id=%s checkpoint_id=%s",
-                        chat_id,
-                        checkpoint_id,
+                    conversation_messages.append(
+                        {
+                            "role": "user",
+                            "content": (
+                                "You must call the submit_task tool when all tasks are complete. "
+                                "The agent loop continues until you call submit_task."
+                            ),
+                        }
                     )
-                    return  # finally block fires and schedules observation
+                    continue
 
                 assistant_msg = {
                     "role": "assistant",
@@ -247,6 +239,28 @@ class AgentLoop:
                     tr_with_id = dict(tr)
                     tr_with_id["_message_id"] = msg_id
                     conversation_messages.append(tr_with_id)
+
+                tc_id_to_name = {
+                    tc.get("id", ""): tc.get("function", {}).get("name", "")
+                    for tc in result.tool_calls
+                }
+                submit_task_succeeded = False
+                for tr in tool_results:
+                    if tc_id_to_name.get(tr.get("tool_call_id")) == "submit_task":
+                        if (tr.get("content") or "").strip() == "Task submitted.":
+                            submit_task_succeeded = True
+                        break
+                if submit_task_succeeded:
+                    await self._event_bus.publish(
+                        chat_id,
+                        {"type": "agent_done", "payload": {"checkpointId": checkpoint_id}},
+                    )
+                    logger.info(
+                        "Conversation ended: submit_task succeeded chat_id=%s checkpoint_id=%s",
+                        chat_id,
+                        checkpoint_id,
+                    )
+                    return
 
                 # Queue OM updates during long-running loops so threshold-triggered
                 # observation does not depend on turn completion.

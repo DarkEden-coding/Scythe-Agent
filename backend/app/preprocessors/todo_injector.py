@@ -64,8 +64,13 @@ class TodoInjectorPreprocessor:
             lines.append(
                 "IMPORTANT: When task status changes, remember to call the `update_todo_list` tool to update your progress."
             )
-            lines.append("</environment_details>")
-            content = content.rstrip() + "\n\n" + "\n".join(lines)
+        else:
+            lines = ["<environment_details>", "REMINDERS", ""]
+        lines.append(
+            "When all tasks are complete, you must call the `submit_task` tool to end the agent loop."
+        )
+        lines.append("</environment_details>")
+        content = content.rstrip() + "\n\n" + "\n".join(lines)
         ctx.messages[last_user_idx] = {
             **ctx.messages[last_user_idx],
             "content": content,

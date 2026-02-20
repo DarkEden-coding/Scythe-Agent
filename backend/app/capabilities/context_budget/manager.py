@@ -68,6 +68,7 @@ class ContextBudgetManager:
                 [
                     "",
                     "IMPORTANT: call `update_todo_list` whenever task status changes.",
+                    "When done, call `submit_task` to end the agent loop.",
                     "</environment_details>",
                 ]
             )
