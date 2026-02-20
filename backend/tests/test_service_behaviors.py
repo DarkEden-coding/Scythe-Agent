@@ -57,6 +57,29 @@ def test_auto_approve_rule_matcher_fields(client) -> None:
     assert fields == {"tool", "path", "extension", "directory", "pattern"}
 
 
+def test_reasoning_level_round_trip(client) -> None:
+    set_level = client.put(
+        "/api/settings/reasoning-level",
+        json={"reasoningLevel": "high"},
+    )
+    assert set_level.status_code == 200
+    body = set_level.json()
+    _assert_envelope(body)
+    assert body["data"]["reasoningLevel"] == "high"
+
+    settings = client.get("/api/settings")
+    assert settings.status_code == 200
+    settings_data = settings.json()["data"]
+    assert settings_data["reasoningLevel"] == "high"
+
+    set_off = client.put(
+        "/api/settings/reasoning-level",
+        json={"reasoningLevel": "off"},
+    )
+    assert set_off.status_code == 200
+    assert set_off.json()["data"]["reasoningLevel"] == "off"
+
+
 def test_approve_reject_transitions(client) -> None:
     approve_id = "tc-svc-approve"
     with get_sessionmaker()() as db:
@@ -189,6 +212,7 @@ def test_revert_prunes_observational_memory_to_checkpoint(client) -> None:
             generation=0,
             content="keep observation",
             token_count=3,
+            trigger_token_count=11,
             observed_up_to_message_id=keep_message.id,
             current_task="keep task",
             suggested_response="keep suggestion",
@@ -200,6 +224,7 @@ def test_revert_prunes_observational_memory_to_checkpoint(client) -> None:
             generation=1,
             content="drop observation",
             token_count=3,
+            trigger_token_count=13,
             observed_up_to_message_id=drop_message.id,
             current_task="drop task",
             suggested_response="drop suggestion",
@@ -253,10 +278,12 @@ def test_revert_prunes_observational_memory_to_checkpoint(client) -> None:
 
     observations = memory["observations"]
     assert [o["id"] for o in observations] == ["obs-keep"]
+    assert observations[0]["triggerTokenCount"] == 11
 
     state = memory["state"]
     assert state["observedUpToMessageId"] == "msg-obs-keep"
     assert state["content"] == "keep observation"
+    assert state["triggerTokenCount"] == 11
     assert state["timestamp"] == base_ts
     assert state["buffer"]["lastBoundary"] == 0
 

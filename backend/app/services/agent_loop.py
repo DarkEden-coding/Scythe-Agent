@@ -9,6 +9,7 @@ import logging
 import httpx
 
 from app.capabilities.context_budget.manager import ContextBudgetManager
+from app.providers.reasoning import resolve_reasoning_effort
 from app.capabilities.memory.strategies import get_memory_strategy
 from app.schemas.chat import MessageOut
 from app.services.llm_streamer import LLMStreamer
@@ -49,6 +50,43 @@ class AgentLoop:
         self._get_openrouter_tools = get_openrouter_tools
         self._default_system_prompt = default_system_prompt
         self._session_factory = session_factory
+
+    @staticmethod
+    def _model_metadata_for_settings(settings) -> dict | None:
+        model_key = settings.modelKey
+        if not model_key and settings.modelProvider:
+            model_key = f"{settings.modelProvider}::{settings.model}"
+        if model_key and settings.modelMetadataByKey:
+            by_key = settings.modelMetadataByKey.get(model_key)
+            if by_key:
+                return by_key
+        if settings.modelMetadata:
+            by_label = settings.modelMetadata.get(settings.model)
+            if by_label:
+                return by_label
+        return None
+
+    @classmethod
+    def _reasoning_param_for_settings(cls, settings) -> dict | None:
+        meta = cls._model_metadata_for_settings(settings)
+        if not meta:
+            return None
+        if isinstance(meta, dict):
+            levels = list(meta.get("reasoningLevels") or [])
+            default_level = meta.get("defaultReasoningLevel")
+        else:
+            levels = list(getattr(meta, "reasoningLevels", []) or [])
+            default_level = getattr(meta, "defaultReasoningLevel", None)
+        if not levels:
+            return None
+        selected = resolve_reasoning_effort(
+            requested_level=getattr(settings, "reasoningLevel", None),
+            available_levels=levels,
+            default_level=default_level,
+        )
+        if not selected:
+            return None
+        return {"effort": selected}
 
     async def run(
         self,
@@ -124,7 +162,7 @@ class AgentLoop:
         )
 
         iteration = 0
-        reasoning_param = {"effort": "medium"}
+        reasoning_param = self._reasoning_param_for_settings(settings)
         _cancelled = False
         last_guard_signature: tuple[str, str] | None = None
         repeated_tool_streak = 0

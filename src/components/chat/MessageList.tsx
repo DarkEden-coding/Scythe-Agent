@@ -17,7 +17,17 @@ interface MessageListProps {
   readonly showObservationsInChat?: boolean;
 }
 
-function ObservationSwitchMessage({ generation }: { generation?: number }) {
+function ObservationSwitchMessage({
+  generation,
+  triggerTokens,
+}: {
+  generation?: number;
+  triggerTokens?: number;
+}) {
+  const triggerTokensLabel =
+    typeof triggerTokens === 'number' && Number.isFinite(triggerTokens) && triggerTokens > 0
+      ? ` · trigger tokens: ${triggerTokens.toLocaleString()}`
+      : '';
   return (
     <div className="my-2 mx-2">
       <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 overflow-hidden">
@@ -26,6 +36,7 @@ function ObservationSwitchMessage({ generation }: { generation?: number }) {
           <span className="text-xs font-medium text-cyan-300 flex-1">
             Switched earlier chat history to observations
             {generation !== undefined ? ` · Gen ${generation}` : ''}
+            {triggerTokensLabel}
           </span>
         </div>
       </div>
@@ -120,7 +131,10 @@ export function MessageList({
             {(observationsByMessageId.get(message.id) ?? []).map((item, itemIndex) => (
               <div key={`${item.id ?? item.timestamp ?? 'obs'}-${itemIndex}`}>
                 {item.source !== 'buffered' && (
-                  <ObservationSwitchMessage generation={item.generation} />
+                  <ObservationSwitchMessage
+                    generation={item.generation}
+                    triggerTokens={item.triggerTokenCount ?? item.tokenCount}
+                  />
                 )}
                 <ObservationMessage observation={item} />
               </div>
@@ -131,7 +145,10 @@ export function MessageList({
       {unanchoredObservations.map((item, itemIndex) => (
         <div key={`tail-${item.id ?? item.timestamp ?? 'obs'}-${itemIndex}`}>
           {item.source !== 'buffered' && (
-            <ObservationSwitchMessage generation={item.generation} />
+            <ObservationSwitchMessage
+              generation={item.generation}
+              triggerTokens={item.triggerTokenCount ?? item.tokenCount}
+            />
           )}
           <ObservationMessage observation={item} />
         </div>

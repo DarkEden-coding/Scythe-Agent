@@ -64,7 +64,11 @@ class OpenAISubModelCatalogService:
                     provider="openai-sub",
                     label=model_id,
                     context_limit=ctx,
-                    raw_json=json.dumps({"id": model_id, "provider": "openai-sub"}),
+                    raw_json=json.dumps(
+                        {"provider": "openai-sub", **item}
+                        if "provider" not in item
+                        else item
+                    ),
                     fetched_at=fetched_at,
                 )
             )

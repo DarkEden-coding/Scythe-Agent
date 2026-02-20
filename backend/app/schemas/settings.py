@@ -12,12 +12,16 @@ class AutoApproveRuleOut(BaseModel):
 class ModelMetadata(BaseModel):
     contextLimit: int | None = None
     pricePerMillion: float | None = None
+    reasoningSupported: bool = False
+    reasoningLevels: list[str] = Field(default_factory=list)
+    defaultReasoningLevel: str | None = None
 
 
 class GetSettingsResponse(BaseModel):
     model: str
     modelProvider: str | None = None
     modelKey: str | None = None
+    reasoningLevel: str
     availableModels: list[str]
     modelsByProvider: dict[str, list[str]]
     modelMetadata: dict[str, ModelMetadata]
@@ -110,6 +114,14 @@ class SetSystemPromptRequest(BaseModel):
 
 class SetSystemPromptResponse(BaseModel):
     systemPrompt: str
+
+
+class SetReasoningLevelRequest(BaseModel):
+    reasoningLevel: str = Field(min_length=1, max_length=32)
+
+
+class SetReasoningLevelResponse(BaseModel):
+    reasoningLevel: str
 
 
 class SetMemorySettingsRequest(BaseModel):

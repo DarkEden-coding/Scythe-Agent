@@ -9,8 +9,16 @@ interface EnhancedModelPickerProps {
   currentModel: string;
   currentModelProvider?: string | null;
   currentModelKey?: string | null;
+  reasoningLevel: string;
+  setReasoningLevel: (reasoningLevel: string) => Promise<{ ok: boolean; error?: string }>;
   modelsByProvider: Record<string, string[]>;
-  modelMetadataByKey: Record<string, { contextLimit?: number; pricePerMillion?: number }>;
+  modelMetadataByKey: Record<string, {
+    contextLimit?: number;
+    pricePerMillion?: number;
+    reasoningSupported?: boolean;
+    reasoningLevels?: string[];
+    defaultReasoningLevel?: string | null;
+  }>;
   loading: boolean;
   changeModel: (selection: {
     model: string;
@@ -78,6 +86,8 @@ export function EnhancedModelPicker({
   currentModel,
   currentModelProvider,
   currentModelKey,
+  reasoningLevel,
+  setReasoningLevel,
   modelsByProvider,
   modelMetadataByKey,
   loading,
@@ -89,6 +99,8 @@ export function EnhancedModelPicker({
   const [groupByProvider, setGroupByProvider] = useState(false);
   const [activeTab, setActiveTab] = useState<string>(PROVIDER_TABS[0].id);
   const [changingModel, setChangingModel] = useState(false);
+  const [changingReasoning, setChangingReasoning] = useState(false);
+  const [reasoningValue, setReasoningValue] = useState(reasoningLevel);
   const [draggedFavorite, setDraggedFavorite] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -151,6 +163,43 @@ export function EnhancedModelPicker({
     }
     return matches[0];
   }, [allModelsMap, currentModel, currentModelKey, currentModelProvider, modelKeysByLabel]);
+
+  const currentModelMetadata = useMemo(() => {
+    if (currentSelectionKey && modelMetadataByKey[currentSelectionKey]) {
+      return modelMetadataByKey[currentSelectionKey];
+    }
+    const matches = modelKeysByLabel[currentModel] ?? [];
+    for (const key of matches) {
+      const meta = modelMetadataByKey[key];
+      if (meta) return meta;
+    }
+    return undefined;
+  }, [currentModel, currentSelectionKey, modelKeysByLabel, modelMetadataByKey]);
+
+  const reasoningLevels = useMemo(() => {
+    const raw = currentModelMetadata?.reasoningLevels ?? [];
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const level of raw) {
+      const normalized = level.trim().toLowerCase();
+      if (!normalized || seen.has(normalized)) continue;
+      seen.add(normalized);
+      out.push(normalized);
+    }
+    return out;
+  }, [currentModelMetadata]);
+
+  const reasoningSupported = Boolean(
+    currentModelMetadata?.reasoningSupported || reasoningLevels.length > 0,
+  );
+  const reasoningOptions = reasoningSupported ? ['off', ...reasoningLevels] : ['off'];
+  const normalizedReasoningLevel = reasoningOptions.includes(reasoningLevel)
+    ? reasoningLevel
+    : 'off';
+
+  useEffect(() => {
+    setReasoningValue(normalizedReasoningLevel);
+  }, [normalizedReasoningLevel]);
 
   const canonicalizeFavoriteOrder = useCallback(
     (rawOrder: string[]): string[] => {
@@ -340,6 +389,27 @@ export function EnhancedModelPicker({
   const hasResults = filteredModels.length > 0;
   const hasFavorites = canonicalFavoritesOrder.length > 0;
 
+  const formatReasoningLabel = (level: string) => {
+    if (level === 'off') return 'Off';
+    if (level.length <= 2) return level.toUpperCase();
+    return level.charAt(0).toUpperCase() + level.slice(1);
+  };
+
+  const handleReasoningChange = async (next: string) => {
+    setReasoningValue(next);
+    setChangingReasoning(true);
+    try {
+      const res = await setReasoningLevel(next);
+      if (!res.ok) {
+        setReasoningValue(normalizedReasoningLevel);
+      }
+    } catch {
+      setReasoningValue(normalizedReasoningLevel);
+    } finally {
+      setChangingReasoning(false);
+    }
+  };
+
   const handleGroupByProviderToggle = () => {
     setGroupByProvider((prev) => {
       const next = !prev;
@@ -483,7 +553,7 @@ export function EnhancedModelPicker({
             })}
           </div>
 
-          {/* Search and Sort */}
+          {/* Search, Sort, and Reasoning */}
           <div className="px-6 py-4 border-b border-gray-700/50 space-y-3 shrink-0">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -497,7 +567,7 @@ export function EnhancedModelPicker({
               />
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <button
                 onClick={() => {
                   const idx = SORT_OPTIONS.indexOf(sortBy);
@@ -514,6 +584,36 @@ export function EnhancedModelPicker({
                   {favorites.size} favorite{favorites.size !== 1 ? 's' : ''}
                 </div>
               )}
+                <div className="ml-auto flex items-center gap-2">
+                  <label
+                    htmlFor="model-picker-reasoning-level"
+                    className="text-xs text-gray-400 whitespace-nowrap"
+                  >
+                    Reasoning
+                  </label>
+                  <select
+                    id="model-picker-reasoning-level"
+                    value={reasoningOptions.includes(reasoningValue) ? reasoningValue : 'off'}
+                    onChange={(e) => void handleReasoningChange(e.target.value)}
+                    disabled={changingReasoning}
+                    className={cn(
+                      'px-2.5 py-1.5 bg-gray-800/50 border border-gray-700/40 rounded-lg text-xs text-gray-200',
+                      'focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/30',
+                      'disabled:opacity-60 disabled:cursor-not-allowed',
+                    )}
+                    title={
+                      reasoningSupported
+                        ? `Available: ${reasoningLevels.join(', ')}`
+                        : 'Current model does not advertise reasoning levels'
+                    }
+                  >
+                    {reasoningOptions.map((level) => (
+                      <option key={level} value={level} className="bg-gray-900 text-gray-100">
+                        {formatReasoningLabel(level)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
             </div>
           </div>
 

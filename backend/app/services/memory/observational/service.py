@@ -17,6 +17,7 @@ from app.services.memory.observational.prompts import (
     build_reflector_prompt,
     parse_observation_output,
 )
+from app.services.token_counter import count_messages_tokens
 from app.utils.ids import generate_id
 from app.utils.messages import strip_message_metadata
 from app.utils.time import utc_now_iso
@@ -163,6 +164,7 @@ class ObservationMemoryService:
         return {
             "generation": parsed.get("generation"),
             "tokenCount": parsed.get("tokenCount"),
+            "triggerTokenCount": parsed.get("triggerTokenCount"),
             "observedUpToMessageId": parsed.get("observedUpToMessageId"),
             "currentTask": parsed.get("currentTask"),
             "suggestedResponse": parsed.get("suggestedResponse"),
@@ -210,6 +212,12 @@ class ObservationMemoryService:
         out = dict(state)
         out["generation"] = observation.generation
         out["tokenCount"] = observation.token_count
+        out["triggerTokenCount"] = (
+            observation.trigger_token_count
+            if isinstance(observation.trigger_token_count, int)
+            and observation.trigger_token_count > 0
+            else observation.token_count
+        )
         out["observedUpToMessageId"] = observation.observed_up_to_message_id
         out["currentTask"] = observation.current_task
         out["suggestedResponse"] = observation.suggested_response
@@ -370,6 +378,7 @@ class ObservationMemoryService:
             chat_id=chat_id,
             base_observation=latest_obs,
             chunks=[chunk],
+            trigger_token_count=count_messages_tokens(unobserved, model=model),
         )
 
     def activate_buffered_observations(
@@ -378,6 +387,7 @@ class ObservationMemoryService:
         chat_id: str,
         base_observation: Observation | None,
         chunks: list[BufferedObservationChunk],
+        trigger_token_count: int | None = None,
     ) -> Observation | None:
         """Concatenate buffered chunks into the active observation block."""
         if not chunks:
@@ -393,7 +403,9 @@ class ObservationMemoryService:
         if not merged_content:
             return base_observation
 
-        generation = base_observation.generation if base_observation is not None else 0
+        # Each activation creates a new observation generation:
+        # first activation starts at 0, then increments on every subsequent activation.
+        generation = (base_observation.generation + 1) if base_observation is not None else 0
         observed_up_to_message_id = (
             base_observation.observed_up_to_message_id if base_observation is not None else None
         )
@@ -426,6 +438,11 @@ class ObservationMemoryService:
             generation=generation,
             content=merged_content,
             token_count=_count_tokens(merged_content),
+            trigger_token_count=(
+                trigger_token_count
+                if isinstance(trigger_token_count, int) and trigger_token_count > 0
+                else None
+            ),
             observed_up_to_message_id=observed_up_to_message_id,
             current_task=current_task,
             suggested_response=suggested_response,
@@ -491,6 +508,7 @@ class ObservationMemoryService:
             generation=new_generation,
             content=content,
             token_count=token_count,
+            trigger_token_count=latest_obs.token_count,
             observed_up_to_message_id=latest_obs.observed_up_to_message_id,
             current_task=current_task,
             suggested_response=suggested_response,

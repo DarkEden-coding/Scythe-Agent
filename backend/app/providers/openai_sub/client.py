@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import platform
+import re
 import uuid
 from typing import Any, TypedDict, cast
 
@@ -22,6 +23,14 @@ _OPENAI_SUB_MODEL_IDS = [
     "gpt-5.1-codex-mini",
     "gpt-5.3-codex",
 ]
+
+
+def _infer_reasoning_levels(model_id: str) -> list[str]:
+    """Best-effort reasoning levels for subscription models when API lacks metadata."""
+    low = model_id.lower()
+    if re.search(r"(gpt[-_]?5)|(^|[^a-z0-9])o[13]([^a-z0-9]|$)", low):
+        return ["minimal", "low", "medium", "high"]
+    return ["low", "medium", "high"]
 
 
 class StreamContentEvent(TypedDict):
@@ -129,6 +138,7 @@ def _messages_to_codex_input(messages: list[dict]) -> tuple[list[dict], str]:
     """
     input_items: list[dict] = []
     instructions = ""
+    seen_call_ids: set[str] = set()
 
     for m in messages:
         role = m.get("role", "user")
@@ -165,12 +175,14 @@ def _messages_to_codex_input(messages: list[dict]) -> tuple[list[dict], str]:
             tool_calls = m.get("tool_calls") or []
             for tc in tool_calls:
                 fn = tc.get("function", {}) or {}
+                call_id = _sanitize_call_id(
+                    tc.get("id", "") or f"call_{uuid.uuid4().hex[:8]}"
+                )
+                seen_call_ids.add(call_id)
                 input_items.append(
                     {
                         "type": "function_call",
-                        "call_id": _sanitize_call_id(
-                            tc.get("id", "") or f"call_{uuid.uuid4().hex[:8]}"
-                        ),
+                        "call_id": call_id,
                         "name": fn.get("name", ""),
                         "arguments": fn.get("arguments", "{}"),
                     }
@@ -178,12 +190,20 @@ def _messages_to_codex_input(messages: list[dict]) -> tuple[list[dict], str]:
             continue
 
         if role == "tool":
-            tool_call_id = m.get("tool_call_id", "")
+            tool_call_id = _sanitize_call_id(m.get("tool_call_id", ""))
+            if not tool_call_id:
+                continue
+            if tool_call_id not in seen_call_ids:
+                logger.warning(
+                    "Skipping orphan tool output with call_id=%s; no matching function_call in input payload",
+                    tool_call_id,
+                )
+                continue
             output = content if isinstance(content, str) else str(content or "")
             input_items.append(
                 {
                     "type": "function_call_output",
-                    "call_id": _sanitize_call_id(tool_call_id),
+                    "call_id": tool_call_id,
                     "output": output,
                 }
             )
@@ -502,7 +522,17 @@ class OpenAISubClient:
 
     async def get_models(self) -> list[dict]:
         """Return subscription models. /v1/models returns 403 for OAuth tokens."""
-        return [{"id": m} for m in _OPENAI_SUB_MODEL_IDS]
+        return [
+            {
+                "id": model_id,
+                "reasoning": {
+                    "supported": True,
+                    "efforts": _infer_reasoning_levels(model_id),
+                    "default": "medium",
+                },
+            }
+            for model_id in _OPENAI_SUB_MODEL_IDS
+        ]
 
     async def create_chat_completion(
         self,

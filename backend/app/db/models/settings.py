@@ -18,6 +18,9 @@ class Settings(Base):
     openai_sub_access_token: Mapped[str | None] = mapped_column(Text, nullable=True)
     openai_sub_refresh_token: Mapped[str | None] = mapped_column(Text, nullable=True)
     system_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reasoning_level: Mapped[str | None] = mapped_column(
+        Text, nullable=True, default="medium"
+    )
     # Observational Memory settings
     memory_mode: Mapped[str | None] = mapped_column(Text, nullable=True, default="observational")
     observer_model: Mapped[str | None] = mapped_column(Text, nullable=True)

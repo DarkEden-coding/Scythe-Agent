@@ -95,6 +95,7 @@ class OMBackgroundRunner:
         state: dict[str, Any],
         latest_observation,
         unobserved_messages: list[dict],
+        trigger_token_count: int,
         model: str,
         observer_model: str | None,
         client,
@@ -127,6 +128,7 @@ class OMBackgroundRunner:
             chat_id=chat_id,
             base_observation=latest_observation,
             chunks=chunks,
+            trigger_token_count=trigger_token_count,
         )
         if activated is None:
             return latest_observation, state
@@ -335,6 +337,7 @@ class OMBackgroundRunner:
                         state=state,
                         latest_observation=latest_obs,
                         unobserved_messages=unobserved_active,
+                        trigger_token_count=unobserved_tokens_active,
                         model=model,
                         observer_model=observer_model,
                         client=client,

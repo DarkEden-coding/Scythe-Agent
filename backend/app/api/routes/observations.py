@@ -34,6 +34,12 @@ def get_memory_state(chat_id: str, db: Session = Depends(get_db)):
                 "id": o.id,
                 "generation": o.generation,
                 "tokenCount": o.token_count,
+                "triggerTokenCount": (
+                    o.trigger_token_count
+                    if isinstance(o.trigger_token_count, int)
+                    and o.trigger_token_count > 0
+                    else o.token_count
+                ),
                 "observedUpToMessageId": o.observed_up_to_message_id,
                 "currentTask": o.current_task,
                 "suggestedResponse": o.suggested_response,
@@ -57,6 +63,12 @@ def get_memory_state(chat_id: str, db: Session = Depends(get_db)):
                 if latest is not None:
                     parsed_state = {
                         **parsed_state,
+                        "triggerTokenCount": (
+                            latest.trigger_token_count
+                            if isinstance(latest.trigger_token_count, int)
+                            and latest.trigger_token_count > 0
+                            else latest.token_count
+                        ),
                         "content": latest.content,
                         "currentTask": latest.current_task,
                         "suggestedResponse": latest.suggested_response,

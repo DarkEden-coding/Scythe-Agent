@@ -11,7 +11,13 @@ export function ObservationMessage({ observation }: ObservationMessageProps) {
 
   if (!observation.hasObservations || !observation.content) return null;
 
-  const headerLabel = `Memory Observation${observation.generation !== undefined ? ` · Gen ${observation.generation}` : ''}${observation.tokenCount !== undefined ? ` · ${observation.tokenCount.toLocaleString()} tokens` : ''}`;
+  const triggerTokensLabel =
+    typeof (observation.triggerTokenCount ?? observation.tokenCount) === 'number'
+      && Number.isFinite(observation.triggerTokenCount ?? observation.tokenCount)
+      && (observation.triggerTokenCount ?? observation.tokenCount) > 0
+      ? ` · trigger tokens: ${(observation.triggerTokenCount ?? observation.tokenCount).toLocaleString()}`
+      : '';
+  const headerLabel = `Memory Observation${observation.generation !== undefined ? ` · Gen ${observation.generation}` : ''}${triggerTokensLabel}`;
 
   const timestamp = observation.timestamp ? new Date(observation.timestamp) : null;
   const timeStr = timestamp

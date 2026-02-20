@@ -16,6 +16,14 @@ _ENV_BLOCK_PATTERN = re.compile(
 )
 
 
+def _stable_compaction_split_index(messages: list[dict], recent_count: int) -> int:
+    """Pick a split index that does not start the retained window with tool output."""
+    split_idx = max(0, len(messages) - recent_count)
+    while split_idx > 0 and messages[split_idx].get("role") == "tool":
+        split_idx -= 1
+    return split_idx
+
+
 @dataclass
 class ContextBudgetResult:
     messages: list[dict]
@@ -103,8 +111,11 @@ class ContextBudgetManager:
         if len(messages) <= recent_count:
             return messages, {"compaction_applied": False}
 
-        old_messages = messages[:-recent_count]
-        recent_messages = messages[-recent_count:]
+        split_idx = _stable_compaction_split_index(messages, recent_count)
+        old_messages = messages[:split_idx]
+        recent_messages = messages[split_idx:]
+        if not old_messages:
+            return messages, {"compaction_applied": False}
         try:
             summary = await provider.create_chat_completion(
                 model=model,

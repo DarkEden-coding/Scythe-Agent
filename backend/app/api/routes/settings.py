@@ -13,6 +13,7 @@ from app.schemas.settings import (
     SetModelRequest,
     SetApiKeyRequest,
     SetSystemPromptRequest,
+    SetReasoningLevelRequest,
     SetMemorySettingsRequest,
     OpenRouterConfigResponse,
     GroqConfigResponse,
@@ -71,6 +72,22 @@ def set_system_prompt(request: SetSystemPromptRequest, db: Session = Depends(get
     """Set custom system prompt. Empty string resets to default."""
     try:
         data = SettingsService(db).set_system_prompt(request.systemPrompt)
+        return ok(data.model_dump())
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500, content=err(full_error_message(exc)).model_dump()
+        )
+
+
+@router.put("/reasoning-level")
+def set_reasoning_level(
+    request: SetReasoningLevelRequest, db: Session = Depends(get_db)
+):
+    """Set preferred reasoning effort level for supported models."""
+    try:
+        data = SettingsService(db).set_reasoning_level(request.reasoningLevel)
         return ok(data.model_dump())
     except ValueError as exc:
         return JSONResponse(status_code=400, content=err(str(exc)).model_dump())

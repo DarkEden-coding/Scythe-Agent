@@ -27,6 +27,11 @@ def _ensure_settings_schema(db: Session) -> None:
     if "active_model_provider" not in columns:
         db.execute(text("ALTER TABLE settings ADD COLUMN active_model_provider TEXT"))
         logger.info("Added missing settings.active_model_provider column during startup seed")
+    if "reasoning_level" not in columns:
+        db.execute(
+            text("ALTER TABLE settings ADD COLUMN reasoning_level TEXT DEFAULT 'medium'")
+        )
+        logger.info("Added missing settings.reasoning_level column during startup seed")
 
 
 def seed_app_data(db: Session) -> None:
@@ -41,6 +46,7 @@ def seed_app_data(db: Session) -> None:
                 active_model=settings.default_active_model,
                 active_model_provider="openrouter",
                 context_limit=settings.default_context_limit,
+                reasoning_level="medium",
                 updated_at=now,
             )
         )

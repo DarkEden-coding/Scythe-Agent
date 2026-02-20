@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, ChangeEvent } from 'react';
 import { Check, Loader2, Brain, Database, RefreshCw } from 'lucide-react';
 import { api } from '@/api/client';
 import { cn } from '@/utils/cn';
@@ -17,6 +17,29 @@ const DEFAULT_SETTINGS: MemorySettings = {
   reflector_threshold: 8000,
   show_observations_in_chat: false,
 };
+
+type ThresholdInputKey = 'observer' | 'buffer' | 'reflector';
+type ThresholdSettingKey = 'observer_threshold' | 'buffer_tokens' | 'reflector_threshold';
+
+const THRESHOLD_INPUT_LABELS: Record<ThresholdInputKey, string> = {
+  observer: 'Activation Threshold',
+  buffer: 'Buffer Tokens',
+  reflector: 'Reflector Threshold',
+};
+
+const THRESHOLD_SETTING_TO_INPUT_KEY: Record<ThresholdSettingKey, ThresholdInputKey> = {
+  observer_threshold: 'observer',
+  buffer_tokens: 'buffer',
+  reflector_threshold: 'reflector',
+};
+
+function buildThresholdInputState(source: MemorySettings): Record<ThresholdInputKey, string> {
+  return {
+    observer: source.observer_threshold.toString(),
+    buffer: source.buffer_tokens.toString(),
+    reflector: source.reflector_threshold.toString(),
+  };
+}
 
 interface MemorySettingsPanelProps {
   readonly activeChatId?: string | null;
@@ -82,6 +105,9 @@ export function MemorySettingsPanel({ activeChatId = null }: MemorySettingsPanel
   const [chatMemory, setChatMemory] = useState<ChatMemoryStateResponse | null>(null);
   const [chatMemoryLoading, setChatMemoryLoading] = useState(false);
   const [chatMemoryError, setChatMemoryError] = useState<string | null>(null);
+  const [thresholdInputValues, setThresholdInputValues] = useState<Record<ThresholdInputKey, string>>(
+    () => buildThresholdInputState(DEFAULT_SETTINGS),
+  );
 
   const fetchSettings = useCallback(async () => {
     setLoading(true);
@@ -96,6 +122,7 @@ export function MemorySettingsPanel({ activeChatId = null }: MemorySettingsPanel
       };
       setSettings(normalized);
       setOriginal(normalized);
+      setThresholdInputValues(buildThresholdInputState(normalized));
     }
     setLoading(false);
   }, []);
@@ -125,6 +152,31 @@ export function MemorySettingsPanel({ activeChatId = null }: MemorySettingsPanel
   useEffect(() => {
     fetchChatMemory();
   }, [fetchChatMemory]);
+
+  const handleThresholdInputChange = (key: ThresholdSettingKey) => (event: ChangeEvent<HTMLInputElement>) => {
+    const inputKey = THRESHOLD_SETTING_TO_INPUT_KEY[key];
+    const rawValue = event.target.value;
+    setThresholdInputValues((prev) => ({ ...prev, [inputKey]: rawValue }));
+
+    const parsed = parseInt(rawValue, 10);
+    if (!rawValue || Number.isNaN(parsed)) {
+      return;
+    }
+
+    setSettings((prev) => ({
+      ...prev,
+      [key]: parsed,
+    }));
+  };
+
+  const getThresholdValueForSave = (key: ThresholdSettingKey) => {
+    const rawValue = thresholdInputValues[THRESHOLD_SETTING_TO_INPUT_KEY[key]];
+    const parsed = parseInt(rawValue, 10);
+    if (rawValue && !Number.isNaN(parsed)) {
+      return parsed;
+    }
+    return settings[key];
+  };
 
   const hasChanges =
     settings.memory_mode !== original.memory_mode ||
@@ -182,14 +234,34 @@ export function MemorySettingsPanel({ activeChatId = null }: MemorySettingsPanel
   const handleSave = async () => {
     setSaveError(null);
     setSaveSuccess(false);
+
+    const nextObserverThreshold = getThresholdValueForSave('observer_threshold');
+    const nextBufferTokens = getThresholdValueForSave('buffer_tokens');
+    const nextReflectorThreshold = getThresholdValueForSave('reflector_threshold');
+
+    const thresholdEntries = [
+      ['observer_threshold', nextObserverThreshold] as const,
+      ['buffer_tokens', nextBufferTokens] as const,
+      ['reflector_threshold', nextReflectorThreshold] as const,
+    ];
+
+    const invalidThreshold = thresholdEntries.find(([, value]) => value === 0);
+    if (invalidThreshold) {
+      const label = THRESHOLD_INPUT_LABELS[
+        THRESHOLD_SETTING_TO_INPUT_KEY[invalidThreshold[0]]
+      ];
+      setSaveError(`${label} cannot be 0000.`);
+      return;
+    }
+
     setSaving(true);
     const res = await api.setMemorySettings({
       memoryMode: settings.memory_mode,
       observerModel: settings.observer_model ?? '',
       reflectorModel: settings.reflector_model ?? '',
-      observerThreshold: settings.observer_threshold,
-      bufferTokens: settings.buffer_tokens,
-      reflectorThreshold: settings.reflector_threshold,
+      observerThreshold: nextObserverThreshold,
+      bufferTokens: nextBufferTokens,
+      reflectorThreshold: nextReflectorThreshold,
       showObservationsInChat: settings.show_observations_in_chat,
     });
     setSaving(false);
@@ -203,6 +275,7 @@ export function MemorySettingsPanel({ activeChatId = null }: MemorySettingsPanel
       };
       setSettings(normalized);
       setOriginal(normalized);
+      setThresholdInputValues(buildThresholdInputState(normalized));
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
     } else {
@@ -460,13 +533,8 @@ export function MemorySettingsPanel({ activeChatId = null }: MemorySettingsPanel
                     min={5000}
                     max={200000}
                     step={1000}
-                    value={settings.observer_threshold}
-                    onChange={(e) =>
-                      setSettings((s) => ({
-                        ...s,
-                        observer_threshold: parseInt(e.target.value, 10) || 30000,
-                      }))
-                    }
+                    value={thresholdInputValues.observer}
+                    onChange={handleThresholdInputChange('observer_threshold')}
                     className={cn(
                       'w-full px-3 py-2 bg-gray-900/50 border border-gray-700/50 rounded-lg',
                       'text-sm text-gray-200',
@@ -487,13 +555,8 @@ export function MemorySettingsPanel({ activeChatId = null }: MemorySettingsPanel
                     min={500}
                     max={100000}
                     step={500}
-                    value={settings.buffer_tokens}
-                    onChange={(e) =>
-                      setSettings((s) => ({
-                        ...s,
-                        buffer_tokens: parseInt(e.target.value, 10) || 6000,
-                      }))
-                    }
+                    value={thresholdInputValues.buffer}
+                    onChange={handleThresholdInputChange('buffer_tokens')}
                     className={cn(
                       'w-full px-3 py-2 bg-gray-900/50 border border-gray-700/50 rounded-lg',
                       'text-sm text-gray-200',
@@ -514,13 +577,8 @@ export function MemorySettingsPanel({ activeChatId = null }: MemorySettingsPanel
                     min={5000}
                     max={200000}
                     step={1000}
-                    value={settings.reflector_threshold}
-                    onChange={(e) =>
-                      setSettings((s) => ({
-                        ...s,
-                        reflector_threshold: parseInt(e.target.value, 10) || 8000,
-                      }))
-                    }
+                    value={thresholdInputValues.reflector}
+                    onChange={handleThresholdInputChange('reflector_threshold')}
                     className={cn(
                       'w-full px-3 py-2 bg-gray-900/50 border border-gray-700/50 rounded-lg',
                       'text-sm text-gray-200',
@@ -605,7 +663,10 @@ export function MemorySettingsPanel({ activeChatId = null }: MemorySettingsPanel
 
           <button
             type="button"
-            onClick={() => setSettings(original)}
+            onClick={() => {
+              setSettings(original);
+              setThresholdInputValues(buildThresholdInputState(original));
+            }}
             disabled={!hasChanges}
             className={cn(
               'px-4 py-2.5 rounded-lg font-medium transition-colors border',

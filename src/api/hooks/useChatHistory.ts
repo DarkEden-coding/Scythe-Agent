@@ -50,6 +50,13 @@ function toObservationData(memory: ChatMemoryStateResponse): ObservationData | n
     typeof state.generation === 'number' ? state.generation : undefined;
   const tokenCount =
     typeof state.tokenCount === 'number' ? state.tokenCount : undefined;
+  const latestStored = memory.observations?.[0];
+  const triggerTokenCount =
+    typeof state.triggerTokenCount === 'number'
+      ? state.triggerTokenCount
+      : typeof latestStored?.triggerTokenCount === 'number'
+        ? latestStored.triggerTokenCount
+        : tokenCount;
   const observedUpToMessageId =
     typeof state.observedUpToMessageId === 'string' ? state.observedUpToMessageId : undefined;
   const currentTask =
@@ -69,6 +76,7 @@ function toObservationData(memory: ChatMemoryStateResponse): ObservationData | n
     hasObservations: true,
     generation,
     tokenCount,
+    triggerTokenCount,
     observedUpToMessageId,
     currentTask,
     suggestedResponse,
@@ -80,6 +88,63 @@ function toObservationData(memory: ChatMemoryStateResponse): ObservationData | n
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' ? (value as Record<string, unknown>) : null;
+}
+
+function toMemorySnapshotSignature(memory: ChatMemoryStateResponse | null | undefined): string {
+  if (!memory?.hasMemoryState) return 'none';
+
+  const state = asRecord(memory.state);
+  const latestStored = memory.observations?.[0];
+  const buffer = asRecord(state?.buffer);
+  const bufferChunks = Array.isArray(buffer?.chunks) ? buffer.chunks : [];
+  const latestBufferChunk = asRecord(bufferChunks[bufferChunks.length - 1]);
+
+  return JSON.stringify({
+    strategy: memory.strategy ?? null,
+    updatedAt: memory.updatedAt ?? null,
+    stateGeneration: typeof state?.generation === 'number' ? state.generation : null,
+    stateTokenCount: typeof state?.tokenCount === 'number' ? state.tokenCount : null,
+    stateTriggerTokenCount:
+      typeof state?.triggerTokenCount === 'number' ? state.triggerTokenCount : null,
+    stateTimestamp: typeof state?.timestamp === 'string' ? state.timestamp : null,
+    stateObservedUpToMessageId:
+      typeof state?.observedUpToMessageId === 'string' ? state.observedUpToMessageId : null,
+    stateContentLength:
+      typeof state?.content === 'string' ? state.content.trim().length : null,
+    latestObservationId: typeof latestStored?.id === 'string' ? latestStored.id : null,
+    latestObservationGeneration:
+      typeof latestStored?.generation === 'number' ? latestStored.generation : null,
+    latestObservationTimestamp:
+      typeof latestStored?.timestamp === 'string' ? latestStored.timestamp : null,
+    latestObservationTokenCount:
+      typeof latestStored?.tokenCount === 'number' ? latestStored.tokenCount : null,
+    latestObservationTriggerTokenCount:
+      typeof latestStored?.triggerTokenCount === 'number' ? latestStored.triggerTokenCount : null,
+    latestObservationObservedUpToMessageId:
+      typeof latestStored?.observedUpToMessageId === 'string' ? latestStored.observedUpToMessageId : null,
+    latestObservationContentLength:
+      typeof latestStored?.content === 'string' ? latestStored.content.trim().length : null,
+    bufferChunkCount: bufferChunks.length,
+    latestBufferObservedUpToMessageId:
+      typeof latestBufferChunk?.observedUpToMessageId === 'string'
+        ? latestBufferChunk.observedUpToMessageId
+        : null,
+    latestBufferObservedUpToTimestamp:
+      typeof latestBufferChunk?.observedUpToTimestamp === 'string'
+        ? latestBufferChunk.observedUpToTimestamp
+        : null,
+    latestBufferTokenCount:
+      typeof latestBufferChunk?.tokenCount === 'number' ? latestBufferChunk.tokenCount : null,
+    latestBufferContentLength:
+      typeof latestBufferChunk?.content === 'string' ? latestBufferChunk.content.trim().length : null,
+  });
+}
+
+function didMemorySnapshotChange(
+  previous: ChatMemoryStateResponse | null | undefined,
+  next: ChatMemoryStateResponse | null | undefined,
+): boolean {
+  return toMemorySnapshotSignature(previous) !== toMemorySnapshotSignature(next);
 }
 
 function toObservationTimeline(memory: ChatMemoryStateResponse): ObservationData[] {
@@ -95,6 +160,8 @@ function toObservationTimeline(memory: ChatMemoryStateResponse): ObservationData
     generation: obs.generation,
     content: obs.content,
     tokenCount: obs.tokenCount,
+    triggerTokenCount:
+      typeof obs.triggerTokenCount === 'number' ? obs.triggerTokenCount : obs.tokenCount,
     observedUpToMessageId: obs.observedUpToMessageId ?? undefined,
     currentTask: obs.currentTask ?? undefined,
     suggestedResponse: obs.suggestedResponse ?? undefined,
@@ -120,6 +187,12 @@ function toObservationTimeline(memory: ChatMemoryStateResponse): ObservationData
       typeof raw.tokenCount === 'number' && Number.isFinite(raw.tokenCount) && raw.tokenCount > 0
         ? raw.tokenCount
         : Math.max(1, Math.floor(content.length / 4));
+    const triggerTokenCount =
+      typeof raw.triggerTokenCount === 'number'
+      && Number.isFinite(raw.triggerTokenCount)
+      && raw.triggerTokenCount > 0
+        ? raw.triggerTokenCount
+        : tokenCount;
 
     return [
       {
@@ -130,6 +203,7 @@ function toObservationTimeline(memory: ChatMemoryStateResponse): ObservationData
           ?? (stored[0]?.generation ?? 0),
         content,
         tokenCount,
+        triggerTokenCount,
         observedUpToMessageId:
           typeof raw.observedUpToMessageId === 'string' ? raw.observedUpToMessageId : undefined,
         observedUpToTimestamp,
@@ -155,6 +229,7 @@ function toObservationTimeline(memory: ChatMemoryStateResponse): ObservationData
 function applyObservationalContextOverlay(
   contextItems: ContextItem[],
   memory: ChatMemoryStateResponse | null,
+  toolCalls: ToolCall[],
 ): ContextItem[] {
   if (!memory?.hasMemoryState || memory.strategy !== 'observational') return contextItems;
 
@@ -167,6 +242,12 @@ function applyObservationalContextOverlay(
         ? latestStored.observedUpToMessageId
         : undefined;
   if (!observedUpToMessageId) return contextItems;
+  const observedUpToTimestamp =
+    typeof state?.timestamp === 'string'
+      ? state.timestamp
+      : typeof latestStored?.timestamp === 'string'
+        ? latestStored.timestamp
+        : undefined;
 
   const observedConversationIds: string[] = [];
   for (const item of contextItems) {
@@ -219,10 +300,25 @@ function applyObservationalContextOverlay(
   };
 
   const observedSet = new Set(observedConversationIds);
+  const observedToolOutputIds = new Set(
+    observedUpToTimestamp
+      ? toolCalls
+          .filter((toolCall) => Number.isFinite(toolCall.timestamp.getTime()))
+          .filter((toolCall) => toolCall.timestamp.toISOString() <= observedUpToTimestamp)
+          .map((toolCall) => toolCall.id)
+      : [],
+  );
   const out: ContextItem[] = [];
   let insertedSummary = false;
   for (const item of contextItems) {
     if (item.type === 'conversation' && observedSet.has(item.id)) {
+      if (!insertedSummary) {
+        out.push(summaryItem);
+        insertedSummary = true;
+      }
+      continue;
+    }
+    if (item.type === 'tool_output' && observedToolOutputIds.has(item.id)) {
       if (!insertedSummary) {
         out.push(summaryItem);
         insertedSummary = true;
@@ -260,6 +356,8 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
   const contextRefreshTimer = useRef<number | null>(null);
   const baseContextItemsRef = useRef<ContextItem[]>([]);
   const memoryStateRef = useRef<ChatMemoryStateResponse | null>(null);
+  const toolCallsRef = useRef<ToolCall[]>([]);
+  const observationStatusVersionRef = useRef(0);
   const setMessagesRef = useRef(setMessages);
   const setReasoningBlocksRef = useRef(setReasoningBlocks);
   setMessagesRef.current = setMessages;
@@ -272,7 +370,9 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
     ) => {
       baseContextItemsRef.current = nextBaseContextItems;
       const memorySnapshot = memoryOverride === undefined ? memoryStateRef.current : memoryOverride;
-      setContextItems(applyObservationalContextOverlay(nextBaseContextItems, memorySnapshot));
+      setContextItems(
+        applyObservationalContextOverlay(nextBaseContextItems, memorySnapshot, toolCallsRef.current),
+      );
     },
     [],
   );
@@ -289,6 +389,11 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
   );
 
   useEffect(() => {
+    toolCallsRef.current = toolCalls;
+  }, [toolCalls]);
+
+  useEffect(() => {
+    observationStatusVersionRef.current += 1;
     if (contextRefreshTimer.current != null) {
       window.clearTimeout(contextRefreshTimer.current);
       contextRefreshTimer.current = null;
@@ -342,8 +447,10 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
       if (cancelled) return;
       if (histRes.ok) {
         const d = histRes.data;
+        const normalizedToolCalls = uniqueById(d.toolCalls.map(normalizeToolCall));
         setMessages(uniqueById(d.messages.map(normalizeMessage)));
-        setToolCalls(uniqueById(d.toolCalls.map(normalizeToolCall)));
+        setToolCalls(normalizedToolCalls);
+        toolCallsRef.current = normalizedToolCalls;
         setFileEdits(uniqueById(d.fileEdits.map(normalizeFileEdit)));
         setCheckpoints(uniqueById(d.checkpoints.map(normalizeCheckpoint)));
         setReasoningBlocks(uniqueById(d.reasoningBlocks.map(normalizeReasoningBlock)));
@@ -516,7 +623,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
         setObservation(null);
         setObservations([]);
         commitContextItems(baseContextItemsRef.current, null);
-        return;
+        return { ok: true as const, snapshot: null as ChatMemoryStateResponse | null };
       }
       const res = await client.getMemoryState(resolvedChatId);
       if (res.ok) {
@@ -524,12 +631,27 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
         setObservation(toObservationData(res.data));
         setObservations(toObservationTimeline(res.data));
         commitContextItems(baseContextItemsRef.current, res.data);
+        return { ok: true as const, snapshot: res.data };
       } else {
         memoryStateRef.current = null;
         setObservation(null);
         setObservations([]);
         commitContextItems(baseContextItemsRef.current, null);
+        return { ok: false as const, snapshot: null as ChatMemoryStateResponse | null };
       }
+    },
+    [chatId, client, commitContextItems],
+  );
+
+  const refreshContextFromHistory = useCallback(
+    async (targetChatId?: string | null) => {
+      const resolvedChatId = targetChatId ?? chatId;
+      if (!isValidChatId(resolvedChatId)) return;
+      const res = await client.getChatHistory(resolvedChatId);
+      if (!res.ok) return;
+      commitContextItems(res.data.contextItems);
+      setMaxTokens(res.data.maxTokens);
+      setModel(res.data.model);
     },
     [chatId, client, commitContextItems],
   );
@@ -573,19 +695,6 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
       return res;
     },
     [chatId, client],
-  );
-
-  const refreshContextFromHistory = useCallback(
-    async (targetChatId?: string | null) => {
-      const resolvedChatId = targetChatId ?? chatId;
-      if (!isValidChatId(resolvedChatId)) return;
-      const res = await client.getChatHistory(resolvedChatId);
-      if (!res.ok) return;
-      commitContextItems(res.data.contextItems);
-      setMaxTokens(res.data.maxTokens);
-      setModel(res.data.model);
-    },
-    [chatId, client, commitContextItems],
   );
 
   useEffect(() => {
@@ -938,15 +1047,29 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
         case 'observation_status': {
           const payload = event.payload as AgentObservationStatusPayload;
           if (payload.status === 'observing') {
+            observationStatusVersionRef.current += 1;
             setObservationStatus('observing');
             setPersistentError((prev) => (prev?.source === 'observer' ? null : prev));
           } else if (payload.status === 'reflecting') {
+            observationStatusVersionRef.current += 1;
             setObservationStatus('reflecting');
           } else if (payload.status === 'observed' || payload.status === 'reflected') {
-            setObservationStatus('done');
             setPersistentError((prev) => (prev?.source === 'observer' || prev?.source === 'reflector' ? null : prev));
             // Refresh observation data and re-derive visible context immediately.
-            if (event.chatId) void refreshMemoryState(event.chatId).then(() => scheduleContextRefresh(event.chatId, true));
+            const previousMemorySnapshot = memoryStateRef.current;
+            const statusVersion = observationStatusVersionRef.current + 1;
+            observationStatusVersionRef.current = statusVersion;
+            if (event.chatId) {
+              void refreshMemoryState(event.chatId).then((refreshResult) => {
+                if (observationStatusVersionRef.current !== statusVersion) return;
+                const memoryUpdated =
+                  refreshResult.ok && didMemorySnapshotChange(previousMemorySnapshot, refreshResult.snapshot);
+                setObservationStatus(memoryUpdated ? 'done' : 'idle');
+                scheduleContextRefresh(event.chatId, true);
+              });
+            } else {
+              setObservationStatus('idle');
+            }
           }
           break;
         }

@@ -144,6 +144,22 @@ class SettingsRepository(BaseRepository):
         settings.updated_at = updated_at
         return settings
 
+    def get_reasoning_level(self) -> str:
+        """Get configured reasoning level, defaulting to medium."""
+        settings = self.get_settings()
+        if settings is None or not settings.reasoning_level:
+            return "medium"
+        return settings.reasoning_level
+
+    def set_reasoning_level(self, reasoning_level: str, updated_at: str) -> Settings:
+        """Set configured reasoning level."""
+        settings = self.get_settings()
+        if settings is None:
+            raise ValueError("Settings record missing")
+        settings.reasoning_level = reasoning_level
+        settings.updated_at = updated_at
+        return settings
+
     def get_memory_settings(self) -> dict:
         """Return memory-related settings as a dict with defaults applied."""
         s = self.get_settings()

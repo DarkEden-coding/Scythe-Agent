@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Check, Loader2 } from 'lucide-react';
 import { useSettings } from '@/api/hooks';
 import { cn } from '@/utils/cn';

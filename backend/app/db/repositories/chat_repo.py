@@ -554,6 +554,7 @@ class ChatRepository(BaseRepository):
         current_task: str | None,
         suggested_response: str | None,
         timestamp: str,
+        trigger_token_count: int | None = None,
     ) -> Observation:
         obs = Observation(
             id=observation_id,
@@ -561,6 +562,11 @@ class ChatRepository(BaseRepository):
             generation=generation,
             content=content,
             token_count=token_count,
+            trigger_token_count=(
+                trigger_token_count
+                if isinstance(trigger_token_count, int) and trigger_token_count > 0
+                else token_count
+            ),
             observed_up_to_message_id=observed_up_to_message_id,
             current_task=current_task,
             suggested_response=suggested_response,
@@ -710,6 +716,7 @@ class ChatRepository(BaseRepository):
             for key in (
                 "generation",
                 "tokenCount",
+                "triggerTokenCount",
                 "observedUpToMessageId",
                 "currentTask",
                 "suggestedResponse",
@@ -720,6 +727,12 @@ class ChatRepository(BaseRepository):
         else:
             next_state["generation"] = latest_observation.generation
             next_state["tokenCount"] = latest_observation.token_count
+            next_state["triggerTokenCount"] = (
+                latest_observation.trigger_token_count
+                if isinstance(latest_observation.trigger_token_count, int)
+                and latest_observation.trigger_token_count > 0
+                else latest_observation.token_count
+            )
             next_state["observedUpToMessageId"] = latest_observation.observed_up_to_message_id
             next_state["currentTask"] = latest_observation.current_task
             next_state["suggestedResponse"] = latest_observation.suggested_response

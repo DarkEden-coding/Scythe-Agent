@@ -3,6 +3,10 @@ import logging
 from sqlalchemy.orm import Session
 
 from app.db.models.provider_model_cache import ProviderModelCache
+from app.providers.reasoning import (
+    extract_reasoning_capabilities,
+    normalize_reasoning_setting,
+)
 from app.utils.encryption import encrypt
 from app.utils.ids import generate_id
 from app.utils.time import utc_now_iso
@@ -19,6 +23,7 @@ from app.schemas.settings import (
     ModelMetadata,
     SetModelResponse,
     SetAutoApproveResponse,
+    SetReasoningLevelResponse,
     SetSystemPromptResponse,
 )
 
@@ -72,6 +77,7 @@ class SettingsService:
             model=settings_row.active_model,
             modelProvider=active_provider,
             modelKey=model_key,
+            reasoningLevel=self.repo.get_reasoning_level(),
             availableModels=available_models,
             modelsByProvider=models_by_provider,
             modelMetadata=model_metadata,
@@ -158,6 +164,15 @@ class SettingsService:
                 if prompt is not None or completion is not None:
                     avg_per_token = ((prompt or 0) + (completion or 0)) / 2
                     meta["pricePerMillion"] = round(avg_per_token * 1_000_000, 4)
+            raw_model = raw if isinstance(raw, dict) else None
+            reasoning_caps = extract_reasoning_capabilities(
+                provider=model.provider,
+                model_label=model.label,
+                raw_model=raw_model,
+            )
+            meta["reasoningSupported"] = reasoning_caps.supported
+            meta["reasoningLevels"] = list(reasoning_caps.levels)
+            meta["defaultReasoningLevel"] = reasoning_caps.default_level
         except (json_module.JSONDecodeError, TypeError):
             pass
         return ModelMetadata(**meta)
@@ -597,6 +612,13 @@ class SettingsService:
         self.repo.commit()
         effective = self.get_system_prompt()
         return SetSystemPromptResponse(systemPrompt=effective)
+
+    def set_reasoning_level(self, reasoning_level: str) -> SetReasoningLevelResponse:
+        """Set preferred reasoning effort level used for supported models."""
+        normalized = normalize_reasoning_setting(reasoning_level)
+        self.repo.set_reasoning_level(normalized, updated_at=self._now())
+        self.repo.commit()
+        return SetReasoningLevelResponse(reasoningLevel=normalized)
 
     async def sync_openrouter_models(self) -> list[str]:
         """

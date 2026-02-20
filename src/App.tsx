@@ -462,6 +462,8 @@ export function App() {
         currentModel={settings.currentModel}
         currentModelProvider={settings.currentModelProvider}
         currentModelKey={settings.currentModelKey}
+        reasoningLevel={settings.reasoningLevel}
+        setReasoningLevel={settings.setReasoningLevel}
         modelsByProvider={settings.modelsByProvider}
         modelMetadataByKey={settings.modelMetadataByKey}
         loading={settings.loading}

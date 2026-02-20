@@ -4,7 +4,10 @@ import asyncio
 from types import SimpleNamespace
 
 from app.services.memory.observational.background import OMBackgroundRunner
-from app.services.memory.observational.service import BufferedObservationChunk
+from app.services.memory.observational.service import (
+    BufferedObservationChunk,
+    ObservationMemoryService,
+)
 
 
 class _DummySessionContext:
@@ -444,3 +447,144 @@ def test_edit_message_cancels_observation_runner(client, monkeypatch) -> None:
     assert response.status_code == 200
     assert calls
     assert all(chat_id == "chat-1" for chat_id in calls)
+
+
+def test_activate_buffered_observations_starts_generation_at_zero() -> None:
+    class FakeRepo:
+        def delete_observation(self, _obs) -> None:
+            raise AssertionError("delete_observation should not be called without a base observation")
+
+        def create_observation(self, **kwargs):
+            trigger_token_count = kwargs["trigger_token_count"]
+            return SimpleNamespace(
+                id=kwargs["observation_id"],
+                generation=kwargs["generation"],
+                content=kwargs["content"],
+                token_count=kwargs["token_count"],
+                trigger_token_count=(
+                    trigger_token_count
+                    if isinstance(trigger_token_count, int) and trigger_token_count > 0
+                    else kwargs["token_count"]
+                ),
+                observed_up_to_message_id=kwargs["observed_up_to_message_id"],
+                current_task=kwargs["current_task"],
+                suggested_response=kwargs["suggested_response"],
+                timestamp=kwargs["timestamp"],
+            )
+
+        def commit(self) -> None:
+            return None
+
+    svc = ObservationMemoryService(FakeRepo())
+    chunk = BufferedObservationChunk(
+        content="first observation",
+        token_count=4,
+        observed_up_to_message_id="msg-1",
+        observed_up_to_timestamp="2026-02-20T10:00:00+00:00",
+    )
+
+    activated = svc.activate_buffered_observations(
+        chat_id="chat-1",
+        base_observation=None,
+        chunks=[chunk],
+    )
+
+    assert activated is not None
+    assert activated.generation == 0
+    assert activated.trigger_token_count == activated.token_count
+
+
+def test_activate_buffered_observations_increments_generation() -> None:
+    deleted_ids: list[str] = []
+
+    class FakeRepo:
+        def delete_observation(self, obs) -> None:
+            deleted_ids.append(obs.id)
+
+        def create_observation(self, **kwargs):
+            trigger_token_count = kwargs["trigger_token_count"]
+            return SimpleNamespace(
+                id=kwargs["observation_id"],
+                generation=kwargs["generation"],
+                content=kwargs["content"],
+                token_count=kwargs["token_count"],
+                trigger_token_count=(
+                    trigger_token_count
+                    if isinstance(trigger_token_count, int) and trigger_token_count > 0
+                    else kwargs["token_count"]
+                ),
+                observed_up_to_message_id=kwargs["observed_up_to_message_id"],
+                current_task=kwargs["current_task"],
+                suggested_response=kwargs["suggested_response"],
+                timestamp=kwargs["timestamp"],
+            )
+
+        def commit(self) -> None:
+            return None
+
+    svc = ObservationMemoryService(FakeRepo())
+    base_observation = SimpleNamespace(
+        id="obs-base",
+        generation=1,
+        content="existing observation",
+        observed_up_to_message_id="msg-9",
+        timestamp="2026-02-20T10:01:00+00:00",
+        current_task="keep going",
+        suggested_response=None,
+    )
+    chunk = BufferedObservationChunk(
+        content="next observation",
+        token_count=4,
+        observed_up_to_message_id="msg-10",
+        observed_up_to_timestamp="2026-02-20T10:02:00+00:00",
+    )
+
+    activated = svc.activate_buffered_observations(
+        chat_id="chat-1",
+        base_observation=base_observation,
+        chunks=[chunk],
+    )
+
+    assert activated is not None
+    assert activated.generation == 2
+    assert deleted_ids == ["obs-base"]
+
+
+def test_activate_buffered_observations_uses_explicit_trigger_token_count() -> None:
+    class FakeRepo:
+        def delete_observation(self, _obs) -> None:
+            raise AssertionError("delete_observation should not be called without a base observation")
+
+        def create_observation(self, **kwargs):
+            return SimpleNamespace(
+                id=kwargs["observation_id"],
+                generation=kwargs["generation"],
+                content=kwargs["content"],
+                token_count=kwargs["token_count"],
+                trigger_token_count=kwargs["trigger_token_count"],
+                observed_up_to_message_id=kwargs["observed_up_to_message_id"],
+                current_task=kwargs["current_task"],
+                suggested_response=kwargs["suggested_response"],
+                timestamp=kwargs["timestamp"],
+            )
+
+        def commit(self) -> None:
+            return None
+
+    svc = ObservationMemoryService(FakeRepo())
+    chunk = BufferedObservationChunk(
+        content="triggered summary",
+        token_count=4,
+        observed_up_to_message_id="msg-1",
+        observed_up_to_timestamp="2026-02-20T10:00:00+00:00",
+    )
+
+    activated = svc.activate_buffered_observations(
+        chat_id="chat-1",
+        base_observation=None,
+        chunks=[chunk],
+        trigger_token_count=1234,
+    )
+
+    assert activated is not None
+    assert activated.trigger_token_count == 1234

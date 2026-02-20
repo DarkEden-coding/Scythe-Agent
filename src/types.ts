@@ -69,6 +69,7 @@ export interface ObservationData {
   generation?: number;
   content?: string;
   tokenCount?: number;
+  triggerTokenCount?: number;
   observedUpToMessageId?: string;
   observedUpToTimestamp?: string;
   currentTask?: string;

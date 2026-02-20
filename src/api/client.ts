@@ -60,6 +60,8 @@ import type {
   SetApiKeyResponse,
   SetSystemPromptRequest,
   SetSystemPromptResponse,
+  SetReasoningLevelRequest,
+  SetReasoningLevelResponse,
   TestConnectionResponse,
   SyncModelsResponse,
   MemorySettings,
@@ -595,6 +597,13 @@ export class ApiClient {
   /** Set custom system prompt. Empty string resets to default. */
   async setSystemPrompt(req: SetSystemPromptRequest): Promise<ApiResponse<SetSystemPromptResponse>> {
     return this.request('PUT', '/settings/system-prompt', req);
+  }
+
+  /** Set preferred reasoning level for supported models. */
+  async setReasoningLevel(
+    req: SetReasoningLevelRequest,
+  ): Promise<ApiResponse<SetReasoningLevelResponse>> {
+    return this.request('PUT', '/settings/reasoning-level', req);
   }
 
   /* ── Memory / Observational Memory settings ──────────────────── */

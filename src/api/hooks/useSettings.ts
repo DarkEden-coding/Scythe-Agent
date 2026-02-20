@@ -101,6 +101,30 @@ export function useSettings(client: ApiClient = defaultApi) {
     [client],
   );
 
+  const setReasoningLevel = useCallback(
+    async (reasoningLevel: string) => {
+      const res = await client.setReasoningLevel({ reasoningLevel });
+      if (res.ok) {
+        if (settingsCache) {
+          settingsCache = {
+            ...settingsCache,
+            data: { ...settingsCache.data, reasoningLevel: res.data.reasoningLevel },
+          };
+        }
+        setState((s) =>
+          s.data
+            ? {
+                ...s,
+                data: { ...s.data, reasoningLevel: res.data.reasoningLevel },
+              }
+            : s,
+        );
+      }
+      return res;
+    },
+    [client],
+  );
+
   const changeModel = useCallback(
     async (selection: { model: string; provider?: string; modelKey?: string }) => {
       const res = await client.changeModel(selection);
@@ -161,12 +185,14 @@ export function useSettings(client: ApiClient = defaultApi) {
     modelMetadata: state.data?.modelMetadata ?? {},
     modelMetadataByKey: state.data?.modelMetadataByKey ?? {},
     contextLimit: state.data?.contextLimit ?? 128_000,
+    reasoningLevel: state.data?.reasoningLevel ?? 'medium',
     systemPrompt: state.data?.systemPrompt ?? '',
     autoApproveRules,
     changeModel,
     updateAutoApproveRules,
     getAutoApproveRules,
     setSystemPrompt,
+    setReasoningLevel,
     prefetchSettings,
   };
 }

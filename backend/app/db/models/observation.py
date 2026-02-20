@@ -16,6 +16,9 @@ class Observation(Base):
     generation: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     token_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    trigger_token_count: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, default=None
+    )
     observed_up_to_message_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     current_task: Mapped[str | None] = mapped_column(Text, nullable=True)
     suggested_response: Mapped[str | None] = mapped_column(Text, nullable=True)

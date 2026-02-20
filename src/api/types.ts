@@ -380,12 +380,16 @@ export interface AgentErrorPayload {
 export interface ModelMetadata {
   contextLimit?: number | null;
   pricePerMillion?: number | null;
+  reasoningSupported?: boolean;
+  reasoningLevels?: string[];
+  defaultReasoningLevel?: string | null;
 }
 
 export interface GetSettingsResponse {
   model: string;
   modelProvider?: string | null;
   modelKey?: string | null;
+  reasoningLevel: string;
   availableModels: string[];
   modelsByProvider: Record<string, string[]>;
   modelMetadata: Record<string, ModelMetadata>;
@@ -401,6 +405,14 @@ export interface SetSystemPromptRequest {
 
 export interface SetSystemPromptResponse {
   systemPrompt: string;
+}
+
+export interface SetReasoningLevelRequest {
+  reasoningLevel: string;
+}
+
+export interface SetReasoningLevelResponse {
+  reasoningLevel: string;
 }
 
 // 5. OpenRouter configuration
@@ -477,6 +489,7 @@ export interface ChatObservationSnapshot {
   id: string;
   generation: number;
   tokenCount: number;
+  triggerTokenCount?: number;
   observedUpToMessageId?: string | null;
   currentTask?: string | null;
   suggestedResponse?: string | null;

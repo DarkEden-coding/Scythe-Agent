@@ -26,7 +26,7 @@ def test_get_settings_contract(client) -> None:
     body = response.json()
     _assert_envelope(body)
     data = body["data"]
-    for field in ["model", "availableModels", "contextLimit", "autoApproveRules"]:
+    for field in ["model", "reasoningLevel", "availableModels", "contextLimit", "autoApproveRules"]:
         assert field in data
     assert isinstance(data["availableModels"], list)
 
@@ -58,4 +58,3 @@ def test_get_chat_history_contract_and_mapping(client) -> None:
     if data["fileEdits"]:
         action = data["fileEdits"][0]["action"]
         assert action in {"create", "edit", "delete"}
-
