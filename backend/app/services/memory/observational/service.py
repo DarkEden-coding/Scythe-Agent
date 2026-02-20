@@ -42,11 +42,13 @@ class BufferedObservationChunk:
     observed_up_to_timestamp: str | None
     current_task: str | None = None
     suggested_response: str | None = None
+    trigger_token_count: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "content": self.content,
             "tokenCount": self.token_count,
+            "triggerTokenCount": self.trigger_token_count,
             "observedUpToMessageId": self.observed_up_to_message_id,
             "observedUpToTimestamp": self.observed_up_to_timestamp,
             "currentTask": self.current_task,
@@ -59,9 +61,11 @@ class BufferedObservationChunk:
         if not isinstance(content, str) or not content.strip():
             return None
         token_count = raw.get("tokenCount")
+        trigger_token_count = raw.get("triggerTokenCount")
         return cls(
             content=content.strip(),
             token_count=int(token_count) if isinstance(token_count, int) else _count_tokens(content),
+            trigger_token_count=int(trigger_token_count) if isinstance(trigger_token_count, int) and trigger_token_count > 0 else None,
             observed_up_to_message_id=(
                 str(raw.get("observedUpToMessageId"))
                 if raw.get("observedUpToMessageId") is not None
@@ -309,6 +313,7 @@ class ObservationMemoryService:
         model: str,
         observer_model: str | None,
         client,
+        trigger_token_count: int | None = None,
     ) -> BufferedObservationChunk | None:
         """Run observer on a specific unobserved slice and return a dormant chunk."""
         if not messages:
@@ -344,6 +349,7 @@ class ObservationMemoryService:
         return BufferedObservationChunk(
             content=content,
             token_count=_count_tokens(content),
+            trigger_token_count=trigger_token_count if isinstance(trigger_token_count, int) and trigger_token_count > 0 else None,
             observed_up_to_message_id=last_msg_id,
             observed_up_to_timestamp=last_timestamp,
             current_task=current_task,
@@ -366,11 +372,13 @@ class ObservationMemoryService:
         """
         latest_obs = self._chat_repo.get_latest_observation(chat_id)
         _observed, unobserved = self.get_unobserved_messages(messages, latest_obs)
+        unobserved_token_count = count_messages_tokens(unobserved, model=model)
         chunk = await self.run_observer_for_chunk(
             messages=unobserved,
             model=model,
             observer_model=observer_model,
             client=client,
+            trigger_token_count=unobserved_token_count,
         )
         if chunk is None:
             return None
@@ -378,7 +386,7 @@ class ObservationMemoryService:
             chat_id=chat_id,
             base_observation=latest_obs,
             chunks=[chunk],
-            trigger_token_count=count_messages_tokens(unobserved, model=model),
+            trigger_token_count=unobserved_token_count,
         )
 
     def activate_buffered_observations(
@@ -428,9 +436,6 @@ class ObservationMemoryService:
                 current_task = chunk.current_task
             if chunk.suggested_response:
                 suggested_response = chunk.suggested_response
-
-        if base_observation is not None:
-            self._chat_repo.delete_observation(base_observation)
 
         obs = self._chat_repo.create_observation(
             observation_id=generate_id("obs"),

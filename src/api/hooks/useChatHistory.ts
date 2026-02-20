@@ -56,7 +56,7 @@ function toObservationData(memory: ChatMemoryStateResponse): ObservationData | n
       ? state.triggerTokenCount
       : typeof latestStored?.triggerTokenCount === 'number'
         ? latestStored.triggerTokenCount
-        : tokenCount;
+        : undefined;
   const observedUpToMessageId =
     typeof state.observedUpToMessageId === 'string' ? state.observedUpToMessageId : undefined;
   const currentTask =
@@ -161,7 +161,7 @@ function toObservationTimeline(memory: ChatMemoryStateResponse): ObservationData
     content: obs.content,
     tokenCount: obs.tokenCount,
     triggerTokenCount:
-      typeof obs.triggerTokenCount === 'number' ? obs.triggerTokenCount : obs.tokenCount,
+      typeof obs.triggerTokenCount === 'number' ? obs.triggerTokenCount : undefined,
     observedUpToMessageId: obs.observedUpToMessageId ?? undefined,
     currentTask: obs.currentTask ?? undefined,
     suggestedResponse: obs.suggestedResponse ?? undefined,
@@ -192,7 +192,7 @@ function toObservationTimeline(memory: ChatMemoryStateResponse): ObservationData
       && Number.isFinite(raw.triggerTokenCount)
       && raw.triggerTokenCount > 0
         ? raw.triggerTokenCount
-        : tokenCount;
+        : undefined;
 
     return [
       {

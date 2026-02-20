@@ -455,17 +455,12 @@ def test_activate_buffered_observations_starts_generation_at_zero() -> None:
             raise AssertionError("delete_observation should not be called without a base observation")
 
         def create_observation(self, **kwargs):
-            trigger_token_count = kwargs["trigger_token_count"]
             return SimpleNamespace(
                 id=kwargs["observation_id"],
                 generation=kwargs["generation"],
                 content=kwargs["content"],
                 token_count=kwargs["token_count"],
-                trigger_token_count=(
-                    trigger_token_count
-                    if isinstance(trigger_token_count, int) and trigger_token_count > 0
-                    else kwargs["token_count"]
-                ),
+                trigger_token_count=kwargs["trigger_token_count"],
                 observed_up_to_message_id=kwargs["observed_up_to_message_id"],
                 current_task=kwargs["current_task"],
                 suggested_response=kwargs["suggested_response"],
@@ -491,7 +486,7 @@ def test_activate_buffered_observations_starts_generation_at_zero() -> None:
 
     assert activated is not None
     assert activated.generation == 0
-    assert activated.trigger_token_count == activated.token_count
+    assert activated.trigger_token_count is None
 
 
 def test_activate_buffered_observations_increments_generation() -> None:
@@ -502,17 +497,12 @@ def test_activate_buffered_observations_increments_generation() -> None:
             deleted_ids.append(obs.id)
 
         def create_observation(self, **kwargs):
-            trigger_token_count = kwargs["trigger_token_count"]
             return SimpleNamespace(
                 id=kwargs["observation_id"],
                 generation=kwargs["generation"],
                 content=kwargs["content"],
                 token_count=kwargs["token_count"],
-                trigger_token_count=(
-                    trigger_token_count
-                    if isinstance(trigger_token_count, int) and trigger_token_count > 0
-                    else kwargs["token_count"]
-                ),
+                trigger_token_count=kwargs["trigger_token_count"],
                 observed_up_to_message_id=kwargs["observed_up_to_message_id"],
                 current_task=kwargs["current_task"],
                 suggested_response=kwargs["suggested_response"],
@@ -547,7 +537,7 @@ def test_activate_buffered_observations_increments_generation() -> None:
 
     assert activated is not None
     assert activated.generation == 2
-    assert deleted_ids == ["obs-base"]
+    assert deleted_ids == []
 
 
 def test_activate_buffered_observations_uses_explicit_trigger_token_count() -> None:

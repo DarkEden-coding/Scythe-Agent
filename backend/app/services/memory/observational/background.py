@@ -117,6 +117,7 @@ class OMBackgroundRunner:
                 model=model,
                 observer_model=observer_model,
                 client=client,
+                trigger_token_count=trigger_token_count,
             )
             if fallback is not None:
                 chunks.append(fallback)
@@ -259,6 +260,7 @@ class OMBackgroundRunner:
                             model=model,
                             observer_model=observer_model,
                             client=client,
+                            trigger_token_count=unobserved_tokens_buffer,
                         )
                     except ObservationError as exc:
                         await event_bus.publish(

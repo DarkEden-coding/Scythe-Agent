@@ -12,10 +12,10 @@ export function ObservationMessage({ observation }: ObservationMessageProps) {
   if (!observation.hasObservations || !observation.content) return null;
 
   const triggerTokensLabel =
-    typeof (observation.triggerTokenCount ?? observation.tokenCount) === 'number'
-      && Number.isFinite(observation.triggerTokenCount ?? observation.tokenCount)
-      && (observation.triggerTokenCount ?? observation.tokenCount) > 0
-      ? ` · trigger tokens: ${(observation.triggerTokenCount ?? observation.tokenCount).toLocaleString()}`
+    typeof observation.triggerTokenCount === 'number'
+      && Number.isFinite(observation.triggerTokenCount)
+      && observation.triggerTokenCount > 0
+      ? ` · trigger tokens: ${observation.triggerTokenCount.toLocaleString()}`
       : '';
   const headerLabel = `Memory Observation${observation.generation !== undefined ? ` · Gen ${observation.generation}` : ''}${triggerTokensLabel}`;
 
