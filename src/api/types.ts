@@ -306,6 +306,7 @@ export interface AgentPausePayload {
   iteration?: number;
   maxIterations?: number;
   toolName?: string;
+  target?: string;
   repeatCount?: number;
 }
 

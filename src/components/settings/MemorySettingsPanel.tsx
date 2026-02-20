@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Check, Loader2, Brain, Database, RefreshCw } from 'lucide-react';
 import { api } from '@/api/client';
 import { cn } from '@/utils/cn';
 import type {
+  ChatObservationSnapshot,
   ChatMemoryStateResponse,
   MemorySettings,
 } from '@/api/types';
@@ -19,6 +20,56 @@ const DEFAULT_SETTINGS: MemorySettings = {
 
 interface MemorySettingsPanelProps {
   readonly activeChatId?: string | null;
+}
+
+interface ChatBufferChunkSnapshot {
+  content: string;
+  tokenCount: number;
+  observedUpToMessageId: string | null;
+  observedUpToTimestamp: string | null;
+  currentTask: string | null;
+  suggestedResponse: string | null;
+}
+
+type MemoryObservationRow = ChatObservationSnapshot & {
+  source: 'stored' | 'buffered';
+  observedUpToTimestamp?: string | null;
+};
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : null;
+}
+
+function asBufferChunk(value: unknown): ChatBufferChunkSnapshot | null {
+  const raw = asRecord(value);
+  if (!raw) return null;
+  const content = typeof raw.content === 'string' ? raw.content.trim() : '';
+  if (!content) return null;
+  return {
+    content,
+    tokenCount:
+      typeof raw.tokenCount === 'number' && Number.isFinite(raw.tokenCount) && raw.tokenCount > 0
+        ? raw.tokenCount
+        : Math.max(1, Math.floor(content.length / 4)),
+    observedUpToMessageId:
+      typeof raw.observedUpToMessageId === 'string' ? raw.observedUpToMessageId : null,
+    observedUpToTimestamp:
+      typeof raw.observedUpToTimestamp === 'string' ? raw.observedUpToTimestamp : null,
+    currentTask:
+      typeof raw.currentTask === 'string' && raw.currentTask.trim()
+        ? raw.currentTask.trim()
+        : null,
+    suggestedResponse:
+      typeof raw.suggestedResponse === 'string' && raw.suggestedResponse.trim()
+        ? raw.suggestedResponse.trim()
+        : null,
+  };
+}
+
+function formatTimestamp(raw: string | null | undefined): string {
+  if (!raw) return 'Pending';
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? 'Pending' : parsed.toLocaleString();
 }
 
 export function MemorySettingsPanel({ activeChatId = null }: MemorySettingsPanelProps) {
@@ -84,7 +135,46 @@ export function MemorySettingsPanel({ activeChatId = null }: MemorySettingsPanel
     settings.reflector_threshold !== original.reflector_threshold ||
     settings.show_observations_in_chat !== original.show_observations_in_chat;
 
-  const observationRows = chatMemory?.observations ?? [];
+  const observationRows = useMemo<MemoryObservationRow[]>(() => {
+    const storedRows: MemoryObservationRow[] = (chatMemory?.observations ?? []).map((obs) => ({
+      ...obs,
+      source: 'stored',
+    }));
+
+    const state = asRecord(chatMemory?.state);
+    const buffer = asRecord(state?.buffer);
+    const chunksRaw = Array.isArray(buffer?.chunks) ? buffer.chunks : [];
+    const generation =
+      typeof state?.generation === 'number'
+        ? state.generation
+        : storedRows[0]?.generation ?? 0;
+
+    const bufferedRows: MemoryObservationRow[] = chunksRaw.flatMap((chunk, index) => {
+      const parsed = asBufferChunk(chunk);
+      if (!parsed) return [];
+      const timestamp = parsed.observedUpToTimestamp ?? chatMemory?.updatedAt ?? new Date(0).toISOString();
+      return [
+        {
+          id: `buffer-${generation}-${index}-${parsed.observedUpToMessageId ?? 'none'}-${timestamp}`,
+          generation,
+          tokenCount: parsed.tokenCount,
+          observedUpToMessageId: parsed.observedUpToMessageId,
+          currentTask: parsed.currentTask,
+          suggestedResponse: parsed.suggestedResponse,
+          content: parsed.content,
+          timestamp,
+          source: 'buffered',
+          observedUpToTimestamp: parsed.observedUpToTimestamp,
+        },
+      ];
+    });
+
+    return [...storedRows, ...bufferedRows].sort((a, b) => {
+      const left = new Date(a.timestamp).getTime();
+      const right = new Date(b.timestamp).getTime();
+      return (Number.isNaN(right) ? 0 : right) - (Number.isNaN(left) ? 0 : left);
+    });
+  }, [chatMemory]);
   const parsedState = chatMemory?.state
     ? JSON.stringify(chatMemory.state, null, 2)
     : chatMemory?.stateJson ?? '{}';
@@ -215,9 +305,15 @@ export function MemorySettingsPanel({ activeChatId = null }: MemorySettingsPanel
                         <div className="flex items-center justify-between gap-2 text-xs">
                           <span className="text-violet-300">
                             Gen {obs.generation} • {obs.tokenCount.toLocaleString()} tokens
+                            {obs.source === 'buffered' ? ' • buffered' : ''}
                           </span>
-                          <span className="text-gray-500">{new Date(obs.timestamp).toLocaleString()}</span>
+                          <span className="text-gray-500">{formatTimestamp(obs.timestamp)}</span>
                         </div>
+                        {obs.source === 'buffered' && (
+                          <p className="text-[11px] text-gray-500 mt-1">
+                            Buffered chunk {obs.observedUpToTimestamp ? `up to ${formatTimestamp(obs.observedUpToTimestamp)}` : '(pending activation)'}
+                          </p>
+                        )}
                         {obs.currentTask && (
                           <p className="text-xs text-gray-300 mt-2">
                             <span className="text-gray-500">Task:</span> {obs.currentTask}

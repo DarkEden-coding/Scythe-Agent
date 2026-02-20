@@ -33,6 +33,7 @@ class AppSettings(BaseSettings):
     frontend_base: str = "http://localhost:5173"
     fs_allowed_roots: list[str] = []
     max_agent_iterations: int = 50
+    max_parallel_tool_calls: int = 8
 
 
 @lru_cache(maxsize=1)

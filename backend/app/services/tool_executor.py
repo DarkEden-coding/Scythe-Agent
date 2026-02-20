@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timezone
 
+from app.config.settings import get_settings
 from app.schemas.chat import ToolCallOut
 from app.services.approval_service import ApprovalService
 from app.services.approval_waiter import get_approval_waiter
@@ -16,11 +17,22 @@ from app.utils.time import utc_now_iso
 class ToolExecutor:
     """Handles tool call execution with approval flow."""
 
-    def __init__(self, chat_repo, approval_svc, event_bus, *, session_factory=None):
+    def __init__(
+        self,
+        chat_repo,
+        approval_svc,
+        event_bus,
+        *,
+        session_factory=None,
+        max_parallel_tool_calls: int | None = None,
+    ):
         self._chat_repo = chat_repo
         self._approval_svc = approval_svc
         self._event_bus = event_bus
         self._session_factory = session_factory
+        if max_parallel_tool_calls is None:
+            max_parallel_tool_calls = get_settings().max_parallel_tool_calls
+        self._max_parallel_tool_calls = max(1, int(max_parallel_tool_calls))
 
     async def execute_tool_calls(
         self,
@@ -40,10 +52,19 @@ class ToolExecutor:
                 )
             self._chat_repo.commit()
 
+            max_parallel = min(
+                self._max_parallel_tool_calls, len(tool_calls_from_stream)
+            )
+            semaphore = asyncio.Semaphore(max_parallel)
+
+            async def _run_bounded(tc: dict) -> dict | list[dict] | None:
+                async with semaphore:
+                    return await self._execute_one(
+                        tc, chat_id, checkpoint_id, parallel_group, is_parallel
+                    )
+
             tasks = [
-                self._execute_one(
-                    tc, chat_id, checkpoint_id, parallel_group, is_parallel
-                )
+                _run_bounded(tc)
                 for tc in tool_calls_from_stream
             ]
             raw = [r for r in await asyncio.gather(*tasks) if r is not None]

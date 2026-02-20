@@ -1,4 +1,7 @@
 import asyncio
+import json
+
+import httpx
 
 import app.services.chat_service as chat_service_module
 from app.db.repositories.chat_repo import ChatRepository
@@ -139,6 +142,130 @@ def test_revert_file_consistency(client) -> None:
         assert all(f["id"] != file_edit_id for f in payload["fileEdits"])
 
 
+def test_revert_prunes_observational_memory_to_checkpoint(client) -> None:
+    base_ts = "2099-01-01T00:00:00.000000+00:00"
+    later_ts = "2099-01-01T00:05:00.000000+00:00"
+
+    with get_sessionmaker()() as db:
+        repo = ChatRepository(db)
+
+        keep_message = repo.create_message(
+            message_id="msg-obs-keep",
+            chat_id="chat-1",
+            role="user",
+            content="keep memory message",
+            timestamp=base_ts,
+            checkpoint_id=None,
+        )
+        keep_checkpoint = repo.create_checkpoint(
+            checkpoint_id="cp-obs-keep",
+            chat_id="chat-1",
+            message_id=keep_message.id,
+            label="keep checkpoint",
+            timestamp=base_ts,
+        )
+        repo.link_message_checkpoint(keep_message, keep_checkpoint.id)
+
+        drop_message = repo.create_message(
+            message_id="msg-obs-drop",
+            chat_id="chat-1",
+            role="user",
+            content="drop memory message",
+            timestamp=later_ts,
+            checkpoint_id=None,
+        )
+        drop_checkpoint = repo.create_checkpoint(
+            checkpoint_id="cp-obs-drop",
+            chat_id="chat-1",
+            message_id=drop_message.id,
+            label="drop checkpoint",
+            timestamp=later_ts,
+        )
+        repo.link_message_checkpoint(drop_message, drop_checkpoint.id)
+
+        repo.create_observation(
+            observation_id="obs-keep",
+            chat_id="chat-1",
+            generation=0,
+            content="keep observation",
+            token_count=3,
+            observed_up_to_message_id=keep_message.id,
+            current_task="keep task",
+            suggested_response="keep suggestion",
+            timestamp=base_ts,
+        )
+        repo.create_observation(
+            observation_id="obs-drop",
+            chat_id="chat-1",
+            generation=1,
+            content="drop observation",
+            token_count=3,
+            observed_up_to_message_id=drop_message.id,
+            current_task="drop task",
+            suggested_response="drop suggestion",
+            timestamp=later_ts,
+        )
+        repo.set_memory_state(
+            chat_id="chat-1",
+            strategy="observational",
+            state_json=json.dumps(
+                {
+                    "generation": 1,
+                    "tokenCount": 3,
+                    "observedUpToMessageId": drop_message.id,
+                    "currentTask": "drop task",
+                    "suggestedResponse": "drop suggestion",
+                    "timestamp": later_ts,
+                    "content": "drop observation",
+                    "buffer": {
+                        "tokens": 1024,
+                        "lastBoundary": 4,
+                        "upToMessageId": drop_message.id,
+                        "upToTimestamp": later_ts,
+                        "chunks": [
+                            {
+                                "content": "keep chunk",
+                                "tokenCount": 2,
+                                "observedUpToMessageId": keep_message.id,
+                                "observedUpToTimestamp": base_ts,
+                            },
+                            {
+                                "content": "drop chunk",
+                                "tokenCount": 2,
+                                "observedUpToMessageId": drop_message.id,
+                                "observedUpToTimestamp": later_ts,
+                            },
+                        ],
+                    },
+                }
+            ),
+            updated_at=later_ts,
+        )
+        db.commit()
+
+    revert_res = client.post("/api/chat/chat-1/revert/cp-obs-keep")
+    assert revert_res.status_code == 200
+
+    memory_res = client.get("/api/chat/chat-1/memory")
+    assert memory_res.status_code == 200
+    memory = memory_res.json()["data"]
+    assert memory["hasMemoryState"] is True
+
+    observations = memory["observations"]
+    assert [o["id"] for o in observations] == ["obs-keep"]
+
+    state = memory["state"]
+    assert state["observedUpToMessageId"] == "msg-obs-keep"
+    assert state["content"] == "keep observation"
+    assert state["timestamp"] == base_ts
+    assert state["buffer"]["lastBoundary"] == 0
+
+    chunks = state["buffer"]["chunks"]
+    assert len(chunks) == 1
+    assert chunks[0]["content"] == "keep chunk"
+    assert chunks[0]["observedUpToMessageId"] == "msg-obs-keep"
+
+
 def test_sse_ordering_and_disconnect_cleanup(client) -> None:
     event_bus = get_event_bus()
 
@@ -195,3 +322,32 @@ def test_continue_agent_schedules_latest_checkpoint(client, monkeypatch) -> None
     assert captured["chat_id"] == "chat-1"
     assert captured["checkpoint_id"] == latest_checkpoint
     assert captured["content"] == expected_content
+
+
+def test_format_runtime_error_http_status_includes_provider_detail() -> None:
+    request = httpx.Request("POST", "https://chatgpt.com/backend-api/codex/responses")
+    response = httpx.Response(
+        400,
+        request=request,
+        json={
+            "error": {
+                "message": "No tool call found for function call output with call_id call_123.",
+                "type": "invalid_request_error",
+                "param": "input",
+            }
+        },
+    )
+    exc = httpx.HTTPStatusError("bad request", request=request, response=response)
+
+    formatted = chat_service_module._format_runtime_error(exc)
+
+    assert "Upstream request failed (400)" in formatted
+    assert "https://chatgpt.com/backend-api/codex/responses" in formatted
+    assert "No tool call found for function call output with call_id call_123." in formatted
+    assert "type=invalid_request_error" in formatted
+    assert "param=input" in formatted
+
+
+def test_format_runtime_error_non_http_uses_exception_message() -> None:
+    formatted = chat_service_module._format_runtime_error(RuntimeError("boom"))
+    assert formatted == "boom"

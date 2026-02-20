@@ -1,4 +1,6 @@
+import json
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import and_, delete, or_
 from sqlalchemy import select
@@ -18,6 +20,7 @@ from app.db.models.tool_call import ToolCall
 from app.db.repositories.base_repo import BaseRepository
 from app.utils.ids import generate_id
 from app.utils.json_helpers import safe_parse_json
+from app.utils.time import utc_now_iso
 from app.utils.todos import normalize_todo_items
 
 
@@ -592,6 +595,166 @@ class ChatRepository(BaseRepository):
             delete(MemoryState).where(MemoryState.chat_id == chat_id)
         )
 
+    def _revert_observational_memory_after_timestamp(
+        self,
+        *,
+        chat_id: str,
+        cutoff_ts: str,
+    ) -> None:
+        """Trim observational memory to data that is still valid at the checkpoint cutoff."""
+        cutoff_dt = _parse_ts_safe(cutoff_ts)
+        if cutoff_dt is None:
+            self.db.execute(delete(Observation).where(Observation.chat_id == chat_id))
+            self.db.execute(delete(MemoryState).where(MemoryState.chat_id == chat_id))
+            return
+
+        valid_message_ids = {m.id for m in self.list_messages(chat_id)}
+
+        observations = self.list_observations(chat_id)
+        observation_ids_to_delete: list[str] = []
+        valid_observations: list[Observation] = []
+        for obs in observations:
+            obs_dt = _parse_ts_safe(obs.timestamp)
+            if obs_dt is None or obs_dt > cutoff_dt:
+                observation_ids_to_delete.append(obs.id)
+                continue
+            if obs.observed_up_to_message_id and obs.observed_up_to_message_id not in valid_message_ids:
+                observation_ids_to_delete.append(obs.id)
+                continue
+            valid_observations.append(obs)
+
+        if observation_ids_to_delete:
+            self.db.execute(
+                delete(Observation).where(
+                    Observation.chat_id == chat_id,
+                    Observation.id.in_(observation_ids_to_delete),
+                )
+            )
+
+        latest_observation = valid_observations[0] if valid_observations else None
+        state_row = self.get_memory_state(chat_id)
+        if state_row is None or state_row.strategy != "observational":
+            return
+
+        parsed_state: dict[str, Any] = {}
+        if isinstance(state_row.state_json, str):
+            try:
+                raw_state = json.loads(state_row.state_json)
+                if isinstance(raw_state, dict):
+                    parsed_state = raw_state
+            except Exception:
+                parsed_state = {}
+
+        raw_buffer = parsed_state.get("buffer") if isinstance(parsed_state.get("buffer"), dict) else {}
+        raw_chunks = raw_buffer.get("chunks") if isinstance(raw_buffer.get("chunks"), list) else []
+        valid_chunks: list[dict[str, Any]] = []
+        for raw_chunk in raw_chunks:
+            if not isinstance(raw_chunk, dict):
+                continue
+            content = raw_chunk.get("content")
+            if not isinstance(content, str) or not content.strip():
+                continue
+
+            observed_up_to_message_id = raw_chunk.get("observedUpToMessageId")
+            if observed_up_to_message_id is not None:
+                if not isinstance(observed_up_to_message_id, str):
+                    continue
+                if observed_up_to_message_id not in valid_message_ids:
+                    continue
+
+            observed_up_to_timestamp = raw_chunk.get("observedUpToTimestamp")
+            if observed_up_to_timestamp is not None:
+                if not isinstance(observed_up_to_timestamp, str):
+                    continue
+                chunk_dt = _parse_ts_safe(observed_up_to_timestamp)
+                if chunk_dt is None or chunk_dt > cutoff_dt:
+                    continue
+
+            token_count = raw_chunk.get("tokenCount")
+            if isinstance(token_count, int) and token_count > 0:
+                normalized_token_count = token_count
+            else:
+                normalized_token_count = max(1, len(content.strip()) // 4)
+
+            current_task = raw_chunk.get("currentTask")
+            suggested_response = raw_chunk.get("suggestedResponse")
+            valid_chunks.append(
+                {
+                    "content": content.strip(),
+                    "tokenCount": normalized_token_count,
+                    "observedUpToMessageId": (
+                        observed_up_to_message_id if isinstance(observed_up_to_message_id, str) else None
+                    ),
+                    "observedUpToTimestamp": (
+                        observed_up_to_timestamp if isinstance(observed_up_to_timestamp, str) else None
+                    ),
+                    "currentTask": (
+                        current_task.strip()
+                        if isinstance(current_task, str) and current_task.strip()
+                        else None
+                    ),
+                    "suggestedResponse": (
+                        suggested_response.strip()
+                        if isinstance(suggested_response, str) and suggested_response.strip()
+                        else None
+                    ),
+                }
+            )
+
+        if latest_observation is None and not valid_chunks:
+            self.db.execute(delete(MemoryState).where(MemoryState.chat_id == chat_id))
+            return
+
+        next_state: dict[str, Any] = dict(parsed_state)
+        if latest_observation is None:
+            for key in (
+                "generation",
+                "tokenCount",
+                "observedUpToMessageId",
+                "currentTask",
+                "suggestedResponse",
+                "timestamp",
+                "content",
+            ):
+                next_state.pop(key, None)
+        else:
+            next_state["generation"] = latest_observation.generation
+            next_state["tokenCount"] = latest_observation.token_count
+            next_state["observedUpToMessageId"] = latest_observation.observed_up_to_message_id
+            next_state["currentTask"] = latest_observation.current_task
+            next_state["suggestedResponse"] = latest_observation.suggested_response
+            next_state["timestamp"] = latest_observation.timestamp
+            next_state["content"] = latest_observation.content
+
+        buffer_tokens = raw_buffer.get("tokens")
+        normalized_buffer_tokens = buffer_tokens if isinstance(buffer_tokens, int) and buffer_tokens > 0 else 500
+        buffer_up_to_message_id: str | None = None
+        buffer_up_to_timestamp: str | None = None
+        if latest_observation is not None:
+            buffer_up_to_message_id = latest_observation.observed_up_to_message_id
+            buffer_up_to_timestamp = latest_observation.timestamp
+        elif valid_chunks:
+            last_chunk = valid_chunks[-1]
+            raw_up_to_message = last_chunk.get("observedUpToMessageId")
+            raw_up_to_timestamp = last_chunk.get("observedUpToTimestamp")
+            buffer_up_to_message_id = raw_up_to_message if isinstance(raw_up_to_message, str) else None
+            buffer_up_to_timestamp = raw_up_to_timestamp if isinstance(raw_up_to_timestamp, str) else None
+
+        next_state["buffer"] = {
+            "tokens": normalized_buffer_tokens,
+            "lastBoundary": 0,
+            "upToMessageId": buffer_up_to_message_id,
+            "upToTimestamp": buffer_up_to_timestamp,
+            "chunks": valid_chunks,
+        }
+
+        self.set_memory_state(
+            chat_id=chat_id,
+            strategy="observational",
+            state_json=json.dumps(next_state),
+            updated_at=utc_now_iso(),
+        )
+
     def delete_after_checkpoint(
         self, *, chat_id: str, cutoff_timestamp: str, checkpoint_id: str
     ) -> None:
@@ -658,11 +821,7 @@ class ChatRepository(BaseRepository):
             )
         )
         self._delete_todos_after_timestamp(chat_id, cutoff, checkpoint_id)
-        # Delete all observations for this chat after a revert; they will be
-        # regenerated on the next agent turn if OM is enabled.
-        self.db.execute(
-            delete(Observation).where(Observation.chat_id == chat_id)
-        )
-        self.db.execute(
-            delete(MemoryState).where(MemoryState.chat_id == chat_id)
+        self._revert_observational_memory_after_timestamp(
+            chat_id=chat_id,
+            cutoff_ts=cutoff,
         )

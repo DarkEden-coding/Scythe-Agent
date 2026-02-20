@@ -53,6 +53,7 @@ interface ChatPanelProps {
   readonly verificationIssues?: Record<string, VerificationIssues>;
   readonly observationStatus?: ObservationStatus;
   readonly observation?: ObservationData | null;
+  readonly observations?: ObservationData[];
   readonly showObservationsInChat?: boolean;
   readonly persistentError?: {
     message: string;
@@ -88,6 +89,7 @@ export function ChatPanel({
   verificationIssues = {},
   observationStatus = 'idle',
   observation = null,
+  observations = [],
   showObservationsInChat = false,
   persistentError = null,
   onRetryPersistentError,
@@ -260,6 +262,7 @@ export function ChatPanel({
               getCheckpointForMessage={getCheckpointForMessage}
               verificationIssues={verificationIssues}
               observation={observation}
+              observations={observations}
               showObservationsInChat={showObservationsInChat}
             />
           </div>

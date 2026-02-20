@@ -65,6 +65,7 @@ function toObservationData(memory: ChatMemoryStateResponse): ObservationData | n
         : undefined;
 
   return {
+    id: typeof state.timestamp === 'string' ? `state-${state.timestamp}` : undefined,
     hasObservations: true,
     generation,
     tokenCount,
@@ -73,7 +74,164 @@ function toObservationData(memory: ChatMemoryStateResponse): ObservationData | n
     suggestedResponse,
     content,
     timestamp,
+    source: 'stored',
   };
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : null;
+}
+
+function toObservationTimeline(memory: ChatMemoryStateResponse): ObservationData[] {
+  if (!memory.hasMemoryState || memory.strategy !== 'observational') return [];
+
+  const state = asRecord(memory.state);
+  const stateGeneration =
+    typeof state?.generation === 'number' ? state.generation : undefined;
+
+  const stored = (memory.observations ?? []).map((obs) => ({
+    id: obs.id,
+    hasObservations: true,
+    generation: obs.generation,
+    content: obs.content,
+    tokenCount: obs.tokenCount,
+    observedUpToMessageId: obs.observedUpToMessageId ?? undefined,
+    currentTask: obs.currentTask ?? undefined,
+    suggestedResponse: obs.suggestedResponse ?? undefined,
+    timestamp: obs.timestamp,
+    source: 'stored' as const,
+  }));
+
+  const buffer = asRecord(state?.buffer);
+  const chunks = Array.isArray(buffer?.chunks) ? buffer.chunks : [];
+  const buffered = chunks.flatMap((chunk, index) => {
+    const raw = asRecord(chunk);
+    if (!raw) return [];
+    const content = typeof raw.content === 'string' ? raw.content.trim() : '';
+    if (!content) return [];
+
+    const observedUpToTimestamp =
+      typeof raw.observedUpToTimestamp === 'string' ? raw.observedUpToTimestamp : undefined;
+    const timestamp =
+      observedUpToTimestamp
+      ?? (typeof memory.updatedAt === 'string' ? memory.updatedAt : undefined)
+      ?? new Date(0).toISOString();
+    const tokenCount =
+      typeof raw.tokenCount === 'number' && Number.isFinite(raw.tokenCount) && raw.tokenCount > 0
+        ? raw.tokenCount
+        : Math.max(1, Math.floor(content.length / 4));
+
+    return [
+      {
+        id: `buffer-${index}-${timestamp}-${typeof raw.observedUpToMessageId === 'string' ? raw.observedUpToMessageId : 'none'}`,
+        hasObservations: true,
+        generation:
+          stateGeneration
+          ?? (stored[0]?.generation ?? 0),
+        content,
+        tokenCount,
+        observedUpToMessageId:
+          typeof raw.observedUpToMessageId === 'string' ? raw.observedUpToMessageId : undefined,
+        observedUpToTimestamp,
+        currentTask:
+          typeof raw.currentTask === 'string' && raw.currentTask.trim() ? raw.currentTask.trim() : undefined,
+        suggestedResponse:
+          typeof raw.suggestedResponse === 'string' && raw.suggestedResponse.trim()
+            ? raw.suggestedResponse.trim()
+            : undefined,
+        timestamp,
+        source: 'buffered' as const,
+      },
+    ];
+  });
+
+  return [...stored, ...buffered].sort((a, b) => {
+    const left = a.timestamp ? new Date(a.timestamp).getTime() : Number.NaN;
+    const right = b.timestamp ? new Date(b.timestamp).getTime() : Number.NaN;
+    return (Number.isNaN(left) ? 0 : left) - (Number.isNaN(right) ? 0 : right);
+  });
+}
+
+function applyObservationalContextOverlay(
+  contextItems: ContextItem[],
+  memory: ChatMemoryStateResponse | null,
+): ContextItem[] {
+  if (!memory?.hasMemoryState || memory.strategy !== 'observational') return contextItems;
+
+  const state = asRecord(memory.state);
+  const latestStored = memory.observations?.[0];
+  const observedUpToMessageId =
+    typeof state?.observedUpToMessageId === 'string'
+      ? state.observedUpToMessageId
+      : typeof latestStored?.observedUpToMessageId === 'string'
+        ? latestStored.observedUpToMessageId
+        : undefined;
+  if (!observedUpToMessageId) return contextItems;
+
+  const observedConversationIds: string[] = [];
+  for (const item of contextItems) {
+    if (item.type !== 'conversation') continue;
+    observedConversationIds.push(item.id);
+    if (item.id === observedUpToMessageId) break;
+  }
+  if (
+    observedConversationIds.length === 0
+    || observedConversationIds[observedConversationIds.length - 1] !== observedUpToMessageId
+  ) {
+    return contextItems;
+  }
+
+  const content =
+    typeof state?.content === 'string' && state.content.trim()
+      ? state.content.trim()
+      : typeof latestStored?.content === 'string'
+        ? latestStored.content
+        : '';
+  if (!content) return contextItems;
+
+  const generation =
+    typeof state?.generation === 'number'
+      ? state.generation
+      : typeof latestStored?.generation === 'number'
+        ? latestStored.generation
+        : undefined;
+  const tokenCount =
+    typeof state?.tokenCount === 'number' && Number.isFinite(state.tokenCount) && state.tokenCount > 0
+      ? state.tokenCount
+      : typeof latestStored?.tokenCount === 'number' && Number.isFinite(latestStored.tokenCount) && latestStored.tokenCount > 0
+        ? latestStored.tokenCount
+        : Math.max(1, Math.floor(content.length / 4));
+  const ts =
+    typeof state?.timestamp === 'string'
+      ? state.timestamp
+      : typeof latestStored?.timestamp === 'string'
+        ? latestStored.timestamp
+        : typeof memory.updatedAt === 'string'
+          ? memory.updatedAt
+          : new Date(0).toISOString();
+
+  const summaryItem: ContextItem = {
+    id: `ctx-observation-${generation ?? 'unknown'}-${ts}`,
+    type: 'summary',
+    name: generation != null ? `Observational memory (gen ${generation})` : 'Observational memory',
+    tokens: tokenCount,
+    full_name: content,
+  };
+
+  const observedSet = new Set(observedConversationIds);
+  const out: ContextItem[] = [];
+  let insertedSummary = false;
+  for (const item of contextItems) {
+    if (item.type === 'conversation' && observedSet.has(item.id)) {
+      if (!insertedSummary) {
+        out.push(summaryItem);
+        insertedSummary = true;
+      }
+      continue;
+    }
+    out.push(item);
+  }
+  return insertedSummary ? out : contextItems;
 }
 
 export function useChatHistory(chatId: string | null | undefined, client: ApiClient = defaultApi) {
@@ -93,16 +251,42 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
   const [processingChats, setProcessingChats] = useState<Set<string>>(new Set());
   const [observationStatus, setObservationStatus] = useState<ObservationStatus>('idle');
   const [observation, setObservation] = useState<ObservationData | null>(null);
+  const [observations, setObservations] = useState<ObservationData[]>([]);
   const [persistentError, setPersistentError] = useState<ChatPersistentError | null>(null);
 
   const pendingContentDeltas = useRef<Map<string, string>>(new Map());
   const pendingReasoningDeltas = useRef<Map<string, string>>(new Map());
   const streamFlushScheduled = useRef(false);
   const contextRefreshTimer = useRef<number | null>(null);
+  const baseContextItemsRef = useRef<ContextItem[]>([]);
+  const memoryStateRef = useRef<ChatMemoryStateResponse | null>(null);
   const setMessagesRef = useRef(setMessages);
   const setReasoningBlocksRef = useRef(setReasoningBlocks);
   setMessagesRef.current = setMessages;
   setReasoningBlocksRef.current = setReasoningBlocks;
+
+  const commitContextItems = useCallback(
+    (
+      nextBaseContextItems: ContextItem[],
+      memoryOverride?: ChatMemoryStateResponse | null,
+    ) => {
+      baseContextItemsRef.current = nextBaseContextItems;
+      const memorySnapshot = memoryOverride === undefined ? memoryStateRef.current : memoryOverride;
+      setContextItems(applyObservationalContextOverlay(nextBaseContextItems, memorySnapshot));
+    },
+    [],
+  );
+
+  const setContextItemsWithOverlay = useCallback(
+    (next: ContextItem[] | ((prev: ContextItem[]) => ContextItem[])) => {
+      const resolved =
+        typeof next === 'function'
+          ? (next as (prev: ContextItem[]) => ContextItem[])(baseContextItemsRef.current)
+          : next;
+      commitContextItems(resolved);
+    },
+    [commitContextItems],
+  );
 
   useEffect(() => {
     if (contextRefreshTimer.current != null) {
@@ -117,11 +301,13 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
       setCheckpoints([]);
       setReasoningBlocks([]);
       setStreamingReasoningBlockIds(new Set());
-      setContextItems([]);
+      memoryStateRef.current = null;
+      commitContextItems([]);
       setTodos([]);
       setVerificationIssues({});
       setObservationStatus('idle');
       setObservation(null);
+      setObservations([]);
       setPersistentError(null);
       setError(null);
       pendingContentDeltas.current.clear();
@@ -131,6 +317,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
     }
 
     let cancelled = false;
+    memoryStateRef.current = null;
     pendingContentDeltas.current.clear();
     pendingReasoningDeltas.current.clear();
     streamFlushScheduled.current = false;
@@ -141,9 +328,10 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
     setCheckpoints([]);
     setReasoningBlocks([]);
     setStreamingReasoningBlockIds(new Set());
-    setContextItems([]);
+    commitContextItems([]);
     setVerificationIssues({});
     setObservation(null);
+    setObservations([]);
     setObservationStatus('idle');
     setPersistentError(null);
 
@@ -159,7 +347,6 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
         setFileEdits(uniqueById(d.fileEdits.map(normalizeFileEdit)));
         setCheckpoints(uniqueById(d.checkpoints.map(normalizeCheckpoint)));
         setReasoningBlocks(uniqueById(d.reasoningBlocks.map(normalizeReasoningBlock)));
-        setContextItems(d.contextItems);
         setTodos((d.todos ?? []).map(normalizeTodo));
         setMaxTokens(d.maxTokens);
         setModel(d.model);
@@ -168,8 +355,15 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
         setError(histRes.error ?? 'Failed to load chat history');
       }
       if (obsRes.ok) {
+        memoryStateRef.current = obsRes.data;
         const nextObservation = toObservationData(obsRes.data);
         setObservation(nextObservation);
+        setObservations(toObservationTimeline(obsRes.data));
+      } else {
+        memoryStateRef.current = null;
+      }
+      if (histRes.ok) {
+        commitContextItems(histRes.data.contextItems, memoryStateRef.current);
       }
       setLoading(false);
     });
@@ -177,7 +371,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
     return () => {
       cancelled = true;
     };
-  }, [chatId, client]);
+  }, [chatId, client, commitContextItems]);
 
   const sendMessage = useCallback(
     async (content: string) => {
@@ -298,14 +492,47 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
     }
     const res = await client.summarizeContext({ chatId });
     if (res.ok) {
-      setContextItems(res.data.contextItems);
+      commitContextItems(res.data.contextItems);
     }
     return res;
-  }, [chatId, client]);
+  }, [chatId, client, commitContextItems]);
 
   const removeContextItem = useCallback((itemId: string) => {
-    setContextItems((prev) => prev.filter((i) => i.id !== itemId));
+    commitContextItems(baseContextItemsRef.current.filter((i) => i.id !== itemId));
+  }, [commitContextItems]);
+
+  const resetTransientStreamState = useCallback(() => {
+    pendingContentDeltas.current.clear();
+    pendingReasoningDeltas.current.clear();
+    streamFlushScheduled.current = false;
+    setStreamingReasoningBlockIds(new Set());
   }, []);
+
+  const refreshMemoryState = useCallback(
+    async (targetChatId?: string | null) => {
+      const resolvedChatId = targetChatId ?? chatId;
+      if (!isValidChatId(resolvedChatId)) {
+        memoryStateRef.current = null;
+        setObservation(null);
+        setObservations([]);
+        commitContextItems(baseContextItemsRef.current, null);
+        return;
+      }
+      const res = await client.getMemoryState(resolvedChatId);
+      if (res.ok) {
+        memoryStateRef.current = res.data;
+        setObservation(toObservationData(res.data));
+        setObservations(toObservationTimeline(res.data));
+        commitContextItems(baseContextItemsRef.current, res.data);
+      } else {
+        memoryStateRef.current = null;
+        setObservation(null);
+        setObservations([]);
+        commitContextItems(baseContextItemsRef.current, null);
+      }
+    },
+    [chatId, client, commitContextItems],
+  );
 
   const revertToCheckpoint = useCallback(
     async (checkpointId: string) => {
@@ -314,17 +541,24 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
       }
       const res = await client.revertToCheckpoint({ chatId, checkpointId });
       if (res.ok) {
+        resetTransientStreamState();
         setMessages(uniqueById(res.data.messages.map(normalizeMessage)));
         setToolCalls(uniqueById(res.data.toolCalls.map(normalizeToolCall)));
         setFileEdits(uniqueById(res.data.fileEdits.map(normalizeFileEdit)));
         setCheckpoints(uniqueById(res.data.checkpoints.map(normalizeCheckpoint)));
         setReasoningBlocks(uniqueById(res.data.reasoningBlocks.map(normalizeReasoningBlock)));
         setTodos((res.data.todos ?? []).map(normalizeTodo));
+        setVerificationIssues({});
+        setObservationStatus('idle');
         setPersistentError(null);
+        await Promise.all([
+          refreshContextFromHistory(chatId),
+          refreshMemoryState(chatId),
+        ]);
       }
       return res;
     },
-    [chatId, client],
+    [chatId, client, refreshContextFromHistory, refreshMemoryState, resetTransientStreamState],
   );
 
   const revertFile = useCallback(
@@ -347,11 +581,11 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
       if (!isValidChatId(resolvedChatId)) return;
       const res = await client.getChatHistory(resolvedChatId);
       if (!res.ok) return;
-      setContextItems(res.data.contextItems);
+      commitContextItems(res.data.contextItems);
       setMaxTokens(res.data.maxTokens);
       setModel(res.data.model);
     },
-    [chatId, client],
+    [chatId, client, commitContextItems],
   );
 
   useEffect(() => {
@@ -391,6 +625,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
       }
       const res = await client.editMessage({ chatId, messageId, content });
       if (res.ok) {
+        resetTransientStreamState();
         const d = res.data.revertedHistory;
         setMessages(uniqueById(d.messages.map(normalizeMessage)));
         setToolCalls(uniqueById(d.toolCalls.map(normalizeToolCall)));
@@ -398,12 +633,17 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
         setCheckpoints(uniqueById(d.checkpoints.map(normalizeCheckpoint)));
         setReasoningBlocks(uniqueById(d.reasoningBlocks.map(normalizeReasoningBlock)));
         setTodos((d.todos ?? []).map(normalizeTodo));
+        setVerificationIssues({});
+        setObservationStatus('idle');
         setPersistentError(null);
-        void refreshContextFromHistory(chatId);
+        await Promise.all([
+          refreshContextFromHistory(chatId),
+          refreshMemoryState(chatId),
+        ]);
       }
       return res;
     },
-    [chatId, client, refreshContextFromHistory],
+    [chatId, client, refreshContextFromHistory, refreshMemoryState, resetTransientStreamState],
   );
 
   const retryObservation = useCallback(async () => {
@@ -653,7 +893,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
         }
         case 'context_update': {
           const payload = event.payload as { contextItems: ContextItem[] };
-          setContextItems(payload.contextItems);
+          commitContextItems(payload.contextItems);
           break;
         }
         case 'verification_issues': {
@@ -672,13 +912,20 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
               todos?: TodoItem[];
             };
           };
+          resetTransientStreamState();
           setMessages(uniqueById(payload.revertedHistory.messages.map(normalizeMessage)));
           setToolCalls(uniqueById(payload.revertedHistory.toolCalls.map(normalizeToolCall)));
           setFileEdits(uniqueById(payload.revertedHistory.fileEdits.map(normalizeFileEdit)));
           setCheckpoints(uniqueById(payload.revertedHistory.checkpoints.map(normalizeCheckpoint)));
           setReasoningBlocks(uniqueById(payload.revertedHistory.reasoningBlocks.map(normalizeReasoningBlock)));
           setTodos((payload.revertedHistory.todos ?? []).map(normalizeTodo));
-          void refreshContextFromHistory(event.chatId);
+          setVerificationIssues({});
+          setObservationStatus('idle');
+          setPersistentError(null);
+          void Promise.all([
+            refreshContextFromHistory(event.chatId),
+            refreshMemoryState(event.chatId),
+          ]);
           break;
         }
         case 'todo_list_updated': {
@@ -698,14 +945,8 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
           } else if (payload.status === 'observed' || payload.status === 'reflected') {
             setObservationStatus('done');
             setPersistentError((prev) => (prev?.source === 'observer' || prev?.source === 'reflector' ? null : prev));
-            // Refresh observation data
-            if (event.chatId) {
-              client.getMemoryState(event.chatId).then((res) => {
-                if (res.ok) {
-                  setObservation(toObservationData(res.data));
-                }
-              });
-            }
+            // Refresh observation data and re-derive visible context immediately.
+            if (event.chatId) void refreshMemoryState(event.chatId).then(() => scheduleContextRefresh(event.chatId, true));
           }
           break;
         }
@@ -741,7 +982,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
           break;
       }
     },
-    [asDate, scheduleContextRefresh, scheduleStreamFlush, client, refreshContextFromHistory],
+    [asDate, scheduleContextRefresh, scheduleStreamFlush, refreshContextFromHistory, refreshMemoryState, resetTransientStreamState],
   );
 
   return {
@@ -756,6 +997,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
     verificationIssues,
     observationStatus,
     observation,
+    observations,
     persistentError,
     maxTokens,
     model,
@@ -779,7 +1021,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
     setFileEdits,
     setCheckpoints,
     setReasoningBlocks,
-    setContextItems,
+    setContextItems: setContextItemsWithOverlay,
     setModel,
     setMaxTokens,
     processEvent,

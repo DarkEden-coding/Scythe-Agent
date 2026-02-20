@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from difflib import SequenceMatcher
 
 import httpx
 
@@ -20,7 +19,7 @@ from app.utils.time import utc_now_iso
 
 logger = logging.getLogger(__name__)
 REPETITIVE_TOOL_CALL_STREAK_LIMIT = 5
-REPETITIVE_TOOL_ARG_SIMILARITY = 0.92
+GUARDED_REPEAT_TOOLS = {"read_file", "list_files", "grep"}
 
 
 class AgentLoop:
@@ -127,8 +126,7 @@ class AgentLoop:
         iteration = 0
         reasoning_param = {"effort": "medium"}
         _cancelled = False
-        last_tool_name: str | None = None
-        last_tool_args = ""
+        last_guard_signature: tuple[str, str] | None = None
         repeated_tool_streak = 0
 
         try:
@@ -205,8 +203,7 @@ class AgentLoop:
                     )
 
                 if result.finish_reason == "stop" or not result.tool_calls:
-                    last_tool_name = None
-                    last_tool_args = ""
+                    last_guard_signature = None
                     repeated_tool_streak = 0
                     conversation_messages.append(
                         {"role": "assistant", "content": response_text or ""}
@@ -223,18 +220,17 @@ class AgentLoop:
                     continue
 
                 for tc in result.tool_calls:
-                    tc_name = tc.get("function", {}).get("name", "unknown")
-                    tc_args = self._canonicalize_tool_arguments(
-                        tc.get("function", {}).get("arguments", "{}")
-                    )
-                    if (
-                        tc_name == last_tool_name
-                        and self._tool_args_are_similar(tc_args, last_tool_args)
-                    ):
+                    signature = self._loop_guard_signature(tc)
+                    if signature is None:
+                        last_guard_signature = None
+                        repeated_tool_streak = 0
+                        continue
+
+                    tc_name, target = signature
+                    if signature == last_guard_signature:
                         repeated_tool_streak += 1
                     else:
-                        last_tool_name = tc_name
-                        last_tool_args = tc_args
+                        last_guard_signature = signature
                         repeated_tool_streak = 1
 
                     if repeated_tool_streak >= REPETITIVE_TOOL_CALL_STREAK_LIMIT:
@@ -243,6 +239,7 @@ class AgentLoop:
                             checkpoint_id=checkpoint_id,
                             chat_model=chat_model,
                             tool_name=tc_name,
+                            target=target,
                             repeat_count=repeated_tool_streak,
                         )
                         return
@@ -406,28 +403,45 @@ class AgentLoop:
         self._chat_repo.commit()
         message_out.content = final_text
 
-    def _canonicalize_tool_arguments(self, raw_args: object) -> str:
-        """Normalize tool arguments for loop detection comparisons."""
-        if isinstance(raw_args, (dict, list)):
-            return json.dumps(raw_args, sort_keys=True, separators=(",", ":"))
+    def _parse_tool_args(self, raw_args: object) -> dict:
+        if isinstance(raw_args, dict):
+            return raw_args
         if not isinstance(raw_args, str):
-            return str(raw_args)
+            return {}
         text = raw_args.strip()
         if not text:
-            return "{}"
+            return {}
         try:
             parsed = json.loads(text)
-            return json.dumps(parsed, sort_keys=True, separators=(",", ":"))
         except json.JSONDecodeError:
-            return text
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
 
-    def _tool_args_are_similar(self, current: str, previous: str) -> bool:
-        if not current or not previous:
-            return current == previous
-        if current == previous:
-            return True
-        similarity = SequenceMatcher(None, previous, current).ratio()
-        return similarity >= REPETITIVE_TOOL_ARG_SIMILARITY
+    def _loop_guard_signature(self, tool_call: dict) -> tuple[str, str] | None:
+        """Build a strict repetition signature only for file/path-oriented read tools."""
+        fn = tool_call.get("function", {}) or {}
+        tool_name = fn.get("name", "unknown")
+        if tool_name not in GUARDED_REPEAT_TOOLS:
+            return None
+        args = self._parse_tool_args(fn.get("arguments", "{}"))
+        if tool_name == "read_file":
+            path = str(args.get("path", "")).strip()
+            if not path:
+                return None
+            return (tool_name, f"path={path}")
+        if tool_name == "list_files":
+            path = str(args.get("path", "")).strip()
+            if not path:
+                return None
+            recursive = bool(args.get("recursive", False))
+            return (tool_name, f"path={path}|recursive={recursive}")
+        if tool_name == "grep":
+            path = str(args.get("path", "")).strip()
+            pattern = str(args.get("pattern", "")).strip()
+            if not path or not pattern:
+                return None
+            return (tool_name, f"path={path}|pattern={pattern}")
+        return None
 
     async def _pause_for_repetitive_tool_loop(
         self,
@@ -436,10 +450,11 @@ class AgentLoop:
         checkpoint_id: str,
         chat_model,
         tool_name: str,
+        target: str,
         repeat_count: int,
     ) -> None:
         warning_text = (
-            f"I paused because I called `{tool_name}` with very similar arguments "
+            f"I paused because I called `{tool_name}` on the same target ({target}) "
             f"{repeat_count} times in a row. Tell me how you'd like to proceed."
         )
         msg_id = generate_id("msg")
@@ -471,6 +486,7 @@ class AgentLoop:
                     "reason": "repetitive_tool_calls",
                     "checkpointId": checkpoint_id,
                     "toolName": tool_name,
+                    "target": target,
                     "repeatCount": repeat_count,
                     "message": warning_text,
                 },
@@ -481,9 +497,10 @@ class AgentLoop:
             {"type": "agent_done", "payload": {"checkpointId": checkpoint_id}},
         )
         logger.info(
-            "Conversation ended: repetitive tool loop detected chat_id=%s checkpoint_id=%s tool=%s repeat_count=%d",
+            "Conversation ended: repetitive tool loop detected chat_id=%s checkpoint_id=%s tool=%s target=%s repeat_count=%d",
             chat_id,
             checkpoint_id,
             tool_name,
+            target,
             repeat_count,
         )

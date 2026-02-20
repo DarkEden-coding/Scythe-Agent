@@ -15,16 +15,54 @@ def _build_loop() -> AgentLoop:
     )
 
 
-def test_tool_argument_similarity_normalizes_json_key_order() -> None:
+def test_loop_guard_signature_read_file_uses_only_path() -> None:
     loop = _build_loop()
-    left = loop._canonicalize_tool_arguments('{"path":"/tmp/x","recursive":false}')
-    right = loop._canonicalize_tool_arguments('{"recursive":false,"path":"/tmp/x"}')
-    assert left == right
-    assert loop._tool_args_are_similar(left, right)
+    first = {
+        "function": {
+            "name": "read_file",
+            "arguments": '{"path":"/tmp/x","start":1,"end":300}',
+        }
+    }
+    second = {
+        "function": {
+            "name": "read_file",
+            "arguments": '{"path":"/tmp/x","start":301,"end":600}',
+        }
+    }
+    assert loop._loop_guard_signature(first) == ("read_file", "path=/tmp/x")
+    assert loop._loop_guard_signature(first) == loop._loop_guard_signature(second)
 
 
-def test_tool_argument_similarity_accepts_small_argument_variation() -> None:
+def test_loop_guard_signature_ignores_non_file_tools() -> None:
     loop = _build_loop()
-    first = loop._canonicalize_tool_arguments('{"path":"/tmp/x","start":1,"end":300}')
-    second = loop._canonicalize_tool_arguments('{"path":"/tmp/x","start":1,"end":320}')
-    assert loop._tool_args_are_similar(first, second)
+    tool_call = {
+        "function": {
+            "name": "update_todo_list",
+            "arguments": '{"todos":[{"content":"a","status":"pending"}]}',
+        }
+    }
+    assert loop._loop_guard_signature(tool_call) is None
+
+
+def test_loop_guard_signature_list_files_requires_same_path_and_mode() -> None:
+    loop = _build_loop()
+    recursive = {
+        "function": {
+            "name": "list_files",
+            "arguments": '{"path":"/tmp/dir","recursive":true}',
+        }
+    }
+    non_recursive = {
+        "function": {
+            "name": "list_files",
+            "arguments": '{"path":"/tmp/dir","recursive":false}',
+        }
+    }
+    assert loop._loop_guard_signature(recursive) == (
+        "list_files",
+        "path=/tmp/dir|recursive=True",
+    )
+    assert loop._loop_guard_signature(non_recursive) == (
+        "list_files",
+        "path=/tmp/dir|recursive=False",
+    )

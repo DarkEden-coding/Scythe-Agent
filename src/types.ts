@@ -64,14 +64,17 @@ export interface ContextItem {
 }
 
 export interface ObservationData {
+  id?: string;
   hasObservations: boolean;
   generation?: number;
   content?: string;
   tokenCount?: number;
   observedUpToMessageId?: string;
+  observedUpToTimestamp?: string;
   currentTask?: string;
   suggestedResponse?: string;
   timestamp?: string;
+  source?: 'stored' | 'buffered';
 }
 
 export interface VerificationIssues {

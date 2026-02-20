@@ -1,4 +1,4 @@
-import { RotateCcw, Bot, MessageSquare } from 'lucide-react';
+import { RotateCcw, Bot, MessageSquare, Database } from 'lucide-react';
 import type { Message, Checkpoint, VerificationIssues, ObservationData } from '@/types';
 import { MessageBubble } from './MessageBubble';
 import { VerificationIssuesBanner } from './VerificationIssuesBanner';
@@ -13,7 +13,24 @@ interface MessageListProps {
   readonly getCheckpointForMessage: (messageId: string) => Checkpoint | undefined;
   readonly verificationIssues?: Record<string, VerificationIssues>;
   readonly observation?: ObservationData | null;
+  readonly observations?: ObservationData[];
   readonly showObservationsInChat?: boolean;
+}
+
+function ObservationSwitchMessage({ generation }: { generation?: number }) {
+  return (
+    <div className="my-2 mx-2">
+      <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 overflow-hidden">
+        <div className="w-full flex items-center gap-2 px-4 py-2.5">
+          <Database className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+          <span className="text-xs font-medium text-cyan-300 flex-1">
+            Switched earlier chat history to observations
+            {generation !== undefined ? ` · Gen ${generation}` : ''}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export function MessageList({
@@ -25,6 +42,7 @@ export function MessageList({
   getCheckpointForMessage,
   verificationIssues = {},
   observation = null,
+  observations = [],
   showObservationsInChat = false,
 }: MessageListProps) {
   if (!activeChatId) {
@@ -37,12 +55,25 @@ export function MessageList({
     );
   }
 
-  const showObservation = showObservationsInChat && observation?.hasObservations;
-  const waterlineMessageId = observation?.observedUpToMessageId ?? null;
-  const waterlineIndex = waterlineMessageId
-    ? messages.findIndex((m) => m.id === waterlineMessageId)
-    : -1;
-
+  const timelineSource = observations.length > 0
+    ? observations
+    : (observation ? [observation] : []);
+  const observationTimeline = showObservationsInChat
+    ? timelineSource.filter((item) => item.hasObservations && !!item.content)
+    : [];
+  const messageIdSet = new Set(messages.map((m) => m.id));
+  const observationsByMessageId = new Map<string, ObservationData[]>();
+  const unanchoredObservations: ObservationData[] = [];
+  for (const item of observationTimeline) {
+    const waterline = item.observedUpToMessageId;
+    if (waterline && messageIdSet.has(waterline)) {
+      const existing = observationsByMessageId.get(waterline) ?? [];
+      existing.push(item);
+      observationsByMessageId.set(waterline, existing);
+    } else {
+      unanchoredObservations.push(item);
+    }
+  }
   let prevCheckpointId: string | null = null;
 
   return (
@@ -86,12 +117,25 @@ export function MessageList({
               )}
               <MessageBubble message={message} onEdit={onEditMessage} isProcessing={isProcessing} />
             </div>
-            {showObservation && observation && index === waterlineIndex && (
-              <ObservationMessage observation={observation} />
-            )}
+            {(observationsByMessageId.get(message.id) ?? []).map((item, itemIndex) => (
+              <div key={`${item.id ?? item.timestamp ?? 'obs'}-${itemIndex}`}>
+                {item.source !== 'buffered' && (
+                  <ObservationSwitchMessage generation={item.generation} />
+                )}
+                <ObservationMessage observation={item} />
+              </div>
+            ))}
           </div>
         );
       })}
+      {unanchoredObservations.map((item, itemIndex) => (
+        <div key={`tail-${item.id ?? item.timestamp ?? 'obs'}-${itemIndex}`}>
+          {item.source !== 'buffered' && (
+            <ObservationSwitchMessage generation={item.generation} />
+          )}
+          <ObservationMessage observation={item} />
+        </div>
+      ))}
       {isProcessing && (
         <div className="flex gap-3 pt-2">
           <div className="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center bg-gray-750 border border-gray-600/50 shadow-md">

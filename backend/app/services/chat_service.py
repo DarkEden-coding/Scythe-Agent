@@ -1,6 +1,8 @@
 import asyncio
+import json
 import logging
 
+import httpx
 from sqlalchemy.orm import Session
 
 from app.db.repositories.chat_repo import ChatRepository
@@ -29,6 +31,64 @@ from app.utils.mappers import map_role_for_ui
 from app.utils.time import utc_now_iso
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_http_error_detail(body: object) -> str:
+    """Best-effort extraction of a useful provider error message from JSON/text bodies."""
+    if isinstance(body, dict):
+        err = body.get("error")
+        if isinstance(err, dict):
+            msg = err.get("message")
+            typ = err.get("type")
+            param = err.get("param")
+            parts = [str(msg).strip()] if isinstance(msg, str) and str(msg).strip() else []
+            if isinstance(typ, str) and typ.strip():
+                parts.append(f"type={typ.strip()}")
+            if isinstance(param, str) and param.strip():
+                parts.append(f"param={param.strip()}")
+            if parts:
+                return " | ".join(parts)
+        msg = body.get("message")
+        if isinstance(msg, str) and msg.strip():
+            return msg.strip()
+        detail = body.get("detail")
+        if isinstance(detail, str) and detail.strip():
+            return detail.strip()
+        if isinstance(detail, list):
+            joined = ", ".join(str(x).strip() for x in detail if str(x).strip())
+            if joined:
+                return joined
+        try:
+            compact = json.dumps(body, separators=(",", ":"), ensure_ascii=True)
+            return compact[:500]
+        except Exception:
+            return ""
+    if isinstance(body, str):
+        text = body.strip()
+        if text:
+            return text[:500]
+    return ""
+
+
+def _format_runtime_error(exc: Exception) -> str:
+    """Create a user-facing runtime error with upstream details when available."""
+    if isinstance(exc, httpx.HTTPStatusError):
+        status = exc.response.status_code
+        url = str(exc.request.url)
+        detail = ""
+        try:
+            detail = _extract_http_error_detail(exc.response.json())
+        except Exception:
+            try:
+                detail = _extract_http_error_detail(exc.response.text)
+            except Exception:
+                detail = ""
+
+        base = f"Upstream request failed ({status}) for {url}."
+        return f"{base} {detail}".strip() if detail else base
+
+    msg = str(exc).strip()
+    return msg or f"{exc.__class__.__name__} (no details)"
 
 
 class ChatService:
@@ -322,7 +382,7 @@ def _schedule_background_task(
                 {"type": "agent_done", "payload": {"checkpointId": checkpoint_id}},
             )
         except Exception as exc:
-            err_msg = str(exc)
+            err_msg = _format_runtime_error(exc)
             logger.exception(
                 "Background runtime task failed for chat_id=%s checkpoint_id=%s",
                 chat_id,

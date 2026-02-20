@@ -421,6 +421,7 @@ export function App() {
             verificationIssues={chat.verificationIssues}
             observationStatus={chat.observationStatus}
             observation={chat.observation}
+            observations={chat.observations}
             showObservationsInChat={showObservationsInChat}
             persistentError={chat.persistentError}
             onRetryPersistentError={handleRetryObservation}
