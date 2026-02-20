@@ -451,6 +451,9 @@ def test_edit_message_cancels_observation_runner(client, monkeypatch) -> None:
 
 def test_activate_buffered_observations_starts_generation_at_zero() -> None:
     class FakeRepo:
+        def get_latest_observation(self, _chat_id: str):
+            return None
+
         def delete_observation(self, _obs) -> None:
             raise AssertionError("delete_observation should not be called without a base observation")
 
@@ -542,6 +545,9 @@ def test_activate_buffered_observations_increments_generation() -> None:
 
 def test_activate_buffered_observations_uses_explicit_trigger_token_count() -> None:
     class FakeRepo:
+        def get_latest_observation(self, _chat_id: str):
+            return None
+
         def delete_observation(self, _obs) -> None:
             raise AssertionError("delete_observation should not be called without a base observation")
 

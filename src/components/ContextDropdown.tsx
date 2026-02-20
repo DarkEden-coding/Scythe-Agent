@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { MessageSquare, Terminal, FileText, ChevronDown, Bug } from 'lucide-react';
+import { MessageSquare, Terminal, FileText, ChevronDown, Bug, Brain } from 'lucide-react';
 import { ContextItem } from '../types';
 import { cn } from '../utils/cn';
 import { api } from '../api';
@@ -15,18 +15,21 @@ const typeIcons: Record<string, React.ReactNode> = {
   conversation: <MessageSquare className="w-3 h-3" />,
   tool_output: <Terminal className="w-3 h-3" />,
   summary: <FileText className="w-3 h-3" />,
+  reasoning: <Brain className="w-3 h-3" />,
 };
 
 const typeColors: Record<string, string> = {
   conversation: 'text-aqua-300 bg-aqua-500/10 border border-aqua-500/20',
   tool_output: 'text-teal-300 bg-teal-500/10 border border-teal-500/20',
   summary: 'text-amber-300 bg-amber-500/10 border border-amber-500/20',
+  reasoning: 'text-blue-300 bg-blue-500/10 border border-blue-500/20',
 };
 
 const PIE_COLORS: Record<string, string> = {
   conversation: '#22c55e',
   tool_output: '#a855f7',
   summary: '#f97316',
+  reasoning: '#3b82f6',
 };
 
 const REMAINING_COLOR = '#3f3f46';
@@ -122,6 +125,7 @@ const typeLabels: Record<string, string> = {
   conversation: 'Conversation',
   tool_output: 'Tool Outputs',
   summary: 'Summaries',
+  reasoning: 'Reasoning',
 };
 
 export function ContextDropdown({
@@ -151,10 +155,13 @@ export function ContextDropdown({
     return acc;
   }, {});
 
+  // Sort pie segments: conversation, tool_output, reasoning, summary
+  const TYPE_ORDER: Record<string, number> = { conversation: 0, tool_output: 1, reasoning: 2, summary: 3 };
+
   const pieSegments = Object.entries(groupedByType)
     .map(([type, data]) => ({ type, tokens: data.tokens }))
     .filter((s) => s.tokens > 0)
-    .sort((a, b) => b.tokens - a.tokens);
+    .sort((a, b) => (TYPE_ORDER[a.type] ?? 99) - (TYPE_ORDER[b.type] ?? 99));
 
   const top5Items = [...contextItems].sort((a, b) => b.tokens - a.tokens).slice(0, 5);
 

@@ -116,7 +116,7 @@ def build_context_items(
         items.append(
             ContextItemOut(
                 id=rb.id,
-                type="conversation",
+                type="reasoning",
                 name=f"Reasoning: {_truncate_label(content)}",
                 tokens=tokens,
                 full_name=f"Reasoning: {content}" if len(content) > 48 else None,

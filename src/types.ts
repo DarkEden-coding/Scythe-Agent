@@ -57,7 +57,7 @@ export interface TodoItem {
 
 export interface ContextItem {
   id: string;
-  type: 'file' | 'conversation' | 'tool_output' | 'summary';
+  type: 'file' | 'conversation' | 'tool_output' | 'summary' | 'reasoning';
   name: string;
   tokens: number;
   full_name?: string | null;

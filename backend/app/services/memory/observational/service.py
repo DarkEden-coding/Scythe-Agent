@@ -90,8 +90,15 @@ class BufferedObservationChunk:
 
 
 def _count_tokens(text: str) -> int:
-    """Rough token estimate: 1 token ≈ 4 characters."""
-    return max(1, len(text) // 4) if text else 0
+    """Count tokens using tiktoken (cl100k_base), falling back to char/4 estimate."""
+    if not text:
+        return 0
+    try:
+        import tiktoken
+        enc = tiktoken.get_encoding("cl100k_base")
+        return len(enc.encode(text)) or 1
+    except Exception:
+        return max(1, len(text) // 4)
 
 
 def _today_str() -> str:
@@ -314,6 +321,7 @@ class ObservationMemoryService:
         observer_model: str | None,
         client,
         trigger_token_count: int | None = None,
+        prior_chunks: list[str] | None = None,
     ) -> BufferedObservationChunk | None:
         """Run observer on a specific unobserved slice and return a dormant chunk."""
         if not messages:
@@ -324,6 +332,7 @@ class ObservationMemoryService:
             existing_observation=None,
             new_messages=clean_messages,
             today=_today_str(),
+            prior_chunks=prior_chunks,
         )
         effective_model = observer_model or model
 

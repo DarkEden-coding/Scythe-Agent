@@ -680,7 +680,12 @@ class ChatRepository(BaseRepository):
             if isinstance(token_count, int) and token_count > 0:
                 normalized_token_count = token_count
             else:
-                normalized_token_count = max(1, len(content.strip()) // 4)
+                try:
+                    import tiktoken
+                    _enc = tiktoken.get_encoding("cl100k_base")
+                    normalized_token_count = len(_enc.encode(content.strip())) or 1
+                except Exception:
+                    normalized_token_count = max(1, len(content.strip()) // 4)
 
             current_task = raw_chunk.get("currentTask")
             suggested_response = raw_chunk.get("suggestedResponse")

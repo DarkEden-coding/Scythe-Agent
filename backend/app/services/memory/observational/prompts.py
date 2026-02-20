@@ -52,7 +52,7 @@ One or two sentences the agent should use to continue naturally, e.g. "Continue 
 
 OBSERVER_USER_TEMPLATE = """\
 {existing_observations_section}
-
+{prior_chunks_section}
 ## New Messages to Observe
 
 {new_messages_text}
@@ -122,6 +122,7 @@ def build_observer_prompt(
     existing_observation: str | None,
     new_messages: list[dict],
     today: str,
+    prior_chunks: list[str] | None = None,
 ) -> list[dict]:
     """Build the Observer prompt messages list."""
     if existing_observation:
@@ -130,6 +131,22 @@ def build_observer_prompt(
         )
     else:
         existing_section = "## Existing Observations\n\n(none — this is the first observation)\n"
+
+    # Build prior chunks section for dedup context
+    if prior_chunks:
+        chunk_parts = []
+        for i, chunk_text in enumerate(prior_chunks, 1):
+            chunk_parts.append(f"### Prior Chunk {i}\n{chunk_text}")
+        prior_section = (
+            "## Recent Observation Chunks (for reference — DO NOT repeat)\n\n"
+            "The following chunks were recently generated from earlier messages in this "
+            "conversation. Use them ONLY as context to avoid duplicating information. "
+            "Do NOT restate facts, decisions, or details already captured below.\n\n"
+            + "\n\n".join(chunk_parts)
+            + "\n"
+        )
+    else:
+        prior_section = ""
 
     new_messages_lines = []
     for msg in new_messages:
@@ -142,6 +159,7 @@ def build_observer_prompt(
 
     user_content = OBSERVER_USER_TEMPLATE.format(
         existing_observations_section=existing_section,
+        prior_chunks_section=prior_section,
         new_messages_text="\n\n".join(new_messages_lines),
     )
     user_content = f"Today's date: {today}\n\n" + user_content

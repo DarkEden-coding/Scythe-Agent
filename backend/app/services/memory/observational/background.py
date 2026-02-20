@@ -142,6 +142,24 @@ class OMBackgroundRunner:
         svc.save_observational_state(chat_id, new_state)
         return activated, new_state
 
+    def _get_prior_chunk_contents(
+        self,
+        state: dict,
+        max_chunks: int = 2,
+    ) -> list[str]:
+        """Extract content strings from the last N buffered chunks for dedup context."""
+        buffer = state.get("buffer") or {}
+        raw_chunks = buffer.get("chunks") or []
+        # Take the last max_chunks entries
+        recent = raw_chunks[-max_chunks:] if len(raw_chunks) > max_chunks else raw_chunks
+        contents: list[str] = []
+        for raw in recent:
+            if isinstance(raw, dict):
+                text = raw.get("content", "")
+                if isinstance(text, str) and text.strip():
+                    contents.append(text.strip())
+        return contents
+
     def _start_task(self, request: dict) -> None:
         chat_id = request["chat_id"]
         task = asyncio.create_task(
@@ -254,6 +272,9 @@ class OMBackgroundRunner:
                     )
                     observing_emitted = True
 
+                    # Pass up to the last 2 buffered chunk contents for dedup
+                    prior_chunk_contents = self._get_prior_chunk_contents(state, max_chunks=2)
+
                     try:
                         chunk = await svc.run_observer_for_chunk(
                             messages=unobserved_buffer,
@@ -261,6 +282,7 @@ class OMBackgroundRunner:
                             observer_model=observer_model,
                             client=client,
                             trigger_token_count=unobserved_tokens_buffer,
+                            prior_chunks=prior_chunk_contents or None,
                         )
                     except ObservationError as exc:
                         await event_bus.publish(

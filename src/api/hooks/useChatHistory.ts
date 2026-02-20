@@ -959,7 +959,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
           break;
         }
         case 'reasoning_end': {
-          const payload = event.payload as { reasoningBlock: ReasoningBlock };
+          const payload = event.payload as { reasoningBlock: ReasoningBlock & { tokens?: number } };
           if (payload.reasoningBlock) {
             pendingReasoningDeltas.current.delete(payload.reasoningBlock.id);
             const block = {
@@ -982,6 +982,10 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
                 ),
               );
             }
+            // Refresh context so reasoning block tokens appear in the usage display.
+            // The backend commits the block before publishing this event, so it is
+            // safe to fetch immediately.
+            scheduleContextRefresh(event.chatId, true);
           }
           break;
         }

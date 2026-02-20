@@ -61,18 +61,27 @@ class LLMStreamer:
             timestamp=reasoning_block_ts,
             duration_ms=duration_ms,
         )
+        # Commit before publishing so the block is queryable when the frontend
+        # calls getChatHistory in response to this event.
+        self._chat_repo.commit()
+        try:
+            import tiktoken
+            _enc = tiktoken.get_encoding("cl100k_base")
+            tokens = len(_enc.encode(content))
+        except Exception:
+            tokens = max(1, len(content) // 4)
         block_out = {
             "id": rb_id,
             "content": content,
             "timestamp": reasoning_block_ts,
             "checkpointId": checkpoint_id,
             "duration": duration_ms,
+            "tokens": tokens,
         }
         await self._event_bus.publish(
             chat_id,
             {"type": "reasoning_end", "payload": {"reasoningBlock": block_out}},
         )
-        self._chat_repo.commit()
         logger.info(
             "Emitted reasoning block %s for chat_id=%s checkpoint_id=%s",
             rb_id,
