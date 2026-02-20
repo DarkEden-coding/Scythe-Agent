@@ -413,7 +413,12 @@ class ObservationMemoryService:
 
         # Each activation creates a new observation generation:
         # first activation starts at 0, then increments on every subsequent activation.
-        generation = (base_observation.generation + 1) if base_observation is not None else 0
+        # If no base_observation was passed, check the DB for the latest generation so
+        # that the counter always increments even when the caller doesn't hold a reference.
+        effective_base = base_observation
+        if effective_base is None:
+            effective_base = self._chat_repo.get_latest_observation(chat_id)
+        generation = (effective_base.generation + 1) if effective_base is not None else 0
         observed_up_to_message_id = (
             base_observation.observed_up_to_message_id if base_observation is not None else None
         )

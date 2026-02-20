@@ -739,8 +739,11 @@ class ChatRepository(BaseRepository):
             next_state["timestamp"] = latest_observation.timestamp
             next_state["content"] = latest_observation.content
 
-        buffer_tokens = raw_buffer.get("tokens")
-        normalized_buffer_tokens = buffer_tokens if isinstance(buffer_tokens, int) and buffer_tokens > 0 else 500
+        # Recalculate buffer token count from surviving chunks so the
+        # observation trigger threshold reflects the actual post-revert state.
+        normalized_buffer_tokens = sum(c.get("tokenCount", 0) for c in valid_chunks)
+        if normalized_buffer_tokens <= 0:
+            normalized_buffer_tokens = 500
         buffer_up_to_message_id: str | None = None
         buffer_up_to_timestamp: str | None = None
         if latest_observation is not None:
