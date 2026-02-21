@@ -192,7 +192,9 @@ def test_reflector_none_still_emits_reflected(monkeypatch) -> None:
     )
 
     statuses = [e["payload"]["status"] for e in bus.events if e.get("type") == "observation_status"]
-    assert statuses == ["observing", "observed", "observed", "reflecting", "reflected"]
+    # Buffer phase doesn't fire (buffer_tokens clamped to 500 > 120 unobserved tokens),
+    # so activation runs directly via fallback → observed → reflecting → reflected.
+    assert statuses == ["observing", "observed", "reflecting", "reflected"]
 
 
 def test_tool_activity_can_trigger_observer(monkeypatch) -> None:
@@ -294,7 +296,9 @@ def test_tool_activity_can_trigger_observer(monkeypatch) -> None:
     )
 
     statuses = [e["payload"]["status"] for e in bus.events if e.get("type") == "observation_status"]
-    assert statuses == ["observing", "observed", "observed"]
+    # Buffer phase doesn't fire (buffer_tokens clamped to 500 > unobserved token count),
+    # so activation runs directly via fallback → observed.
+    assert statuses == ["observing", "observed"]
     assert called["observer"] == 1
 
 
