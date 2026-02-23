@@ -288,11 +288,37 @@ class SubAgentRunner:
             duration_ms = int(
                 (datetime.now(timezone.utc) - start_ts).total_seconds() * 1000
             )
-            last_visible_text = last_assistant_text or last_iteration_text or "(none)"
-            output_text = (
-                "Sub-agent reached iteration limit before calling submit_task. "
-                f"Last assistant message: {last_visible_text}"
+            forced_messages = [
+                *messages,
+                {
+                    "role": "user",
+                    "content": self._sub_agent_forced_final_response_prompt(),
+                },
+            ]
+            forced_result = await streamer.stream_completion(
+                client=client,
+                model=model,
+                messages=forced_messages,
+                tools=None,
+                reasoning_param=reasoning_param,
+                chat_id=chat_id,
+                msg_id=generate_id("msg"),
+                ts=utc_now_iso(),
+                checkpoint_id=None,
+                reasoning_block_id=generate_id("rb"),
+                silent=True,
             )
+            forced_text = (
+                forced_result.text or forced_result.finish_content or ""
+            ).strip()
+            if forced_text:
+                output_text = forced_text
+            else:
+                output_text = (
+                    "Sub-agent reached iteration limit before calling submit_task and did not "
+                    "produce a usable final response. Missing context note: the sub-agent did "
+                    "not gather enough context for one or more requested items."
+                )
             await self._publish_end(
                 chat_id, sub_agent_id, tool_call_id, "max_iterations", output_text, start_ts
             )
@@ -398,7 +424,9 @@ class SubAgentRunner:
             f"You have a hard cap of {max_iterations} iterations for this sub-task. "
             "Budget tool usage tightly: batch independent reads in parallel, avoid redundant "
             "or exploratory calls, and take direct actions that move the task to completion. "
-            "Call submit_task as soon as the requested output is complete."
+            "Call submit_task as soon as the requested output is complete. If you cannot find "
+            "requested context, explicitly state which requested items are missing and that you "
+            "did not gather enough context for them; do not invent facts."
         )
 
     @staticmethod
@@ -412,5 +440,18 @@ class SubAgentRunner:
             "Avoid optional or repetitive tool calls."
         )
         if remaining_iterations <= 2:
-            reminder += " You are near the cap, so prioritize finishing now."
+            reminder += (
+                " You are near the cap, so prioritize finishing now. Produce a direct final "
+                "response, and if any requested context is missing, explicitly list what is "
+                "missing and say you could not gather that context."
+            )
         return reminder
+
+    @staticmethod
+    def _sub_agent_forced_final_response_prompt() -> str:
+        """Build forced-final instruction for cap exhaustion without tools."""
+        return (
+            "Iteration cap reached. Do not call tools. Provide your final response directly now. "
+            "If requested items are missing, include a 'Missing context' section listing each "
+            "missing item and state that you could not gather enough context."
+        )

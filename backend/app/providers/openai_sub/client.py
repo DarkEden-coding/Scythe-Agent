@@ -239,9 +239,9 @@ def _openrouter_tools_to_responses(tools: list[dict]) -> list[dict]:
 
 
 def _parse_sse_line(line: str) -> tuple[dict | None, bool]:
-    if not line.startswith("data: "):
+    if not line.startswith("data:"):
         return (None, False)
-    data = line[6:].strip()
+    data = line[5:].lstrip()
     if not data:
         return (None, False)
     if data == "[DONE]":
@@ -698,11 +698,15 @@ class OpenAISubClient:
                                 )
                         response.raise_for_status()
                         buffer = ""
+                        done_received = False
                         async for chunk in response.aiter_bytes(chunk_size=1024):
                             buffer += chunk.decode("utf-8", errors="replace")
                             while "\n" in buffer or "\r" in buffer:
                                 line, _, buffer = buffer.partition("\n")
-                                parsed, _ = _parse_sse_line(line.rstrip("\r"))
+                                parsed, done = _parse_sse_line(line.rstrip("\r"))
+                                if done:
+                                    done_received = True
+                                    break
                                 if parsed is None:
                                     continue
                                 evs, _ = _process_stream_event(
@@ -714,6 +718,8 @@ class OpenAISubClient:
                                 for ev in evs:
                                     emitted_events = True
                                     yield ev
+                            if done_received:
+                                break
                 except httpx.HTTPStatusError as exc:
                     if _should_retry(exc.response.status_code) and attempt < len(
                         RETRY_DELAYS

@@ -153,6 +153,58 @@ class _TextThenToolOnlySubmitStreamer:
         raise AssertionError("Unexpected extra iteration")
 
 
+class _AlwaysEmptyStopStreamer:
+    def __init__(self, _chat_repo, _event_bus) -> None:
+        pass
+
+    async def stream_completion(self, **kwargs):
+        return SimpleNamespace(
+            text="",
+            tool_calls=[],
+            finish_reason="stop",
+            finish_content="",
+        )
+
+
+class _TextOnlyStopStreamer:
+    def __init__(self, _chat_repo, _event_bus) -> None:
+        pass
+
+    async def stream_completion(self, **kwargs):
+        return SimpleNamespace(
+            text="Partial answer from sub-agent.",
+            tool_calls=[],
+            finish_reason="stop",
+            finish_content="",
+        )
+
+
+class _MaxIterationForcedResponseStreamer:
+    calls: list[dict] = []
+
+    def __init__(self, _chat_repo, _event_bus) -> None:
+        self.step = 0
+
+    async def stream_completion(self, **kwargs):
+        type(self).calls.append(kwargs)
+        self.step += 1
+        if self.step == 1:
+            return SimpleNamespace(
+                text="",
+                tool_calls=[],
+                finish_reason="stop",
+                finish_content="",
+            )
+        if self.step == 2:
+            return SimpleNamespace(
+                text="Forced final answer from sub-agent.",
+                tool_calls=[],
+                finish_reason="stop",
+                finish_content="",
+            )
+        raise AssertionError("Unexpected extra iteration")
+
+
 def _build_runner(event_bus: _RecordingEventBus) -> SubAgentRunner:
     return SubAgentRunner(
         chat_repo=SimpleNamespace(),
@@ -217,6 +269,10 @@ def test_sub_agent_runner_includes_iteration_budget_guidance(monkeypatch) -> Non
     messages = _CapturePromptThenSubmitStreamer.captured_messages or []
     system_messages = [m for m in messages if m.get("role") == "system"]
     assert any("hard cap of 7 iterations" in (m.get("content") or "") for m in system_messages)
+    assert any(
+        "explicitly state which requested items are missing" in (m.get("content") or "")
+        for m in system_messages
+    )
 
 
 def test_sub_agent_runner_uses_last_non_empty_text_on_submit(monkeypatch) -> None:
@@ -271,3 +327,63 @@ def test_sub_agent_runner_publishes_cancelled_end(monkeypatch) -> None:
     ]
     assert end_events
     assert end_events[-1]["payload"]["status"] == "cancelled"
+
+
+def test_sub_agent_runner_max_iterations_returns_non_empty_output_when_no_text(monkeypatch) -> None:
+    event_bus = _RecordingEventBus()
+    registry = _RecordingRegistry()
+    monkeypatch.setattr(sub_agent_runner_module, "LLMStreamer", _AlwaysEmptyStopStreamer)
+    monkeypatch.setattr(sub_agent_runner_module, "get_tool_registry", lambda: registry)
+
+    result = asyncio.run(
+        _build_runner(event_bus).run(
+            chat_id="chat-1",
+            sub_agent_id="sa-test-max-iter-empty",
+            tool_call_id="tc-spawn-max-iter-empty",
+            task="Any task",
+            context_hint=None,
+            project_path=None,
+            model="dummy-model",
+            model_provider="openrouter",
+            max_iterations=1,
+        )
+    )
+
+    assert result.status == "max_iterations"
+    assert result.output_text.strip()
+    assert "did not gather enough context" in result.output_text
+
+
+def test_sub_agent_runner_max_iterations_forces_final_response_without_tools(
+    monkeypatch,
+) -> None:
+    event_bus = _RecordingEventBus()
+    registry = _RecordingRegistry()
+    _MaxIterationForcedResponseStreamer.calls = []
+    monkeypatch.setattr(
+        sub_agent_runner_module, "LLMStreamer", _MaxIterationForcedResponseStreamer
+    )
+    monkeypatch.setattr(sub_agent_runner_module, "get_tool_registry", lambda: registry)
+
+    result = asyncio.run(
+        _build_runner(event_bus).run(
+            chat_id="chat-1",
+            sub_agent_id="sa-test-max-iter-text",
+            tool_call_id="tc-spawn-max-iter-text",
+            task="Any task",
+            context_hint=None,
+            project_path=None,
+            model="dummy-model",
+            model_provider="openrouter",
+            max_iterations=1,
+        )
+    )
+
+    assert result.status == "max_iterations"
+    assert result.output_text == "Forced final answer from sub-agent."
+    assert len(_MaxIterationForcedResponseStreamer.calls) == 2
+    forced_call = _MaxIterationForcedResponseStreamer.calls[-1]
+    assert forced_call.get("tools") is None
+    forced_messages = forced_call.get("messages") or []
+    assert forced_messages[-1]["role"] == "user"
+    assert "Iteration cap reached. Do not call tools." in forced_messages[-1]["content"]

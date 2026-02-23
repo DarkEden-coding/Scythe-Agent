@@ -229,3 +229,37 @@ def test_openai_sub_stream_does_not_retry_after_partial_output(monkeypatch) -> N
 
     # First scenario consumed; second remains, proving no retry after partial emission.
     assert len(scenarios) == 1
+
+
+def test_openai_sub_stream_stops_on_done_marker(monkeypatch) -> None:
+    scenarios: list[object] = [
+        _FakeResponseStream(
+            chunks=[
+                b'data:{"type":"response.output_text.delta","delta":"Hello"}\n',
+                b"data:[DONE]\n",
+                b'data:{"type":"response.output_text.delta","delta":" ignored"}\n',
+            ]
+        )
+    ]
+
+    monkeypatch.setattr(
+        "app.providers.openai_sub.client.httpx.AsyncClient",
+        lambda timeout: _FakeAsyncClient(scenarios),
+    )
+
+    client = OpenAISubClient("token")
+
+    async def _collect() -> list[dict]:
+        events: list[dict] = []
+        async for ev in client.create_chat_completion_stream(
+            model="gpt-5.1-codex-mini",
+            messages=[{"role": "user", "content": "hello"}],
+        ):
+            events.append(ev)
+        return events
+
+    events = asyncio.run(_collect())
+    assert [e["type"] for e in events] == ["content", "finish"]
+    assert events[0]["delta"] == "Hello"
+    assert events[1]["content"] == "Hello"
+    assert scenarios == []
