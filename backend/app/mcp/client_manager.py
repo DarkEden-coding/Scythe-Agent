@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from datetime import datetime, timezone
@@ -18,6 +19,7 @@ from app.mcp.protocol_models import (
 )
 
 logger = logging.getLogger(__name__)
+MCP_SERVER_STARTUP_TIMEOUT_SECONDS = 10
 MCP_TOOL_CACHE_TTL_SECONDS = 300
 # Transports are registered at import time (stdio, http); tests can override via register_transport_factory
 _transport_factory_registry: dict[str, type] = {}
@@ -105,7 +107,9 @@ class MCPClientManager:
 
             try:
                 transport = self._build_transport(transport_name=server.transport, config=config)
-                await transport.connect()
+                await asyncio.wait_for(
+                    transport.connect(), timeout=MCP_SERVER_STARTUP_TIMEOUT_SECONDS
+                )
                 self._transports[server.id] = transport
                 raw = await transport.request("tools/list", {})
                 tools = parse_tools_list_response(raw, server_id=server.id)
@@ -167,7 +171,9 @@ class MCPClientManager:
                 raise ValueError(f"MCP server not available: {server_id}")
             transport_name, config = server_config
             transport = self._build_transport(transport_name=transport_name, config=config)
-            await transport.connect()
+            await asyncio.wait_for(
+                transport.connect(), timeout=MCP_SERVER_STARTUP_TIMEOUT_SECONDS
+            )
             self._transports[server_id] = transport
         raw = await transport.request("tools/call", {"name": tool_name, "arguments": payload})
         return parse_tool_call_result(raw)

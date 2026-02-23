@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from typing import Any
 
 
@@ -15,6 +16,14 @@ class StdioTransport:
         args_in = config.get("args")
         args = [str(a) for a in args_in] if isinstance(args_in, list) else []
         self._argv: list[str] = [command, *args]
+        env_in = config.get("env")
+        if isinstance(env_in, dict):
+            self._env = dict(os.environ)
+            for k, v in env_in.items():
+                if k and v is not None:
+                    self._env[str(k)] = str(v)
+        else:
+            self._env = None
         self._process: asyncio.subprocess.Process | None = None
         self._request_id = 0
         self._init_done = False
@@ -23,11 +32,16 @@ class StdioTransport:
         """Spawn subprocess and complete MCP initialize handshake."""
         if self._process is not None and self._process.returncode is None:
             return
+        kwargs: dict[str, Any] = {
+            "stdin": asyncio.subprocess.PIPE,
+            "stdout": asyncio.subprocess.PIPE,
+            "stderr": asyncio.subprocess.PIPE,
+        }
+        if self._env is not None:
+            kwargs["env"] = self._env
         self._process = await asyncio.create_subprocess_exec(
             *self._argv,
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+            **kwargs,
         )
         if self._process.stdin is None or self._process.stdout is None:
             raise RuntimeError("Subprocess stdin/stdout not available")

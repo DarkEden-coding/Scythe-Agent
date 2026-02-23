@@ -20,8 +20,18 @@ interface MCPSettingsPanelProps {
 
 const TRANSPORT_OPTIONS = ['stdio', 'http'] as const;
 
-type StdioConfig = { command: string; args: string[] };
+type EnvEntry = { key: string; value: string };
+type StdioConfig = { command: string; args: string[]; env: EnvEntry[] };
 type HttpConfig = { url: string; headers: { key: string; value: string }[] };
+
+function parseEnv(rawEnv: unknown): EnvEntry[] {
+  if (!rawEnv || typeof rawEnv !== 'object') return [];
+  const entries: EnvEntry[] = [];
+  for (const [k, v] of Object.entries(rawEnv)) {
+    if (k && v != null) entries.push({ key: String(k), value: String(v) });
+  }
+  return entries;
+}
 
 function parseConfigJson(
   configJson: string,
@@ -32,7 +42,8 @@ function parseConfigJson(
     if (!raw || typeof raw !== 'object') return defaultConfig(transport);
     if (transport === 'stdio') {
       const args = Array.isArray(raw.args) ? raw.args.map(String) : [];
-      return { command: String(raw.command ?? 'npx'), args };
+      const env = parseEnv(raw.env);
+      return { command: String(raw.command ?? 'npx'), args, env };
     }
     const headers: { key: string; value: string }[] = [];
     const h = raw.headers;
@@ -52,7 +63,11 @@ function parseConfigJson(
 
 function defaultConfig(transport: string): StdioConfig | HttpConfig {
   if (transport === 'stdio') {
-    return { command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem', '/path'] };
+    return {
+      command: 'npx',
+      args: ['-y', '@modelcontextprotocol/server-filesystem', '/path'],
+      env: [],
+    };
   }
   return { url: '', headers: [] };
 }
@@ -66,7 +81,15 @@ function normalizeTransport(transport: string): (typeof TRANSPORT_OPTIONS)[numbe
 function configToJson(config: StdioConfig | HttpConfig, transport: string): string {
   if (transport === 'stdio') {
     const c = config as StdioConfig;
-    return JSON.stringify({ command: c.command, args: c.args.filter(Boolean) });
+    const env: Record<string, string> = {};
+    for (const { key, value } of c.env) {
+      if (key.trim()) env[key.trim()] = value;
+    }
+    return JSON.stringify({
+      command: c.command,
+      args: c.args.filter(Boolean),
+      ...(Object.keys(env).length > 0 && { env }),
+    });
   }
   const c = config as HttpConfig;
   const headers: Record<string, string> = {};
@@ -133,6 +156,55 @@ function StdioConfigFields({
             className="text-xs text-cyan-400 hover:text-cyan-300"
           >
             + Add arg
+          </button>
+        </div>
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-gray-400 mb-1">Environment variables</label>
+        <div className="space-y-2">
+          {config.env.map((e, i) => (
+            <div key={`${idPrefix}-env-${i}-${e.key || 'new'}`} className="flex gap-2">
+              <input
+                value={e.key}
+                onChange={(ev) => {
+                  const next = [...config.env];
+                  next[i] = { ...next[i], key: ev.target.value };
+                  onChange({ ...config, env: next });
+                }}
+                placeholder="VAR_NAME"
+                className="w-40 px-3 py-2 bg-gray-900/50 border border-gray-700/50 rounded-lg text-gray-200 placeholder-gray-500 text-sm focus:outline-none focus:border-cyan-500/50 font-mono"
+              />
+              <input
+                value={e.value}
+                onChange={(ev) => {
+                  const next = [...config.env];
+                  next[i] = { ...next[i], value: ev.target.value };
+                  onChange({ ...config, env: next });
+                }}
+                placeholder="Value"
+                className="flex-1 px-3 py-2 bg-gray-900/50 border border-gray-700/50 rounded-lg text-gray-200 placeholder-gray-500 text-sm focus:outline-none focus:border-cyan-500/50"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const next = config.env.filter((_, j) => j !== i);
+                  onChange({ ...config, env: next });
+                }}
+                className="p-2 text-gray-400 hover:text-red-400 rounded"
+                aria-label="Remove env var"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={() =>
+              onChange({ ...config, env: [...config.env, { key: '', value: '' }] })
+            }
+            className="text-xs text-cyan-400 hover:text-cyan-300"
+          >
+            + Add env var
           </button>
         </div>
       </div>
