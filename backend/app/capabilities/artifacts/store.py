@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import logging
-import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
+from app.services.output_spillover import (
+    PREVIEW_LINES,
+    TOOL_OUTPUT_TOKEN_THRESHOLD,
+    spill_tool_output,
+)
 from app.tools.path_utils import get_tool_outputs_root
 
 logger = logging.getLogger(__name__)
@@ -24,49 +28,32 @@ class ArtifactStore:
     def __init__(
         self,
         *,
-        large_output_line_threshold: int = 1000,
-        preview_lines: int = 50,
+        token_threshold: int = TOOL_OUTPUT_TOKEN_THRESHOLD,
     ) -> None:
-        self._large_output_line_threshold = large_output_line_threshold
-        self._preview_lines = preview_lines
+        self._token_threshold = token_threshold
 
     def materialize_tool_output(
         self,
         output: str,
         *,
         project_id: str,
+        model: str | None = None,
     ) -> tuple[str, list[ArtifactRecord]]:
-        """Return output preview and persisted artifacts for oversized output."""
-        lines = output.splitlines()
-        if len(lines) <= self._large_output_line_threshold:
+        """Return output preview and persisted artifacts when over token threshold."""
+        preview, file_path, total_lines = spill_tool_output(
+            output,
+            project_id,
+            max_tokens=self._token_threshold,
+            model=model,
+        )
+        if file_path is None:
             return output, []
-
-        base_dir = get_tool_outputs_root() / "projects" / project_id
-        output_uuid = uuid.uuid4().hex
-        out_path = base_dir / f"{output_uuid}.txt"
-
-        try:
-            base_dir.mkdir(parents=True, exist_ok=True)
-            out_path.write_text(output, encoding="utf-8")
-        except OSError as exc:
-            logger.warning("Failed to persist artifact to %s: %s", out_path, exc)
-            return output, []
-
-        total = len(lines)
-        first = "\n".join(lines[: self._preview_lines])
-        last = "\n".join(lines[-self._preview_lines :])
-        preview = f"""{first}
-
-... [truncated; {total} lines total] ...
-
-{last}"""
-
         artifacts = [
             ArtifactRecord(
                 artifact_type="tool_output",
-                file_path=str(out_path.resolve()),
-                line_count=total,
-                preview_lines=self._preview_lines,
+                file_path=file_path,
+                line_count=total_lines,
+                preview_lines=PREVIEW_LINES,
             )
         ]
         return preview, artifacts

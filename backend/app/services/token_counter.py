@@ -18,6 +18,19 @@ _ENCODING_MAP = [
 _DEFAULT_ENCODING = "cl100k_base"
 
 
+def count_text_tokens(text: str, model: str | None = None) -> int:
+    """Estimate token count for plain text using tiktoken when available."""
+    if not text:
+        return 0
+    try:
+        import tiktoken
+        enc_name = _encoding_for_model(model or "")
+        enc = tiktoken.get_encoding(enc_name)
+        return len(enc.encode(text))
+    except Exception:
+        return max(1, len(text) // 4)
+
+
 def _encoding_for_model(model: str) -> str:
     """Resolve tiktoken encoding name for a model id."""
     for pattern, encoding in _ENCODING_MAP:

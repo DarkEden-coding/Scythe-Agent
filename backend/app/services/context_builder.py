@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from app.services.output_spillover import (
+    TOOL_OUTPUT_TOKEN_THRESHOLD,
+    preview_tool_output_if_over_threshold,
+)
 from app.initial_information.project_overview import add_project_overview_3_levels
 from app.schemas.chat import ContextItemOut
 from app.services.token_counter import TokenCounter
@@ -16,12 +20,6 @@ if TYPE_CHECKING:
 def _truncate_label(s: str, max_len: int = 48) -> str:
     s = s.strip().replace("\n", " ")
     return (s[: max_len - 3] + "...") if len(s) > max_len else s
-
-
-def _truncate_tool_output(content: str, max_chars: int = 4000) -> str:
-    if len(content) <= max_chars:
-        return content
-    return content[:max_chars] + "\n... [truncated]"
 
 
 def build_context_items(
@@ -95,9 +93,15 @@ def build_context_items(
 
     tool_calls = chat_repo.list_tool_calls(chat_id)
     for tc in tool_calls:
+        output_text = tc.output_text or ""
+        output_preview = preview_tool_output_if_over_threshold(
+            output_text,
+            token_counter.count(output_text),
+            max_tokens=TOOL_OUTPUT_TOKEN_THRESHOLD,
+        )
         payload = f"{tc.name}({tc.input_json})"
-        if tc.output_text:
-            payload += f" -> {_truncate_tool_output(tc.output_text)}"
+        if output_text:
+            payload += f" -> {output_preview}"
         tokens = token_counter.count(payload)
         items.append(
             ContextItemOut(

@@ -1,30 +1,38 @@
-"""Spill large tool outputs to disk and return summarized content for the agent."""
+"""Spill large tool outputs to disk; use token-based thresholds."""
 
 from __future__ import annotations
 
 import logging
 import uuid
 
+from app.services.token_counter import count_text_tokens
 from app.tools.path_utils import get_tool_outputs_root
 
 logger = logging.getLogger(__name__)
 
-LARGE_OUTPUT_LINE_THRESHOLD = 1000
+TOOL_OUTPUT_TOKEN_THRESHOLD = 2000
 PREVIEW_LINES = 50
 
 
-def maybe_spill(output: str, project_id: str) -> tuple[str, str | None, str | None]:
+def spill_tool_output(
+    output: str,
+    project_id: str,
+    *,
+    max_tokens: int = TOOL_OUTPUT_TOKEN_THRESHOLD,
+    model: str | None = None,
+) -> tuple[str, str | None, int | None]:
     """
-    If output exceeds threshold lines, spill to file and return preview + instruction.
+    If output exceeds token threshold, spill to temp file and return preview.
 
     Returns:
-        (preview_content, full_file_path | None, spill_instruction | None).
-        If no spill, path and instruction are None.
+        (preview_content, abs_file_path | None, total_lines | None).
+        If no spill, path and total_lines are None.
     """
-    lines = output.splitlines()
-    if len(lines) <= LARGE_OUTPUT_LINE_THRESHOLD:
+    tokens = count_text_tokens(output, model=model)
+    if tokens <= max_tokens:
         return output, None, None
 
+    lines = output.splitlines()
     base_dir = get_tool_outputs_root() / "projects" / project_id
     output_uuid = uuid.uuid4().hex
     out_path = base_dir / f"{output_uuid}.txt"
@@ -40,16 +48,30 @@ def maybe_spill(output: str, project_id: str) -> tuple[str, str | None, str | No
     first = "\n".join(lines[:PREVIEW_LINES])
     last = "\n".join(lines[-PREVIEW_LINES:])
     abs_path = str(out_path.resolve())
-
     preview = f"""{first}
 
 ... [truncated; {total} lines total] ...
 
 {last}"""
-
     instruction = (
         f"The preceding tool output was truncated ({total} lines). "
         f"Full output saved to: {abs_path}. "
-        f"Use grep to locate relevant sections, then read_file with start/end (1-based) to read them."
+        f"Use read_file to read sections as needed."
     )
-    return preview, abs_path, instruction
+    return f"{preview}\n\n{instruction}", abs_path, total
+
+
+def preview_tool_output_if_over_threshold(
+    content: str,
+    token_count: int,
+    *,
+    max_tokens: int = TOOL_OUTPUT_TOKEN_THRESHOLD,
+) -> str:
+    """Return first+last PREVIEW_LINES when content exceeds token threshold."""
+    if token_count <= max_tokens:
+        return content
+    lines = content.splitlines()
+    total = len(lines)
+    first = "\n".join(lines[:PREVIEW_LINES])
+    last = "\n".join(lines[-PREVIEW_LINES:])
+    return f"{first}\n\n... [truncated; {total} lines total] ...\n\n{last}"

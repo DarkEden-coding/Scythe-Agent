@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from app.services.output_spillover import spill_tool_output
 from app.capabilities.memory.strategies import get_memory_strategy
 from app.initial_information import apply_initial_information
 from app.services.memory import MemoryConfig
@@ -84,13 +85,24 @@ class ContextBudgetManager:
         out[last_user_idx] = {**out[last_user_idx], "content": content}
         return out
 
-    def _prune_tool_outputs(self, messages: list[dict], max_chars: int = 4000) -> list[dict]:
+    def _apply_tool_output_spillover(
+        self,
+        messages: list[dict],
+        project_id: str,
+        model: str,
+    ) -> list[dict]:
+        """Spill oversized tool outputs to temp files; replace with first+last 50 lines."""
         out: list[dict] = []
         for msg in messages:
             if msg.get("role") == "tool" and isinstance(msg.get("content"), str):
                 content = msg["content"]
-                if len(content) > max_chars:
-                    msg = {**msg, "content": content[:max_chars] + "\n... [truncated]"}
+                preview, _, _ = spill_tool_output(
+                    content,
+                    project_id,
+                    model=model,
+                )
+                if preview != content:
+                    msg = {**msg, "content": preview}
             out.append(msg)
         return out
 
@@ -161,7 +173,9 @@ class ContextBudgetManager:
         messages = self._inject_system_prompt(base_messages, default_system_prompt)
         messages = self._inject_todos(chat_id, messages)
         messages = apply_initial_information(messages, project_path=project_path)
-        messages = self._prune_tool_outputs(messages)
+        chat = self._chat_repo.get_chat(chat_id)
+        project_id = chat.project_id if chat else ""
+        messages = self._apply_tool_output_spillover(messages, project_id, model)
 
         strategy = get_memory_strategy(mem_cfg.mode)
         mem_result = await strategy.build_context(
