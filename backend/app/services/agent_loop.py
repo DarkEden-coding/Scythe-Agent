@@ -424,6 +424,7 @@ class AgentLoop:
                         strategy.maybe_update(
                             chat_id=chat_id,
                             model=settings.model,
+                            project_path=project_path,
                             mem_cfg=mem_cfg,
                             client=client,
                             session_factory=self._session_factory,
@@ -484,6 +485,7 @@ class AgentLoop:
                     strategy.maybe_update(
                         chat_id=chat_id,
                         model=settings.model,
+                        project_path=project_path,
                         mem_cfg=mem_cfg,
                         client=client,
                         session_factory=self._session_factory,

@@ -177,7 +177,11 @@ class ContextBudgetManager:
 
         messages = self._inject_system_prompt(base_messages, default_system_prompt)
         messages = self._inject_todos(chat_id, messages)
-        messages = apply_initial_information(messages, project_path=project_path)
+        messages = apply_initial_information(
+            messages,
+            project_path=project_path,
+            model=model,
+        )
         chat = self._chat_repo.get_chat(chat_id)
         project_id = chat.project_id if chat else ""
         mem = self._settings_repo.get_memory_settings()

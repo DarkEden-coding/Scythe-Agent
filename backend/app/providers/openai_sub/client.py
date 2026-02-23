@@ -6,10 +6,12 @@ Per roo-code: requests route to chatgpt.com/backend-api/codex (not api.openai.co
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import platform
 import re
+import ssl
 import uuid
 from typing import Any, TypedDict, cast
 
@@ -18,11 +20,17 @@ import httpx
 logger = logging.getLogger(__name__)
 
 CODEX_API_BASE = "https://chatgpt.com/backend-api/codex"
+RETRY_DELAYS = (5, 10, 15, 20)
 
 _OPENAI_SUB_MODEL_IDS = [
     "gpt-5.1-codex-mini",
     "gpt-5.3-codex",
 ]
+
+
+def _should_retry(status_code: int) -> bool:
+    """Retry on server errors (5xx) or rate limit (429)."""
+    return status_code >= 500 or status_code == 429
 
 
 def _infer_reasoning_levels(model_id: str) -> list[str]:
@@ -662,39 +670,88 @@ class OpenAISubClient:
         )
         accumulated: dict[int, dict[str, Any]] = {}
         content_parts: list[str] = []
-        reasoning_parts: list[str] = []
         async with httpx.AsyncClient(timeout=60.0) as client:
-            async with client.stream(
-                "POST",
-                f"{CODEX_API_BASE}/responses",
-                headers=headers,
-                json=payload,
-            ) as response:
-                if response.status_code >= 400:
-                    err_body = await response.aread()
-                    try:
-                        err_json = json.loads(err_body.decode("utf-8"))
-                        logger.error(
-                            "OpenAI Sub API error %s: %s",
-                            response.status_code,
-                            err_json,
+            for attempt in range(len(RETRY_DELAYS) + 1):
+                attempt_accumulated: dict[int, dict[str, Any]] = {}
+                attempt_content_parts: list[str] = []
+                attempt_reasoning_parts: list[str] = []
+                emitted_events = False
+                try:
+                    async with client.stream(
+                        "POST",
+                        f"{CODEX_API_BASE}/responses",
+                        headers=headers,
+                        json=payload,
+                    ) as response:
+                        if response.status_code >= 400:
+                            err_body = await response.aread()
+                            try:
+                                err_json = json.loads(err_body.decode("utf-8"))
+                                logger.error(
+                                    "OpenAI Sub API error %s: %s",
+                                    response.status_code,
+                                    err_json,
+                                )
+                            except Exception:
+                                logger.error(
+                                    "OpenAI Sub API error %s", response.status_code
+                                )
+                        response.raise_for_status()
+                        buffer = ""
+                        async for chunk in response.aiter_bytes(chunk_size=1024):
+                            buffer += chunk.decode("utf-8", errors="replace")
+                            while "\n" in buffer or "\r" in buffer:
+                                line, _, buffer = buffer.partition("\n")
+                                parsed, _ = _parse_sse_line(line.rstrip("\r"))
+                                if parsed is None:
+                                    continue
+                                evs, _ = _process_stream_event(
+                                    parsed,
+                                    attempt_content_parts,
+                                    attempt_accumulated,
+                                    attempt_reasoning_parts,
+                                )
+                                for ev in evs:
+                                    emitted_events = True
+                                    yield ev
+                except httpx.HTTPStatusError as exc:
+                    if _should_retry(exc.response.status_code) and attempt < len(
+                        RETRY_DELAYS
+                    ):
+                        delay = RETRY_DELAYS[attempt]
+                        logger.warning(
+                            "OpenAI Sub API %s, retrying in %ss (attempt %d/%d)",
+                            exc.response.status_code,
+                            delay,
+                            attempt + 2,
+                            len(RETRY_DELAYS) + 1,
                         )
-                    except Exception:
-                        logger.error("OpenAI Sub API error %s", response.status_code)
-                response.raise_for_status()
-                buffer = ""
-                async for chunk in response.aiter_bytes(chunk_size=1024):
-                    buffer += chunk.decode("utf-8", errors="replace")
-                    while "\n" in buffer or "\r" in buffer:
-                        line, _, buffer = buffer.partition("\n")
-                        parsed, _ = _parse_sse_line(line.rstrip("\r"))
-                        if parsed is None:
-                            continue
-                        evs, _ = _process_stream_event(
-                            parsed, content_parts, accumulated, reasoning_parts
+                        await asyncio.sleep(delay)
+                        continue
+                    raise
+                except (
+                    httpx.ReadError,
+                    httpx.ConnectError,
+                    httpx.RemoteProtocolError,
+                    httpx.TimeoutException,
+                    httpx.WriteError,
+                    ssl.SSLError,
+                ) as exc:
+                    if not emitted_events and attempt < len(RETRY_DELAYS):
+                        delay = RETRY_DELAYS[attempt]
+                        logger.warning(
+                            "OpenAI Sub stream %s before first event, retrying in %ss (attempt %d/%d)",
+                            exc.__class__.__name__,
+                            delay,
+                            attempt + 2,
+                            len(RETRY_DELAYS) + 1,
                         )
-                        for ev in evs:
-                            yield ev
+                        await asyncio.sleep(delay)
+                        continue
+                    raise
+                accumulated = attempt_accumulated
+                content_parts = attempt_content_parts
+                break
         content_str = "".join(content_parts)
         # Deduplicate by call_id as a safety net
         seen_call_ids: set[str] = set()

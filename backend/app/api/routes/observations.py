@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_db
 from app.api.envelope import err, ok
 from app.db.repositories.chat_repo import ChatRepository
+from app.db.repositories.project_repo import ProjectRepository
 from app.db.repositories.settings_repo import SettingsRepository
 from app.db.session import get_sessionmaker
 from app.services.api_key_resolver import APIKeyResolver
@@ -98,8 +99,13 @@ def retry_memory(chat_id: str, db: Session = Depends(get_db)):
     """Schedule an immediate retry of the active memory strategy for a chat."""
     try:
         chat_repo = ChatRepository(db)
-        if chat_repo.get_chat(chat_id) is None:
+        chat = chat_repo.get_chat(chat_id)
+        if chat is None:
             return JSONResponse(status_code=400, content=err("Chat not found").model_dump())
+        project_path: str | None = None
+        project = ProjectRepository(db).get_project(chat.project_id)
+        if project is not None:
+            project_path = project.path
 
         settings_repo = SettingsRepository(db)
         mem_cfg = MemoryConfig.from_settings_repo(settings_repo)
@@ -126,6 +132,7 @@ def retry_memory(chat_id: str, db: Session = Depends(get_db)):
         get_om_background_runner().schedule_observation(
             chat_id=chat_id,
             model=settings.model,
+            project_path=project_path,
             observer_model=mem_cfg.observer_model,
             reflector_model=mem_cfg.reflector_model,
             observer_threshold=mem_cfg.observer_threshold,

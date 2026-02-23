@@ -96,7 +96,11 @@ class SubAgentRunner:
             },
             {"role": "user", "content": user_content},
         ]
-        messages = add_project_overview_3_levels(messages, project_path=project_path)
+        messages = add_project_overview_3_levels(
+            messages,
+            project_path=project_path,
+            model=model,
+        )
 
         streamer = LLMStreamer(self._chat_repo, self._event_bus)
         registry = get_tool_registry()

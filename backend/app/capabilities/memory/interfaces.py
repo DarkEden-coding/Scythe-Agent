@@ -26,6 +26,7 @@ class MemoryStrategy(Protocol):
         *,
         chat_id: str,
         model: str,
+        project_path: str | None,
         mem_cfg,
         client,
         session_factory,

@@ -581,7 +581,9 @@ class ChatService:
             for m in messages
         ]
         openrouter_messages = apply_initial_information(
-            openrouter_messages, project_path=project_path
+            openrouter_messages,
+            project_path=project_path,
+            model=history.model,
         )
         system_prompt = self.settings_service.get_system_prompt()
         openrouter_messages.insert(0, {"role": "system", "content": system_prompt})

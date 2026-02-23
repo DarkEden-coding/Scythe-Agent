@@ -8,7 +8,7 @@ from app.providers.base import LLMProvider
 
 
 class ProjectContextPreprocessor:
-    """Inject a 3-level project directory overview as a system message.
+    """Inject a token-budgeted project directory overview as a system message.
 
     Runs at priority 15: after SystemPromptPreprocessor (10) so the system
     prompt is already present, and before TokenEstimatorPreprocessor (20).
@@ -30,5 +30,6 @@ class ProjectContextPreprocessor:
         ctx.messages = apply_initial_information(
             ctx.messages,
             project_path=self._project_path,
+            model=ctx.model,
         )
         return ctx

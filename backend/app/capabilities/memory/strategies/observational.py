@@ -54,6 +54,7 @@ class ObservationalMemoryStrategy:
         *,
         chat_id: str,
         model: str,
+        project_path: str | None,
         mem_cfg,
         client,
         session_factory,
@@ -62,6 +63,7 @@ class ObservationalMemoryStrategy:
         get_om_background_runner().schedule_observation(
             chat_id=chat_id,
             model=model,
+            project_path=project_path,
             observer_model=mem_cfg.observer_model,
             reflector_model=mem_cfg.reflector_model,
             observer_threshold=mem_cfg.observer_threshold,

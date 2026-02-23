@@ -7,6 +7,7 @@ import logging
 from typing import Any
 
 from app.core.container import get_container
+from app.initial_information.project_overview import build_project_overview_system_message
 from app.services.memory.observational.service import (
     BufferedObservationChunk,
     ObservationError,
@@ -15,6 +16,8 @@ from app.services.memory.observational.service import (
 from app.services.token_counter import count_messages_tokens
 
 logger = logging.getLogger(__name__)
+
+_INITIAL_INFORMATION_TIMESTAMP = "1970-01-01T00:00:00+00:00"
 
 
 class OMBackgroundRunner:
@@ -29,6 +32,7 @@ class OMBackgroundRunner:
         *,
         chat_id: str,
         model: str,
+        project_path: str | None = None,
         observer_model: str | None,
         reflector_model: str | None,
         observer_threshold: int,
@@ -42,6 +46,7 @@ class OMBackgroundRunner:
         request = {
             "chat_id": chat_id,
             "model": model,
+            "project_path": project_path,
             "observer_model": observer_model,
             "reflector_model": reflector_model,
             "observer_threshold": observer_threshold,
@@ -166,6 +171,7 @@ class OMBackgroundRunner:
             self._run_observation_cycle(
                 chat_id=request["chat_id"],
                 model=request["model"],
+                project_path=request.get("project_path"),
                 observer_model=request["observer_model"],
                 reflector_model=request["reflector_model"],
                 observer_threshold=request["observer_threshold"],
@@ -191,6 +197,7 @@ class OMBackgroundRunner:
         *,
         chat_id: str,
         model: str,
+        project_path: str | None = None,
         observer_model: str | None,
         reflector_model: str | None,
         observer_threshold: int,
@@ -240,6 +247,8 @@ class OMBackgroundRunner:
                     chat_id=chat_id,
                     repo=repo,
                     latest_observation_timestamp=(latest_obs.timestamp if latest_obs else None),
+                    project_path=project_path,
+                    model=model,
                 )
                 observation_messages = db_messages + supplemental
 
@@ -513,9 +522,25 @@ class OMBackgroundRunner:
         chat_id: str,
         repo,
         latest_observation_timestamp: str | None,
+        project_path: str | None,
+        model: str,
     ) -> list[dict]:
         """Build synthetic rows from tool calls/reasoning created since last observation."""
         supplemental: list[dict] = []
+
+        if latest_observation_timestamp is None and project_path:
+            overview_msg = build_project_overview_system_message(
+                project_path=project_path,
+                model=model,
+            )
+            if overview_msg is not None:
+                supplemental.append(
+                    {
+                        "role": "system",
+                        "content": overview_msg["content"],
+                        "_timestamp": _INITIAL_INFORMATION_TIMESTAMP,
+                    }
+                )
 
         for tc in repo.list_tool_calls(chat_id):
             if (
