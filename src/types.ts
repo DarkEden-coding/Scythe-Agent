@@ -67,6 +67,24 @@ export interface TodoItem {
   timestamp: Date;
 }
 
+export interface ProjectPlan {
+  id: string;
+  chatId: string;
+  projectId: string;
+  checkpointId?: string;
+  title: string;
+  status: 'drafting' | 'ready' | 'approved' | 'implementing' | 'implemented' | 'error' | string;
+  filePath: string;
+  revision: number;
+  contentSha256: string;
+  lastEditor: 'agent' | 'user' | 'external' | string;
+  approvedAction?: 'keep_context' | 'clear_context' | string;
+  implementationChatId?: string;
+  createdAt: Date;
+  updatedAt: Date;
+  content?: string;
+}
+
 export interface ContextItem {
   id: string;
   type: 'file' | 'conversation' | 'tool_output' | 'summary' | 'reasoning';

@@ -147,12 +147,15 @@ export function App() {
 
   // ── Actions that go through the API ────────────────────────────
 
-  const handleSendMessage = async (content: string) => {
+  const handleSendMessage = async (
+    content: string,
+    options?: { mode?: 'default' | 'planning' | 'plan_edit'; activePlanId?: string },
+  ) => {
     if (activeChatId == null) return;
     const chatIdToProcess = activeChatId;
     setProcessingChats((prev) => new Set(prev).add(chatIdToProcess));
 
-    const res = await chat.sendMessage(content);
+    const res = await chat.sendMessage(content, options);
     if (!res.ok) {
       showToast(`Error: ${res.error}`);
       setProcessingChats((prev) => {
@@ -265,6 +268,57 @@ export function App() {
     });
   };
 
+  const handleOpenImplementationChat = useCallback(
+    async (chatId: string) => {
+      await projectsApi.refresh();
+      setActiveChatId(chatId);
+      setProcessingChats((prev) => new Set(prev).add(chatId));
+    },
+    [projectsApi],
+  );
+
+  const handleSavePlan = useCallback(
+    async (planId: string, content: string, baseRevision: number) => {
+      const res = await chat.updatePlan(planId, content, {
+        baseRevision,
+        lastEditor: 'user',
+      });
+      if (!res.ok) {
+        showToast(`Error: ${res.error}`);
+      } else if (res.data.conflict) {
+        showToast('Plan conflict detected. Refresh and retry.');
+      } else {
+        showToast('Plan updated');
+      }
+      return res;
+    },
+    [chat, showToast],
+  );
+
+  const handleApprovePlan = useCallback(
+    async (planId: string, action: 'keep_context' | 'clear_context') => {
+      const res = await chat.approvePlan(planId, action);
+      if (!res.ok) {
+        showToast(`Error: ${res.error}`);
+        return res;
+      }
+      const implementationChatId = res.data.implementationChatId;
+      if (action === 'keep_context' && activeChatId) {
+        setProcessingChats((prev) => new Set(prev).add(activeChatId));
+      }
+      if (action === 'clear_context' && implementationChatId) {
+        await handleOpenImplementationChat(implementationChatId);
+      }
+      showToast(
+        action === 'keep_context'
+          ? 'Approved plan and started implementation in current chat'
+          : 'Approved plan and started implementation in a new chat',
+      );
+      return res;
+    },
+    [activeChatId, chat, handleOpenImplementationChat, showToast],
+  );
+
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -358,6 +412,10 @@ export function App() {
     activeChatId == null
       ? undefined
       : projects.find((p) => p.chats.some((c) => c.id === activeChatId));
+  const activePlanId =
+    [...chat.plans]
+      .filter((plan) => !['approved', 'implementing', 'implemented'].includes(plan.status))
+      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())[0]?.id ?? null;
   const currentProjectChats = [...(currentProject?.chats ?? [])].sort((a, b) => {
     if (a.isPinned && !b.isPinned) return -1;
     if (!a.isPinned && b.isPinned) return 1;
@@ -407,6 +465,7 @@ export function App() {
             onCancel={handleCancelMessage}
             projects={projects}
             activeChatId={activeChatId}
+            activePlanId={activePlanId}
             onSwitchChat={handleSwitchChat}
             isProcessing={isProcessing}
             onCreateProject={handleCreateProject}
@@ -435,11 +494,17 @@ export function App() {
             checkpoints={chat.checkpoints}
             reasoningBlocks={chat.reasoningBlocks}
             todos={chat.todos}
+            plans={chat.plans}
             streamingReasoningBlockIds={chat.streamingReasoningBlockIds}
             onRevertFile={handleRevertFile}
             onRevertCheckpoint={handleRevertToCheckpoint}
             onApproveCommand={handleApproveCommand}
             onRejectCommand={handleRejectCommand}
+            onSavePlan={handleSavePlan}
+            onApprovePlan={handleApprovePlan}
+            onOpenImplementationChat={(chatId) => {
+              void handleOpenImplementationChat(chatId);
+            }}
             autoApproveRules={settings.autoApproveRules}
             onUpdateAutoApproveRules={handleUpdateAutoApproveRules}
           />

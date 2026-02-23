@@ -5,18 +5,22 @@ import logging
 import httpx
 from sqlalchemy.orm import Session
 
+from app.db.models.chat import Chat
 from app.db.repositories.chat_repo import ChatRepository
 from app.db.repositories.project_repo import ProjectRepository
 from app.db.repositories.settings_repo import SettingsRepository
 from app.db.session import get_sessionmaker
 from app.initial_information import apply_initial_information
 from app.schemas.chat import (
+    ApprovePlanResponse,
     ContinueAgentResponse,
     CheckpointOut,
     EditMessageResponse,
     GetChatHistoryResponse,
     MessageOut,
+    ProjectPlanOut,
     SendMessageResponse,
+    UpdatePlanResponse,
 )
 from app.services.approval_service import ApprovalService
 from app.services.agent_task_manager import AgentTaskManager, get_agent_task_manager
@@ -25,6 +29,7 @@ from app.services.event_bus import EventBus, get_event_bus
 from app.services.memory.observational.background import get_om_background_runner
 from app.services.revert_service import RevertService
 from app.services.runtime_orchestrator import run_agent_turn
+from app.services.plan_service import PlanService
 from app.services.settings_service import SettingsService
 from app.utils.ids import generate_id
 from app.utils.mappers import map_role_for_ui
@@ -103,6 +108,51 @@ class ChatService:
         self.settings_service = SettingsService(db)
         self.event_bus = event_bus or get_event_bus()
         self.task_manager = task_manager or get_agent_task_manager()
+
+    def _persist_user_turn(
+        self,
+        *,
+        chat: Chat,
+        content: str,
+        checkpoint_label: str,
+    ) -> tuple[MessageOut, CheckpointOut]:
+        timestamp = utc_now_iso()
+        message = self.repo.create_message(
+            message_id=generate_id("msg"),
+            chat_id=chat.id,
+            role="user",
+            content=content,
+            timestamp=timestamp,
+            checkpoint_id=None,
+        )
+        checkpoint = self.repo.create_checkpoint(
+            checkpoint_id=generate_id("cp"),
+            chat_id=chat.id,
+            message_id=message.id,
+            label=checkpoint_label,
+            timestamp=timestamp,
+        )
+        self.repo.link_message_checkpoint(message, checkpoint.id)
+        self.repo.update_chat_timestamp(chat, timestamp)
+        self.repo.commit()
+
+        message_out = MessageOut(
+            id=message.id,
+            role=map_role_for_ui(message.role),
+            content=message.content,
+            timestamp=message.timestamp,
+            checkpointId=checkpoint.id,
+        )
+        checkpoint_out = CheckpointOut(
+            id=checkpoint.id,
+            messageId=checkpoint.message_id,
+            timestamp=checkpoint.timestamp,
+            label=checkpoint.label,
+            fileEdits=[],
+            toolCalls=[],
+            reasoningBlocks=[],
+        )
+        return message_out, checkpoint_out
 
     async def _deny_pending_and_cancel_agent(
         self, chat_id: str, reject_reason: str = "User sent new message"
@@ -192,16 +242,33 @@ class ChatService:
             chat_id=chat_id,
             checkpoint_id=checkpoint.id,
             content=content,
+            mode="default",
+            active_plan_id=None,
             session_factory=get_sessionmaker(),
             event_bus=self.event_bus,
             task_manager=self.task_manager,
         )
         return ContinueAgentResponse(started=True, checkpointId=checkpoint.id)
 
-    async def send_message(self, chat_id: str, content: str) -> SendMessageResponse:
+    async def send_message(
+        self,
+        chat_id: str,
+        content: str,
+        *,
+        mode: str = "default",
+        active_plan_id: str | None = None,
+    ) -> SendMessageResponse:
+        mode_name = mode if mode in {"default", "planning", "plan_edit"} else "default"
+        if mode_name == "plan_edit" and not active_plan_id:
+            raise ValueError("activePlanId is required for plan_edit mode")
         chat = self.repo.get_chat(chat_id)
         if chat is None:
             raise ValueError(f"Chat not found: {chat_id}")
+
+        if mode_name == "plan_edit":
+            plan = self.repo.get_project_plan(active_plan_id or "")
+            if plan is None or plan.chat_id != chat_id:
+                raise ValueError(f"Plan not found: {active_plan_id}")
 
         await self._deny_pending_and_cancel_agent(chat_id)
 
@@ -272,6 +339,8 @@ class ChatService:
             chat_id=chat_id,
             checkpoint_id=checkpoint.id,
             content=content,
+            mode=mode_name,
+            active_plan_id=active_plan_id,
             session_factory=get_sessionmaker(),
             event_bus=self.event_bus,
             task_manager=self.task_manager,
@@ -331,11 +400,162 @@ class ChatService:
             chat_id=chat_id,
             checkpoint_id=checkpoint.id,
             content=content,
+            mode="default",
+            active_plan_id=None,
             session_factory=get_sessionmaker(),
             event_bus=self.event_bus,
             task_manager=self.task_manager,
         )
         return EditMessageResponse(revertedHistory=reverted)
+
+    async def list_plans(self, chat_id: str) -> list[ProjectPlanOut]:
+        chat = self.repo.get_chat(chat_id)
+        if chat is None:
+            raise ValueError(f"Chat not found: {chat_id}")
+        plan_svc = PlanService(self.repo.db, event_bus=self.event_bus)
+        for row in self.repo.list_project_plans(chat_id):
+            await plan_svc.sync_external_if_needed(chat_id, row.id)
+        return await plan_svc.list_plans(chat_id, include_content=True)
+
+    async def get_plan(self, chat_id: str, plan_id: str) -> ProjectPlanOut:
+        plan_svc = PlanService(self.repo.db, event_bus=self.event_bus)
+        await plan_svc.sync_external_if_needed(chat_id, plan_id)
+        return await plan_svc.get_plan(chat_id, plan_id, include_content=True)
+
+    async def update_plan(
+        self,
+        chat_id: str,
+        plan_id: str,
+        *,
+        content: str,
+        title: str | None = None,
+        base_revision: int | None = None,
+        last_editor: str = "user",
+    ) -> UpdatePlanResponse:
+        plan_svc = PlanService(self.repo.db, event_bus=self.event_bus)
+        result = await plan_svc.update_plan(
+            chat_id=chat_id,
+            plan_id=plan_id,
+            content=content,
+            title=title,
+            base_revision=base_revision,
+            last_editor=last_editor,
+        )
+        return UpdatePlanResponse(plan=result.plan, conflict=result.conflict)
+
+    async def approve_plan(
+        self,
+        chat_id: str,
+        plan_id: str,
+        *,
+        action: str,
+    ) -> ApprovePlanResponse:
+        if action not in {"keep_context", "clear_context"}:
+            raise ValueError("action must be keep_context or clear_context")
+
+        plan_svc = PlanService(self.repo.db, event_bus=self.event_bus)
+        await plan_svc.sync_external_if_needed(chat_id, plan_id)
+        plan = await plan_svc.get_plan(chat_id, plan_id, include_content=True)
+        markdown = (plan.content or "").strip()
+        kickoff_content = (
+            f"Implement approved plan {plan_id}. Plan file: {plan.filePath}\n\n{markdown}"
+            if markdown
+            else f"Implement approved plan {plan_id}. Plan file: {plan.filePath}"
+        )
+
+        if action == "keep_context":
+            chat = self.repo.get_chat(chat_id)
+            if chat is None:
+                raise ValueError(f"Chat not found: {chat_id}")
+            message_out, checkpoint_out = self._persist_user_turn(
+                chat=chat,
+                content=kickoff_content,
+                checkpoint_label=f"Implement approved plan: {plan.title[:40]}",
+            )
+            await self.event_bus.publish(
+                chat_id,
+                {"type": "message", "payload": {"message": message_out.model_dump()}},
+            )
+            await self.event_bus.publish(
+                chat_id,
+                {"type": "checkpoint", "payload": {"checkpoint": checkpoint_out.model_dump()}},
+            )
+            updated = await plan_svc.mark_plan_status(
+                chat_id=chat_id,
+                plan_id=plan_id,
+                status="implementing",
+                approved_action=action,
+                implementation_chat_id=chat_id,
+            )
+            _schedule_background_task(
+                chat_id=chat_id,
+                checkpoint_id=checkpoint_out.id,
+                content=kickoff_content,
+                mode="default",
+                active_plan_id=None,
+                session_factory=get_sessionmaker(),
+                event_bus=self.event_bus,
+                task_manager=self.task_manager,
+            )
+            return ApprovePlanResponse(plan=updated, implementationChatId=chat_id)
+
+        project_repo = ProjectRepository(self.repo.db)
+        source_chat = self.repo.get_chat(chat_id)
+        if source_chat is None:
+            raise ValueError(f"Chat not found: {chat_id}")
+        project = project_repo.get_project(source_chat.project_id)
+        if project is None:
+            raise ValueError(f"Project not found: {source_chat.project_id}")
+
+        now = utc_now_iso()
+        implementation_chat_id = generate_id("chat")
+        new_chat = Chat(
+            id=implementation_chat_id,
+            project_id=source_chat.project_id,
+            title=f"Implement: {plan.title[:48]}",
+            created_at=now,
+            updated_at=now,
+            sort_order=project_repo.get_next_chat_sort_order(source_chat.project_id),
+            is_pinned=0,
+        )
+        project_repo.create_chat(new_chat)
+        project.last_active = now
+        self.repo.commit()
+
+        message_out, checkpoint_out = self._persist_user_turn(
+            chat=new_chat,
+            content=kickoff_content,
+            checkpoint_label=f"Implement approved plan: {plan.title[:40]}",
+        )
+        await self.event_bus.publish(
+            implementation_chat_id,
+            {"type": "message", "payload": {"message": message_out.model_dump()}},
+        )
+        await self.event_bus.publish(
+            implementation_chat_id,
+            {"type": "checkpoint", "payload": {"checkpoint": checkpoint_out.model_dump()}},
+        )
+        updated = await plan_svc.mark_plan_status(
+            chat_id=chat_id,
+            plan_id=plan_id,
+            status="implementing",
+            approved_action=action,
+            implementation_chat_id=implementation_chat_id,
+        )
+        _schedule_background_task(
+            chat_id=implementation_chat_id,
+            checkpoint_id=checkpoint_out.id,
+            content=kickoff_content,
+            mode="default",
+            active_plan_id=None,
+            session_factory=get_sessionmaker(),
+            event_bus=self.event_bus,
+            task_manager=self.task_manager,
+        )
+        return ApprovePlanResponse(
+            plan=updated,
+            implementationChatId=implementation_chat_id,
+        )
 
     def get_chat_history(self, chat_id: str) -> GetChatHistoryResponse:
         project_repo = ProjectRepository(self.repo.db)
@@ -381,6 +601,8 @@ def _schedule_background_task(
     chat_id: str,
     checkpoint_id: str,
     content: str,
+    mode: str,
+    active_plan_id: str | None,
     session_factory,
     event_bus: EventBus,
     task_manager: AgentTaskManager,
@@ -396,6 +618,8 @@ def _schedule_background_task(
                 content=content,
                 session_factory=session_factory,
                 event_bus=event_bus,
+                mode=mode,
+                active_plan_id=active_plan_id,
             )
             if follow_up is not None:
                 # Verification issues found — schedule the fix turn
@@ -403,6 +627,8 @@ def _schedule_background_task(
                     chat_id=chat_id,
                     checkpoint_id=follow_up.checkpoint_id,
                     content=follow_up.content,
+                    mode="default",
+                    active_plan_id=None,
                     session_factory=session_factory,
                     event_bus=event_bus,
                     task_manager=task_manager,

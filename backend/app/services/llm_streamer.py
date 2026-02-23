@@ -103,6 +103,7 @@ class LLMStreamer:
         checkpoint_id: str,
         reasoning_block_id: str | None = None,
         silent: bool = False,
+        suppress_content_events: bool = False,
     ) -> StreamResult:
         response_chunks: list[str] = []
         tool_calls_from_stream: list[dict] = []
@@ -115,6 +116,9 @@ class LLMStreamer:
 
         def _should_publish() -> bool:
             return not silent
+
+        def _should_publish_content() -> bool:
+            return not silent and not suppress_content_events
 
         async for ev in client.create_chat_completion_stream(
             model=model,
@@ -132,7 +136,7 @@ class LLMStreamer:
                     reasoning_started = False
                 delta = ev.get("delta", "")
                 response_chunks.append(delta)
-                if _should_publish():
+                if _should_publish_content():
                     await self._event_bus.publish(
                         chat_id,
                         {

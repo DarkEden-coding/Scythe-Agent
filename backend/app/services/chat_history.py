@@ -9,11 +9,13 @@ from app.schemas.chat import (
     FileEditOut,
     GetChatHistoryResponse,
     MessageOut,
+    ProjectPlanOut,
     ReasoningBlockOut,
     SubAgentRunOut,
     TodoOut,
     ToolCallOut,
 )
+from app.services.plan_file_store import PlanFileStore
 from app.services.context_builder import build_context_items
 from app.services.settings_service import SettingsService
 from app.services.token_counter import TokenCounter
@@ -33,6 +35,7 @@ class ChatHistoryAssembler:
         self._chat_repo = chat_repo
         self._project_repo = project_repo
         self._settings_service = settings_service
+        self._plan_store = PlanFileStore()
 
     def assemble(self, chat_id: str) -> GetChatHistoryResponse:
         chat = self._chat_repo.get_chat(chat_id)
@@ -160,6 +163,36 @@ class ChatHistoryAssembler:
             for t in raw_todos
         ]
 
+        raw_plans = self._chat_repo.list_project_plans(chat_id)
+        plans: list[ProjectPlanOut] = []
+        for plan in raw_plans:
+            content: str | None = None
+            try:
+                content, _ = self._plan_store.read_plan(
+                    project_id=plan.project_id, plan_id=plan.id
+                )
+            except ValueError:
+                content = None
+            plans.append(
+                ProjectPlanOut(
+                    id=plan.id,
+                    chatId=plan.chat_id,
+                    projectId=plan.project_id,
+                    checkpointId=plan.checkpoint_id,
+                    title=plan.title,
+                    status=plan.status,
+                    filePath=plan.file_path,
+                    revision=plan.revision,
+                    contentSha256=plan.content_sha256,
+                    lastEditor=plan.last_editor,
+                    approvedAction=plan.approved_action,
+                    implementationChatId=plan.implementation_chat_id,
+                    createdAt=plan.created_at,
+                    updatedAt=plan.updated_at,
+                    content=content,
+                )
+            )
+
         settings = self._settings_service.get_settings()
         token_counter = TokenCounter(model=settings.model)
         context_items = build_context_items(
@@ -180,6 +213,7 @@ class ChatHistoryAssembler:
             reasoningBlocks=reasoning_blocks,
             contextItems=context_items,
             todos=todos,
+            plans=plans,
             maxTokens=settings.contextLimit,
             model=settings.model,
         )

@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { Layers, CheckSquare, ChevronDown } from 'lucide-react';
-import { SubAgentRun, ToolCall, FileEdit, Checkpoint, ReasoningBlock, TodoItem } from '../types';
+import { SubAgentRun, ToolCall, FileEdit, Checkpoint, ReasoningBlock, TodoItem, ProjectPlan } from '../types';
 import { cn } from '@/utils/cn';
 import { Timeline } from './actions/Timeline';
 import { TodoList } from './actions/TodoList';
 import { ApprovalPrompt } from './actions/ApprovalPrompt';
+import { PlanCard } from './actions/PlanCard';
 import type { AutoApproveRule } from '../api';
 
 interface ActionsPanelProps {
@@ -14,11 +15,22 @@ interface ActionsPanelProps {
   readonly checkpoints: Checkpoint[];
   readonly reasoningBlocks: ReasoningBlock[];
   readonly todos?: TodoItem[];
+  readonly plans?: ProjectPlan[];
   readonly streamingReasoningBlockIds?: Set<string>;
   readonly onRevertFile: (fileEditId: string) => void;
   readonly onRevertCheckpoint: (checkpointId: string) => void;
   readonly onApproveCommand?: (toolCallId: string) => void;
   readonly onRejectCommand?: (toolCallId: string) => void;
+  readonly onSavePlan?: (
+    planId: string,
+    content: string,
+    baseRevision: number,
+  ) => Promise<{ ok: boolean; error?: string; data?: { conflict: boolean; plan: ProjectPlan } }>;
+  readonly onApprovePlan?: (
+    planId: string,
+    action: 'keep_context' | 'clear_context',
+  ) => Promise<{ ok: boolean; error?: string; data?: { plan: ProjectPlan; implementationChatId?: string } }>;
+  readonly onOpenImplementationChat?: (chatId: string) => void;
   readonly autoApproveRules?: AutoApproveRule[];
   readonly onUpdateAutoApproveRules?: (rules: Omit<AutoApproveRule, 'id' | 'createdAt'>[]) => Promise<void> | void;
 }
@@ -30,11 +42,15 @@ export function ActionsPanel({
   checkpoints,
   reasoningBlocks,
   todos = [],
+  plans = [],
   streamingReasoningBlockIds = new Set(),
   onRevertFile,
   onRevertCheckpoint,
   onApproveCommand,
   onRejectCommand,
+  onSavePlan,
+  onApprovePlan,
+  onOpenImplementationChat,
   autoApproveRules = [],
   onUpdateAutoApproveRules,
 }: ActionsPanelProps) {
@@ -136,10 +152,27 @@ export function ActionsPanel({
           <span className="text-[10px] text-gray-600 font-mono">{fileEdits.length} edits</span>
           <span className="text-gray-700">·</span>
           <span className="text-[10px] text-purple-400/50 font-mono">{reasoningBlocks.length} thoughts</span>
+          <span className="text-gray-700">·</span>
+          <span className="text-[10px] text-cyan-400/60 font-mono">{plans.length} plans</span>
         </div>
       </div>
 
       <div className="relative flex-1 min-h-0 flex flex-col overflow-hidden">
+        {plans.length > 0 && onSavePlan && onApprovePlan && (
+          <div className="p-3 pb-0 space-y-2">
+            {[...plans]
+              .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
+              .map((plan) => (
+                <PlanCard
+                  key={plan.id}
+                  plan={plan}
+                  onSave={onSavePlan}
+                  onApprove={onApprovePlan}
+                  onImplementationChat={onOpenImplementationChat}
+                />
+              ))}
+          </div>
+        )}
         <Timeline
           checkpoints={checkpoints}
           toolCalls={toolCalls}

@@ -10,6 +10,10 @@ from app.db.models.mcp_server import MCPServer as MCPServer
 from app.db.models.mcp_tool_cache import MCPToolCache as MCPToolCache
 from app.db.models.message import Message as Message
 from app.db.models.project import Project as Project
+from app.db.models.project_plan import ProjectPlan as ProjectPlan
+from app.db.models.project_plan_revision import (
+    ProjectPlanRevision as ProjectPlanRevision,
+)
 from app.db.models.provider_model_cache import ProviderModelCache as ProviderModelCache
 from app.db.models.reasoning_block import ReasoningBlock as ReasoningBlock
 from app.db.models.sub_agent_run import SubAgentRun as SubAgentRun

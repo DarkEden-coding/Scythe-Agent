@@ -13,6 +13,7 @@ import {
   normalizeReasoningBlock,
   normalizeSubAgentRun,
   normalizeTodo,
+  normalizePlan,
   upsertById,
   uniqueById,
   isValidChatId,
@@ -26,6 +27,7 @@ import type {
   ContextItem,
   ReasoningBlock,
   TodoItem,
+  ProjectPlan,
   ObservationData,
   VerificationIssues,
 } from '@/types';
@@ -33,6 +35,8 @@ import type {
   AgentErrorPayload,
   AgentEvent,
   AgentObservationStatusPayload,
+  AgentPlanConflictPayload,
+  AgentPlanPayload,
   ChatMemoryStateResponse,
 } from '@/api/types';
 import type { ObservationStatus } from '@/components/chat/ObservationStatusIndicator';
@@ -393,6 +397,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
   const [streamingReasoningBlockIds, setStreamingReasoningBlockIds] = useState<Set<string>>(new Set());
   const [contextItems, setContextItems] = useState<ContextItem[]>([]);
   const [todos, setTodos] = useState<TodoItem[]>([]);
+  const [plans, setPlans] = useState<ProjectPlan[]>([]);
   const [verificationIssues, setVerificationIssues] = useState<Record<string, VerificationIssues>>({});
   const [maxTokens, setMaxTokens] = useState(128_000);
   const [model, setModel] = useState('Claude Sonnet 4');
@@ -465,6 +470,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
       memoryStateRef.current = null;
       commitContextItems([]);
       setTodos([]);
+      setPlans([]);
       setVerificationIssues({});
       setObservationStatus('idle');
       setObservation(null);
@@ -492,6 +498,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
     setReasoningBlocks([]);
     setStreamingReasoningBlockIds(new Set());
     commitContextItems([]);
+    setPlans([]);
     setVerificationIssues({});
     setObservation(null);
     setObservations([]);
@@ -519,6 +526,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
         setCheckpoints(uniqueById(d.checkpoints.map(normalizeCheckpoint)));
         setReasoningBlocks(uniqueById(d.reasoningBlocks.map(normalizeReasoningBlock)));
         setTodos((d.todos ?? []).map(normalizeTodo));
+        setPlans(uniqueById((d.plans ?? []).map(normalizePlan)));
         setMaxTokens(d.maxTokens);
         setModel(d.model);
         setError(null);
@@ -545,14 +553,25 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
   }, [chatId, client, commitContextItems]);
 
   const sendMessage = useCallback(
-    async (content: string) => {
+    async (
+      content: string,
+      options?: {
+        mode?: 'default' | 'planning' | 'plan_edit';
+        activePlanId?: string;
+      },
+    ) => {
       if (!isValidChatId(chatId)) {
         return { ok: false as const, data: null, error: 'No chat selected', timestamp: new Date().toISOString() };
       }
       setPersistentError(null);
       setProcessingChats((prev) => new Set(prev).add(chatId));
       try {
-        const res = await client.sendMessage({ chatId, content });
+        const res = await client.sendMessage({
+          chatId,
+          content,
+          mode: options?.mode,
+          activePlanId: options?.activePlanId,
+        });
         if (res.ok) {
           const nextMessage = normalizeMessage(res.data.message);
           setMessages((prev) => upsertById(prev, nextMessage));
@@ -758,6 +777,10 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
         setVerificationIssues({});
         setObservationStatus('idle');
         setPersistentError(null);
+        const plansRes = await client.getPlans(chatId);
+        if (plansRes.ok) {
+          setPlans(uniqueById((plansRes.data.plans ?? []).map(normalizePlan)));
+        }
         await Promise.all([
           refreshContextFromHistory(chatId),
           refreshMemoryState(chatId),
@@ -782,6 +805,17 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
     [chatId, client],
   );
 
+  const refreshPlans = useCallback(async () => {
+    if (!isValidChatId(chatId)) {
+      return { ok: false as const, data: null, error: 'No chat selected', timestamp: new Date().toISOString() };
+    }
+    const res = await client.getPlans(chatId);
+    if (res.ok) {
+      setPlans(uniqueById((res.data.plans ?? []).map(normalizePlan)));
+    }
+    return res;
+  }, [chatId, client]);
+
   useEffect(() => {
     return () => {
       if (contextRefreshTimer.current != null) {
@@ -790,6 +824,14 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!isValidChatId(chatId) || plans.length === 0) return () => {};
+    const intervalId = window.setInterval(() => {
+      void refreshPlans();
+    }, 3000);
+    return () => window.clearInterval(intervalId);
+  }, [chatId, plans.length, refreshPlans]);
 
   const scheduleContextRefresh = useCallback(
     (targetChatId?: string | null, immediate = false) => {
@@ -838,6 +880,10 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
         setVerificationIssues({});
         setObservationStatus('idle');
         setPersistentError(null);
+        const plansRes = await client.getPlans(chatId);
+        if (plansRes.ok) {
+          setPlans(uniqueById((plansRes.data.plans ?? []).map(normalizePlan)));
+        }
         await Promise.all([
           refreshContextFromHistory(chatId),
           refreshMemoryState(chatId),
@@ -846,6 +892,43 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
       return res;
     },
     [chatId, client, refreshContextFromHistory, refreshMemoryState, resetTransientStreamState],
+  );
+
+  const updatePlan = useCallback(
+    async (planId: string, content: string, options?: { title?: string; baseRevision?: number; lastEditor?: 'user' | 'agent' | 'external' }) => {
+      if (!isValidChatId(chatId)) {
+        return { ok: false as const, data: null, error: 'No chat selected', timestamp: new Date().toISOString() };
+      }
+      const res = await client.updatePlan({
+        chatId,
+        planId,
+        content,
+        title: options?.title,
+        baseRevision: options?.baseRevision,
+        lastEditor: options?.lastEditor ?? 'user',
+      });
+      if (res.ok) {
+        const normalized = normalizePlan(res.data.plan);
+        setPlans((prev) => upsertById(prev, normalized));
+      }
+      return res;
+    },
+    [chatId, client],
+  );
+
+  const approvePlan = useCallback(
+    async (planId: string, action: 'keep_context' | 'clear_context') => {
+      if (!isValidChatId(chatId)) {
+        return { ok: false as const, data: null, error: 'No chat selected', timestamp: new Date().toISOString() };
+      }
+      const res = await client.approvePlan({ chatId, planId, action });
+      if (res.ok) {
+        const normalized = normalizePlan(res.data.plan);
+        setPlans((prev) => upsertById(prev, normalized));
+      }
+      return res;
+    },
+    [chatId, client],
   );
 
   const retryObservation = useCallback(async () => {
@@ -1146,6 +1229,11 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
           setVerificationIssues({});
           setObservationStatus('idle');
           setPersistentError(null);
+          void client.getPlans(event.chatId).then((plansRes) => {
+            if (plansRes.ok) {
+              setPlans(uniqueById((plansRes.data.plans ?? []).map(normalizePlan)));
+            }
+          });
           void Promise.all([
             refreshContextFromHistory(event.chatId),
             refreshMemoryState(event.chatId),
@@ -1159,6 +1247,26 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
           }
           break;
         }
+        case 'plan_ready':
+        case 'plan_updated':
+        case 'plan_approved': {
+          const payload = event.payload as AgentPlanPayload;
+          if (payload.plan) {
+            const normalized = normalizePlan(payload.plan);
+            setPlans((prev) => upsertById(prev, normalized));
+          }
+          break;
+        }
+        case 'plan_conflict': {
+          const payload = event.payload as AgentPlanConflictPayload;
+          if (payload.plan) {
+            const normalized = normalizePlan(payload.plan);
+            setPlans((prev) => upsertById(prev, normalized));
+          }
+          break;
+        }
+        case 'plan_started':
+          break;
         case 'observation_status': {
           const payload = event.payload as AgentObservationStatusPayload;
           if (payload.status === 'observing') {
@@ -1316,6 +1424,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
     fileEdits,
     checkpoints,
     todos,
+    plans,
     reasoningBlocks,
     streamingReasoningBlockIds,
     contextItems,
@@ -1337,6 +1446,9 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
     revertToCheckpoint,
     revertFile,
     editMessage,
+    refreshPlans,
+    updatePlan,
+    approvePlan,
     isChatProcessing,
     getProcessingChats,
     cancelProcessing,

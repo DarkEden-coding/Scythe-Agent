@@ -7,10 +7,12 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_db
 from app.api.envelope import err, ok
 from app.schemas.chat import (
+    ApprovePlanRequest,
     ApproveCommandRequest,
     EditMessageRequest,
     RejectCommandRequest,
     SendMessageRequest,
+    UpdatePlanRequest,
 )
 from app.services.approval_service import ApprovalService
 from app.services.approval_waiter import get_approval_waiter
@@ -58,7 +60,10 @@ async def send_message(
 ):
     try:
         data = await ChatService(db).send_message(
-            chat_id=chat_id, content=request.content
+            chat_id=chat_id,
+            content=request.content,
+            mode=request.mode or "default",
+            active_plan_id=request.activePlanId,
         )
         return ok(data.model_dump())
     except ValueError as exc:
@@ -72,6 +77,71 @@ async def continue_agent(chat_id: str, db: Session = Depends(get_db)):
     try:
         data = await ChatService(db).continue_agent(chat_id=chat_id)
         return ok(data.model_dump())
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
+    except Exception as exc:
+        return _internal_error(exc)
+
+
+@router.get("/{chat_id}/plans")
+async def list_plans(chat_id: str, db: Session = Depends(get_db)):
+    try:
+        plans = await ChatService(db).list_plans(chat_id)
+        return ok({"plans": [plan.model_dump() for plan in plans]})
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
+    except Exception as exc:
+        return _internal_error(exc)
+
+
+@router.get("/{chat_id}/plans/{plan_id}")
+async def get_plan(chat_id: str, plan_id: str, db: Session = Depends(get_db)):
+    try:
+        plan = await ChatService(db).get_plan(chat_id, plan_id)
+        return ok({"plan": plan.model_dump()})
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
+    except Exception as exc:
+        return _internal_error(exc)
+
+
+@router.put("/{chat_id}/plans/{plan_id}")
+async def update_plan(
+    chat_id: str,
+    plan_id: str,
+    request: UpdatePlanRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        result = await ChatService(db).update_plan(
+            chat_id,
+            plan_id,
+            content=request.content,
+            title=request.title,
+            base_revision=request.baseRevision,
+            last_editor=request.lastEditor or "user",
+        )
+        return ok(result.model_dump())
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
+    except Exception as exc:
+        return _internal_error(exc)
+
+
+@router.post("/{chat_id}/plans/{plan_id}/approve")
+async def approve_plan(
+    chat_id: str,
+    plan_id: str,
+    request: ApprovePlanRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        result = await ChatService(db).approve_plan(
+            chat_id=chat_id,
+            plan_id=plan_id,
+            action=request.action,
+        )
+        return ok(result.model_dump())
     except ValueError as exc:
         return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
     except Exception as exc:

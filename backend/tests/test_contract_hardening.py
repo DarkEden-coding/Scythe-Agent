@@ -64,6 +64,7 @@ def test_frontend_contract_action_envelopes_and_shapes(client) -> None:
     assert isinstance(history_data["messages"], list)
     assert isinstance(history_data["toolCalls"], list)
     assert isinstance(history_data["fileEdits"], list)
+    assert isinstance(history_data["plans"], list)
 
     tool_call_id = "tc-contract-approve"
     with get_sessionmaker()() as db:

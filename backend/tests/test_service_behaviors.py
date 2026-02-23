@@ -1,5 +1,6 @@
 import asyncio
 import json
+from pathlib import Path
 
 import httpx
 
@@ -7,6 +8,7 @@ import app.services.chat_service as chat_service_module
 from app.db.repositories.chat_repo import ChatRepository
 from app.db.session import get_sessionmaker
 from app.services.event_bus import get_event_bus
+from app.services.plan_file_store import PlanFileStore
 from app.utils.time import utc_now_iso
 
 
@@ -181,6 +183,269 @@ def test_revert_consistency(client) -> None:
 
     history = client.get("/api/chat/chat-1/history").json()["data"]
     assert len(history["messages"]) == len(data["messages"])
+
+
+def test_revert_removes_plans_created_after_checkpoint(client) -> None:
+    base_ts = "2099-02-01T00:00:00.000000+00:00"
+    later_ts = "2099-02-01T00:05:00.000000+00:00"
+    keep_plan_id = "plan-revert-keep"
+    drop_plan_id = "plan-revert-drop"
+
+    with get_sessionmaker()() as db:
+        repo = ChatRepository(db)
+        chat = repo.get_chat("chat-1")
+        assert chat is not None
+
+        keep_message = repo.create_message(
+            message_id="msg-plan-keep",
+            chat_id="chat-1",
+            role="user",
+            content="checkpoint keep",
+            timestamp=base_ts,
+            checkpoint_id=None,
+        )
+        keep_checkpoint = repo.create_checkpoint(
+            checkpoint_id="cp-plan-keep",
+            chat_id="chat-1",
+            message_id=keep_message.id,
+            label="plan keep checkpoint",
+            timestamp=base_ts,
+        )
+        repo.link_message_checkpoint(keep_message, keep_checkpoint.id)
+
+        drop_message = repo.create_message(
+            message_id="msg-plan-drop",
+            chat_id="chat-1",
+            role="user",
+            content="checkpoint drop",
+            timestamp=later_ts,
+            checkpoint_id=None,
+        )
+        drop_checkpoint = repo.create_checkpoint(
+            checkpoint_id="cp-plan-drop",
+            chat_id="chat-1",
+            message_id=drop_message.id,
+            label="plan drop checkpoint",
+            timestamp=later_ts,
+        )
+        repo.link_message_checkpoint(drop_message, drop_checkpoint.id)
+
+        plan_store = PlanFileStore()
+        keep_path, keep_sha = plan_store.write_plan(
+            project_id=chat.project_id,
+            plan_id=keep_plan_id,
+            content="# Keep Plan\n\nkeep",
+        )
+        drop_path, drop_sha = plan_store.write_plan(
+            project_id=chat.project_id,
+            plan_id=drop_plan_id,
+            content="# Drop Plan\n\ndrop",
+        )
+        repo.create_project_plan(
+            plan_id=keep_plan_id,
+            chat_id="chat-1",
+            project_id=chat.project_id,
+            checkpoint_id=keep_checkpoint.id,
+            title="Keep Plan",
+            status="ready",
+            file_path=str(keep_path),
+            revision=1,
+            content_sha256=keep_sha,
+            last_editor="agent",
+            approved_action=None,
+            implementation_chat_id=None,
+            created_at=base_ts,
+            updated_at=base_ts,
+        )
+        repo.create_project_plan_revision(
+            revision_id="prv-plan-keep-r1",
+            plan_id=keep_plan_id,
+            chat_id="chat-1",
+            project_id=chat.project_id,
+            checkpoint_id=keep_checkpoint.id,
+            revision=1,
+            title="Keep Plan",
+            status="ready",
+            file_path=str(keep_path),
+            content_markdown="# Keep Plan\n\nkeep",
+            content_sha256=keep_sha,
+            last_editor="agent",
+            approved_action=None,
+            implementation_chat_id=None,
+            created_at=base_ts,
+        )
+        repo.create_project_plan(
+            plan_id=drop_plan_id,
+            chat_id="chat-1",
+            project_id=chat.project_id,
+            checkpoint_id=drop_checkpoint.id,
+            title="Drop Plan",
+            status="ready",
+            file_path=str(drop_path),
+            revision=1,
+            content_sha256=drop_sha,
+            last_editor="agent",
+            approved_action=None,
+            implementation_chat_id=None,
+            created_at=later_ts,
+            updated_at=later_ts,
+        )
+        repo.create_project_plan_revision(
+            revision_id="prv-plan-drop-r1",
+            plan_id=drop_plan_id,
+            chat_id="chat-1",
+            project_id=chat.project_id,
+            checkpoint_id=drop_checkpoint.id,
+            revision=1,
+            title="Drop Plan",
+            status="ready",
+            file_path=str(drop_path),
+            content_markdown="# Drop Plan\n\ndrop",
+            content_sha256=drop_sha,
+            last_editor="agent",
+            approved_action=None,
+            implementation_chat_id=None,
+            created_at=later_ts,
+        )
+        db.commit()
+
+    res = client.post("/api/chat/chat-1/revert/cp-plan-keep")
+    assert res.status_code == 200
+
+    history = client.get("/api/chat/chat-1/history").json()["data"]
+    plan_ids = {plan["id"] for plan in history["plans"]}
+    assert keep_plan_id in plan_ids
+    assert drop_plan_id not in plan_ids
+    assert drop_path.exists() is False
+
+
+def test_revert_restores_plan_revision_state(client) -> None:
+    base_ts = "2099-03-01T00:00:00.000000+00:00"
+    later_ts = "2099-03-01T00:05:00.000000+00:00"
+    plan_id = "plan-revert-restore"
+
+    with get_sessionmaker()() as db:
+        repo = ChatRepository(db)
+        chat = repo.get_chat("chat-1")
+        assert chat is not None
+
+        keep_message = repo.create_message(
+            message_id="msg-plan-restore-keep",
+            chat_id="chat-1",
+            role="user",
+            content="restore checkpoint keep",
+            timestamp=base_ts,
+            checkpoint_id=None,
+        )
+        keep_checkpoint = repo.create_checkpoint(
+            checkpoint_id="cp-plan-restore-keep",
+            chat_id="chat-1",
+            message_id=keep_message.id,
+            label="plan restore keep checkpoint",
+            timestamp=base_ts,
+        )
+        repo.link_message_checkpoint(keep_message, keep_checkpoint.id)
+
+        later_message = repo.create_message(
+            message_id="msg-plan-restore-later",
+            chat_id="chat-1",
+            role="user",
+            content="restore checkpoint later",
+            timestamp=later_ts,
+            checkpoint_id=None,
+        )
+        later_checkpoint = repo.create_checkpoint(
+            checkpoint_id="cp-plan-restore-later",
+            chat_id="chat-1",
+            message_id=later_message.id,
+            label="plan restore later checkpoint",
+            timestamp=later_ts,
+        )
+        repo.link_message_checkpoint(later_message, later_checkpoint.id)
+
+        plan_store = PlanFileStore()
+        path, sha_v1 = plan_store.write_plan(
+            project_id=chat.project_id,
+            plan_id=plan_id,
+            content="# Plan V1\n\nready",
+        )
+        _, sha_v2 = plan_store.write_plan(
+            project_id=chat.project_id,
+            plan_id=plan_id,
+            content="# Plan V2\n\nimplementing",
+        )
+
+        repo.create_project_plan(
+            plan_id=plan_id,
+            chat_id="chat-1",
+            project_id=chat.project_id,
+            checkpoint_id=later_checkpoint.id,
+            title="Plan V2",
+            status="implementing",
+            file_path=str(path),
+            revision=2,
+            content_sha256=sha_v2,
+            last_editor="agent",
+            approved_action="clear_context",
+            implementation_chat_id="chat-impl-1",
+            created_at=base_ts,
+            updated_at=later_ts,
+        )
+        repo.create_project_plan_revision(
+            revision_id="prv-plan-restore-r1",
+            plan_id=plan_id,
+            chat_id="chat-1",
+            project_id=chat.project_id,
+            checkpoint_id=keep_checkpoint.id,
+            revision=1,
+            title="Plan V1",
+            status="ready",
+            file_path=str(path),
+            content_markdown="# Plan V1\n\nready",
+            content_sha256=sha_v1,
+            last_editor="agent",
+            approved_action=None,
+            implementation_chat_id=None,
+            created_at=base_ts,
+        )
+        repo.create_project_plan_revision(
+            revision_id="prv-plan-restore-r2",
+            plan_id=plan_id,
+            chat_id="chat-1",
+            project_id=chat.project_id,
+            checkpoint_id=later_checkpoint.id,
+            revision=2,
+            title="Plan V2",
+            status="implementing",
+            file_path=str(path),
+            content_markdown="# Plan V2\n\nimplementing",
+            content_sha256=sha_v2,
+            last_editor="agent",
+            approved_action="clear_context",
+            implementation_chat_id="chat-impl-1",
+            created_at=later_ts,
+        )
+        db.commit()
+
+    res = client.post("/api/chat/chat-1/revert/cp-plan-restore-keep")
+    assert res.status_code == 200
+
+    history = client.get("/api/chat/chat-1/history").json()["data"]
+    restored = next((plan for plan in history["plans"] if plan["id"] == plan_id), None)
+    assert restored is not None
+    assert restored["revision"] == 1
+    assert restored["status"] == "ready"
+    assert restored["title"] == "Plan V1"
+    assert restored["approvedAction"] is None
+    assert restored["implementationChatId"] is None
+    assert restored["content"] == "# Plan V1\n\nready"
+    assert Path(restored["filePath"]).read_text(encoding="utf-8") == "# Plan V1\n\nready"
+
+    with get_sessionmaker()() as db:
+        repo = ChatRepository(db)
+        revisions = repo.list_project_plan_revisions(plan_id)
+        assert len(revisions) == 1
+        assert revisions[0].revision == 1
 
 
 def test_revert_file_consistency(client) -> None:
@@ -366,6 +631,8 @@ def test_continue_agent_schedules_latest_checkpoint(client, monkeypatch) -> None
         chat_id: str,
         checkpoint_id: str,
         content: str,
+        mode: str,
+        active_plan_id: str | None,
         session_factory,
         event_bus,
         task_manager,
@@ -373,6 +640,8 @@ def test_continue_agent_schedules_latest_checkpoint(client, monkeypatch) -> None
         captured["chat_id"] = chat_id
         captured["checkpoint_id"] = checkpoint_id
         captured["content"] = content
+        captured["mode"] = mode
+        captured["active_plan_id"] = active_plan_id
 
     monkeypatch.setattr(chat_service_module, "_schedule_background_task", _fake_schedule_background_task)
 
@@ -386,6 +655,8 @@ def test_continue_agent_schedules_latest_checkpoint(client, monkeypatch) -> None
     assert captured["chat_id"] == "chat-1"
     assert captured["checkpoint_id"] == latest_checkpoint
     assert captured["content"] == expected_content
+    assert captured["mode"] == "default"
+    assert captured["active_plan_id"] is None
 
 
 def test_format_runtime_error_http_status_includes_provider_detail() -> None:

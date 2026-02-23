@@ -15,6 +15,7 @@ import {
   ContextItem,
   ReasoningBlock,
   TodoItem,
+  ProjectPlan,
   Project,
 } from '../types';
 
@@ -33,6 +34,8 @@ export interface ApiResponse<T> {
 export interface SendMessageRequest {
   chatId: string;
   content: string;
+  mode?: 'default' | 'planning' | 'plan_edit';
+  activePlanId?: string;
 }
 
 export interface SendMessageResponse {
@@ -151,6 +154,48 @@ export interface EditMessageResponse {
   revertedHistory: RevertToCheckpointResponse;
 }
 
+export interface GetPlansRequest {
+  chatId: string;
+}
+
+export interface GetPlansResponse {
+  plans: ProjectPlan[];
+}
+
+export interface GetPlanRequest {
+  chatId: string;
+  planId: string;
+}
+
+export interface GetPlanResponse {
+  plan: ProjectPlan;
+}
+
+export interface UpdatePlanRequest {
+  chatId: string;
+  planId: string;
+  content: string;
+  title?: string;
+  baseRevision?: number;
+  lastEditor?: 'user' | 'agent' | 'external';
+}
+
+export interface UpdatePlanResponse {
+  plan: ProjectPlan;
+  conflict: boolean;
+}
+
+export interface ApprovePlanRequest {
+  chatId: string;
+  planId: string;
+  action: 'keep_context' | 'clear_context';
+}
+
+export interface ApprovePlanResponse {
+  plan: ProjectPlan;
+  implementationChatId?: string;
+}
+
 // 7. Project and chat management
 export interface CreateProjectRequest {
   name: string;
@@ -228,6 +273,7 @@ export interface GetChatHistoryResponse {
   reasoningBlocks: ReasoningBlock[];
   contextItems: ContextItem[];
   todos: TodoItem[];
+  plans: ProjectPlan[];
   maxTokens: number;
   model: string;
 }
@@ -276,6 +322,11 @@ export type AgentEventType =
   | 'verification_issues'
   | 'observation_status'
   | 'todo_list_updated'
+  | 'plan_started'
+  | 'plan_updated'
+  | 'plan_ready'
+  | 'plan_conflict'
+  | 'plan_approved'
   | 'error';
 
 export interface AgentObservationStatusPayload {
@@ -303,7 +354,24 @@ export interface AgentEvent {
     | AgentVerificationIssuesPayload
     | AgentPausePayload
     | AgentObservationStatusPayload
+    | AgentPlanStartedPayload
+    | AgentPlanPayload
+    | AgentPlanConflictPayload
     | AgentErrorPayload;
+}
+
+export interface AgentPlanStartedPayload {
+  checkpointId?: string;
+}
+
+export interface AgentPlanPayload {
+  plan: ProjectPlan;
+  content?: string;
+}
+
+export interface AgentPlanConflictPayload {
+  plan: ProjectPlan;
+  reason?: string;
 }
 
 export interface AgentPausePayload {

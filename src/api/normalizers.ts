@@ -12,6 +12,7 @@ import type {
   Checkpoint,
   ReasoningBlock,
   TodoItem,
+  ProjectPlan,
 } from '@/types';
 
 export const toDate = (value: Date | string): Date =>
@@ -58,6 +59,12 @@ export const normalizeSubAgentRun = (
 export const normalizeTodo = (t: TodoItem): TodoItem => ({
   ...t,
   timestamp: toDate(t.timestamp),
+});
+
+export const normalizePlan = (p: ProjectPlan): ProjectPlan => ({
+  ...p,
+  createdAt: toDate(p.createdAt),
+  updatedAt: toDate(p.updatedAt),
 });
 
 export const upsertById = <T extends { id: string }>(items: T[], next: T): T[] => {

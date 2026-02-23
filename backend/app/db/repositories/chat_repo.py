@@ -4,6 +4,7 @@ from typing import Any
 
 from sqlalchemy import and_, delete, or_
 from sqlalchemy import select
+from sqlalchemy.exc import OperationalError
 
 from app.db.models.chat import Chat
 from app.db.models.checkpoint import Checkpoint
@@ -13,6 +14,8 @@ from app.db.models.file_snapshot import FileSnapshot
 from app.db.models.memory_state import MemoryState
 from app.db.models.message import Message
 from app.db.models.observation import Observation
+from app.db.models.project_plan import ProjectPlan
+from app.db.models.project_plan_revision import ProjectPlanRevision
 from app.db.models.reasoning_block import ReasoningBlock
 from app.db.models.todo import Todo
 from app.db.models.tool_artifact import ToolArtifact
@@ -40,6 +43,8 @@ def _parse_ts_safe(iso_str: str) -> datetime | None:
 
 
 class ChatRepository(BaseRepository):
+    _UNSET = object()
+
     def get_chat(self, chat_id: str) -> Chat | None:
         return self.db.get(Chat, chat_id)
 
@@ -54,6 +59,14 @@ class ChatRepository(BaseRepository):
 
     def get_file_edit(self, file_edit_id: str) -> FileEdit | None:
         return self.db.get(FileEdit, file_edit_id)
+
+    def get_project_plan(self, plan_id: str) -> ProjectPlan | None:
+        return self.db.get(ProjectPlan, plan_id)
+
+    def get_project_plan_revision(
+        self, revision_id: str
+    ) -> ProjectPlanRevision | None:
+        return self.db.get(ProjectPlanRevision, revision_id)
 
     def list_messages(self, chat_id: str) -> list[Message]:
         stmt = (
@@ -170,6 +183,126 @@ class ChatRepository(BaseRepository):
             .order_by(ReasoningBlock.timestamp.asc())
         )
         return list(self.db.scalars(stmt).all())
+
+    def list_project_plans(self, chat_id: str) -> list[ProjectPlan]:
+        stmt = (
+            select(ProjectPlan)
+            .where(ProjectPlan.chat_id == chat_id)
+            .order_by(ProjectPlan.updated_at.asc())
+        )
+        try:
+            return list(self.db.scalars(stmt).all())
+        except OperationalError as exc:
+            # Older local DBs may not have the project_plans table yet.
+            if "no such table: project_plans" in str(exc).lower():
+                return []
+            raise
+
+    def list_project_plans_touched_after_checkpoint(
+        self, chat_id: str, cutoff_timestamp: str, checkpoint_id: str
+    ) -> list[ProjectPlan]:
+        cutoff = _normalize_ts(cutoff_timestamp)
+        try:
+            stmt = (
+                select(ProjectPlan)
+                .where(
+                    ProjectPlan.chat_id == chat_id,
+                    or_(
+                        ProjectPlan.created_at > cutoff,
+                        and_(
+                            ProjectPlan.created_at == cutoff,
+                            or_(
+                                ProjectPlan.checkpoint_id.is_(None),
+                                ProjectPlan.checkpoint_id != checkpoint_id,
+                            ),
+                        ),
+                        ProjectPlan.updated_at > cutoff,
+                        and_(
+                            ProjectPlan.updated_at == cutoff,
+                            or_(
+                                ProjectPlan.checkpoint_id.is_(None),
+                                ProjectPlan.checkpoint_id != checkpoint_id,
+                            ),
+                        ),
+                    ),
+                )
+                .order_by(ProjectPlan.updated_at.asc())
+            )
+            return list(self.db.scalars(stmt).all())
+        except OperationalError as exc:
+            if "no such table: project_plans" in str(exc).lower():
+                return []
+            raise
+
+    def list_project_plan_revisions(self, plan_id: str) -> list[ProjectPlanRevision]:
+        try:
+            stmt = (
+                select(ProjectPlanRevision)
+                .where(ProjectPlanRevision.plan_id == plan_id)
+                .order_by(
+                    ProjectPlanRevision.revision.asc(),
+                    ProjectPlanRevision.created_at.asc(),
+                )
+            )
+            return list(self.db.scalars(stmt).all())
+        except OperationalError as exc:
+            if "no such table: project_plan_revisions" in str(exc).lower():
+                return []
+            raise
+
+    def get_latest_project_plan_revision_at_or_before(
+        self, plan_id: str, cutoff_timestamp: str, checkpoint_id: str
+    ) -> ProjectPlanRevision | None:
+        cutoff = _normalize_ts(cutoff_timestamp)
+        try:
+            stmt = (
+                select(ProjectPlanRevision)
+                .where(
+                    ProjectPlanRevision.plan_id == plan_id,
+                    or_(
+                        ProjectPlanRevision.created_at < cutoff,
+                        and_(
+                            ProjectPlanRevision.created_at == cutoff,
+                            ProjectPlanRevision.checkpoint_id == checkpoint_id,
+                        ),
+                    ),
+                )
+                .order_by(
+                    ProjectPlanRevision.revision.desc(),
+                    ProjectPlanRevision.created_at.desc(),
+                )
+                .limit(1)
+            )
+            return self.db.scalars(stmt).first()
+        except OperationalError as exc:
+            if "no such table: project_plan_revisions" in str(exc).lower():
+                return None
+            raise
+
+    def delete_project_plan_revisions_after_checkpoint(
+        self, plan_id: str, cutoff_timestamp: str, checkpoint_id: str
+    ) -> None:
+        cutoff = _normalize_ts(cutoff_timestamp)
+        try:
+            self.db.execute(
+                delete(ProjectPlanRevision).where(
+                    ProjectPlanRevision.plan_id == plan_id,
+                    or_(
+                        ProjectPlanRevision.created_at > cutoff,
+                        and_(
+                            ProjectPlanRevision.created_at == cutoff,
+                            or_(
+                                ProjectPlanRevision.checkpoint_id.is_(None),
+                                ProjectPlanRevision.checkpoint_id != checkpoint_id,
+                            ),
+                        ),
+                    ),
+                )
+            )
+        except OperationalError as exc:
+            if "no such table: project_plan_revisions" in str(exc).lower():
+                return
+            raise
 
     def list_context_items(self, chat_id: str) -> list[ContextItem]:
         stmt = (
@@ -424,6 +557,119 @@ class ChatRepository(BaseRepository):
         self.db.add(block)
         return block
 
+    def create_project_plan(
+        self,
+        *,
+        plan_id: str,
+        chat_id: str,
+        project_id: str,
+        checkpoint_id: str | None,
+        title: str,
+        status: str,
+        file_path: str,
+        revision: int,
+        content_sha256: str,
+        last_editor: str,
+        approved_action: str | None,
+        implementation_chat_id: str | None,
+        created_at: str,
+        updated_at: str,
+    ) -> ProjectPlan:
+        plan = ProjectPlan(
+            id=plan_id,
+            chat_id=chat_id,
+            project_id=project_id,
+            checkpoint_id=checkpoint_id,
+            title=title,
+            status=status,
+            file_path=file_path,
+            revision=revision,
+            content_sha256=content_sha256,
+            last_editor=last_editor,
+            approved_action=approved_action,
+            implementation_chat_id=implementation_chat_id,
+            created_at=created_at,
+            updated_at=updated_at,
+        )
+        self.db.add(plan)
+        return plan
+
+    def create_project_plan_revision(
+        self,
+        *,
+        revision_id: str,
+        plan_id: str,
+        chat_id: str,
+        project_id: str,
+        checkpoint_id: str | None,
+        revision: int,
+        title: str,
+        status: str,
+        file_path: str,
+        content_markdown: str,
+        content_sha256: str,
+        last_editor: str,
+        approved_action: str | None,
+        implementation_chat_id: str | None,
+        created_at: str,
+    ) -> ProjectPlanRevision:
+        row = ProjectPlanRevision(
+            id=revision_id,
+            plan_id=plan_id,
+            chat_id=chat_id,
+            project_id=project_id,
+            checkpoint_id=checkpoint_id,
+            revision=revision,
+            title=title,
+            status=status,
+            file_path=file_path,
+            content_markdown=content_markdown,
+            content_sha256=content_sha256,
+            last_editor=last_editor,
+            approved_action=approved_action,
+            implementation_chat_id=implementation_chat_id,
+            created_at=created_at,
+        )
+        self.db.add(row)
+        return row
+
+    def set_project_plan_content(
+        self,
+        plan: ProjectPlan,
+        *,
+        title: str | None = None,
+        checkpoint_id: str | None | object = _UNSET,
+        status: str | None = None,
+        file_path: str | None = None,
+        content_sha256: str | None = None,
+        revision: int | None = None,
+        last_editor: str | None = None,
+        approved_action: str | None | object = _UNSET,
+        implementation_chat_id: str | None | object = _UNSET,
+        updated_at: str | None = None,
+    ) -> ProjectPlan:
+        if title is not None:
+            plan.title = title
+        if checkpoint_id is not self._UNSET:
+            plan.checkpoint_id = checkpoint_id
+        if status is not None:
+            plan.status = status
+        if file_path is not None:
+            plan.file_path = file_path
+        if content_sha256 is not None:
+            plan.content_sha256 = content_sha256
+        if revision is not None:
+            plan.revision = revision
+        if last_editor is not None:
+            plan.last_editor = last_editor
+        if approved_action is not self._UNSET:
+            plan.approved_action = approved_action
+        if implementation_chat_id is not self._UNSET:
+            plan.implementation_chat_id = implementation_chat_id
+        if updated_at is not None:
+            plan.updated_at = updated_at
+        return plan
+
     def get_checkpoint_by_message(self, message_id: str) -> Checkpoint | None:
         stmt = select(Checkpoint).where(Checkpoint.message_id == message_id)
         return self.db.scalars(stmt).first()
@@ -516,6 +762,9 @@ class ChatRepository(BaseRepository):
 
     def delete_file_edit(self, file_edit: FileEdit) -> None:
         self.db.delete(file_edit)
+
+    def delete_project_plan(self, project_plan: ProjectPlan) -> None:
+        self.db.delete(project_plan)
 
     def create_tool_artifact(
         self,

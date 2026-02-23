@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from dataclasses import dataclass
 
 import httpx
 
@@ -21,6 +22,38 @@ from app.utils.time import utc_now_iso
 logger = logging.getLogger(__name__)
 REPETITIVE_TOOL_CALL_STREAK_LIMIT = 5
 GUARDED_REPEAT_TOOLS = {"read_file", "list_files", "grep"}
+PLANNING_ALLOWED_TOOLS = {
+    "list_files",
+    "read_file",
+    "grep",
+    "spawn_sub_agent",
+    "update_todo_list",
+    "submit_task",
+}
+PLANNING_PROMPT_APPENDIX = """
+PLANNING MODE:
+- You are in planning mode. Do not modify project files or run shell commands.
+- You may explore with read-only tools and sub-agents when needed.
+- Use spawn_sub_agent adaptively: only when scope is broad (for example more than 6 candidate files or multiple top-level modules).
+- Produce a detailed markdown implementation plan.
+- Include file-by-file changes, code snippets, and test commands with expected outcomes per step.
+- Include rollback notes for risky steps.
+- End with the final markdown plan.
+"""
+PLAN_EDIT_PROMPT_APPENDIX = """
+PLAN EDIT MODE:
+- Update the existing plan based on the user's edit request.
+- Prefer targeted section edits and keep unaffected sections stable.
+- Return updated plan markdown only.
+"""
+
+
+@dataclass
+class AgentRunResult:
+    completed: bool
+    iterations: int
+    final_assistant_text: str
+    mode: str
 
 
 class AgentLoop:
@@ -95,7 +128,11 @@ class AgentLoop:
         checkpoint_id: str,
         content: str,
         max_iterations: int,
-    ) -> None:
+        mode: str = "default",
+        extra_messages: list[dict] | None = None,
+    ) -> AgentRunResult:
+        mode_name = mode if mode in {"default", "planning", "plan_edit"} else "default"
+        is_plan_mode = mode_name in {"planning", "plan_edit"}
         settings = self._settings_service.get_settings()
         provider = settings.modelProvider or self._settings_repo.get_provider_for_model(
             settings.model
@@ -128,7 +165,12 @@ class AgentLoop:
                 provider,
                 chat_id,
             )
-            return
+            return AgentRunResult(
+                completed=False,
+                iterations=0,
+                final_assistant_text="",
+                mode=mode_name,
+            )
 
         chat_model = self._chat_repo.get_chat(chat_id)
         if chat_model is None:
@@ -137,15 +179,22 @@ class AgentLoop:
                 {"type": "agent_done", "payload": {"checkpointId": checkpoint_id}},
             )
             logger.info("Conversation ended: chat not found chat_id=%s", chat_id)
-            return
+            return AgentRunResult(
+                completed=False,
+                iterations=0,
+                final_assistant_text="",
+                mode=mode_name,
+            )
 
         settings = self._settings_service.get_settings()
         conversation_messages = self._assemble_messages(chat_id, content)
+        if extra_messages:
+            conversation_messages.extend(extra_messages)
         project_path = None
         project = self._project_repo.get_project(chat_model.project_id)
         if project:
             project_path = project.path
-        tools = self._get_openrouter_tools()
+        tools = self._resolve_tools_for_mode(mode_name)
 
         # Load memory settings
         mem_cfg = MemoryConfig.from_settings_repo(self._settings_repo)
@@ -166,6 +215,7 @@ class AgentLoop:
         _cancelled = False
         last_guard_signature: tuple[str, str] | None = None
         repeated_tool_streak = 0
+        last_assistant_text = ""
 
         try:
             while iteration < max_iterations:
@@ -184,7 +234,7 @@ class AgentLoop:
                 prepared = await context_budget.prepare(
                     chat_id=chat_id,
                     base_messages=list(conversation_messages),
-                    default_system_prompt=self._default_system_prompt,
+                    default_system_prompt=self._system_prompt_for_mode(mode_name),
                     project_path=project_path,
                     provider=client,
                     model=settings.model,
@@ -205,6 +255,7 @@ class AgentLoop:
                         ts=ts,
                         checkpoint_id=checkpoint_id,
                         reasoning_block_id=reasoning_block_id,
+                        suppress_content_events=is_plan_mode,
                     )
                 except httpx.HTTPStatusError as e:
                     if e.response.status_code == 400 and rp:
@@ -224,25 +275,48 @@ class AgentLoop:
                             ts=ts,
                             checkpoint_id=checkpoint_id,
                             reasoning_block_id=reasoning_block_id,
+                            suppress_content_events=is_plan_mode,
                         )
                     else:
                         raise
                 response_text = result.text
-                has_content = bool((response_text or result.finish_content or "").strip())
+                final_text = (response_text or result.finish_content or "").strip()
+                has_content = bool(final_text)
+                terminal_response = result.finish_reason == "stop" or not result.tool_calls
 
                 if has_content:
-                    final_text = (response_text or result.finish_content or "").strip()
-                    self._finalize_message(
-                        chat_id, msg_id, ts, final_text, chat_model, message_out
-                    )
-                    await self._event_bus.publish(
-                        chat_id,
-                        {"type": "message", "payload": {"message": message_out.model_dump()}},
-                    )
+                    if not is_plan_mode or terminal_response:
+                        last_assistant_text = final_text
+                    should_publish_message = not is_plan_mode or not terminal_response
+                    if should_publish_message:
+                        self._finalize_message(
+                            chat_id, msg_id, ts, final_text, chat_model, message_out
+                        )
+                        await self._event_bus.publish(
+                            chat_id,
+                            {"type": "message", "payload": {"message": message_out.model_dump()}},
+                        )
 
-                if result.finish_reason == "stop" or not result.tool_calls:
+                if terminal_response:
                     last_guard_signature = None
                     repeated_tool_streak = 0
+                    if is_plan_mode:
+                        await self._event_bus.publish(
+                            chat_id,
+                            {"type": "agent_done", "payload": {"checkpointId": checkpoint_id}},
+                        )
+                        logger.info(
+                            "Conversation ended: planning stop chat_id=%s checkpoint_id=%s mode=%s",
+                            chat_id,
+                            checkpoint_id,
+                            mode_name,
+                        )
+                        return AgentRunResult(
+                            completed=True,
+                            iterations=iteration,
+                            final_assistant_text=last_assistant_text,
+                            mode=mode_name,
+                        )
                     conversation_messages.append(
                         {"role": "assistant", "content": response_text or ""}
                     )
@@ -280,7 +354,12 @@ class AgentLoop:
                             target=target,
                             repeat_count=repeated_tool_streak,
                         )
-                        return
+                        return AgentRunResult(
+                            completed=False,
+                            iterations=iteration,
+                            final_assistant_text=last_assistant_text,
+                            mode=mode_name,
+                        )
 
                 assistant_msg = {
                     "role": "assistant",
@@ -330,7 +409,12 @@ class AgentLoop:
                         chat_id,
                         checkpoint_id,
                     )
-                    return
+                    return AgentRunResult(
+                        completed=True,
+                        iterations=iteration,
+                        final_assistant_text=last_assistant_text,
+                        mode=mode_name,
+                    )
 
                 # Queue OM updates during long-running loops so threshold-triggered
                 # observation does not depend on turn completion.
@@ -381,6 +465,12 @@ class AgentLoop:
                 chat_id,
                 checkpoint_id,
             )
+            return AgentRunResult(
+                completed=False,
+                iterations=iteration,
+                final_assistant_text=last_assistant_text,
+                mode=mode_name,
+            )
         except asyncio.CancelledError:
             _cancelled = True
             raise
@@ -403,6 +493,25 @@ class AgentLoop:
                     logger.warning(
                         "Failed to schedule observation for chat=%s", chat_id, exc_info=True
                     )
+
+    def _resolve_tools_for_mode(self, mode: str) -> list[dict]:
+        tools = self._get_openrouter_tools()
+        if mode not in {"planning", "plan_edit"}:
+            return tools
+        filtered: list[dict] = []
+        for spec in tools:
+            fn = spec.get("function", {}) if isinstance(spec, dict) else {}
+            tool_name = fn.get("name")
+            if tool_name in PLANNING_ALLOWED_TOOLS:
+                filtered.append(spec)
+        return filtered
+
+    def _system_prompt_for_mode(self, mode: str) -> str:
+        if mode == "planning":
+            return f"{self._default_system_prompt.rstrip()}\n\n{PLANNING_PROMPT_APPENDIX.strip()}"
+        if mode == "plan_edit":
+            return f"{self._default_system_prompt.rstrip()}\n\n{PLAN_EDIT_PROMPT_APPENDIX.strip()}"
+        return self._default_system_prompt
 
     def _assemble_messages(self, chat_id: str, content: str) -> list[dict]:
         """Assemble messages without system prompt; SystemPromptPreprocessor adds it."""

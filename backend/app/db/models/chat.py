@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from app.db.models.file_snapshot import FileSnapshot
     from app.db.models.message import Message
     from app.db.models.observation import Observation
+    from app.db.models.project_plan import ProjectPlan
     from app.db.models.project import Project
     from app.db.models.reasoning_block import ReasoningBlock
     from app.db.models.sub_agent_run import SubAgentRun
@@ -62,5 +63,8 @@ class Chat(Base):
         foreign_keys="Observation.chat_id",
     )
     todos: Mapped[list["Todo"]] = relationship(
+        back_populates="chat", cascade="all, delete-orphan", passive_deletes=True
+    )
+    project_plans: Mapped[list["ProjectPlan"]] = relationship(
         back_populates="chat", cascade="all, delete-orphan", passive_deletes=True
     )

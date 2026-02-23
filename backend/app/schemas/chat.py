@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -77,6 +79,24 @@ class TodoOut(BaseModel):
     timestamp: str
 
 
+class ProjectPlanOut(BaseModel):
+    id: str
+    chatId: str
+    projectId: str
+    checkpointId: str | None = None
+    title: str
+    status: str
+    filePath: str
+    revision: int
+    contentSha256: str
+    lastEditor: str
+    approvedAction: str | None = None
+    implementationChatId: str | None = None
+    createdAt: str
+    updatedAt: str
+    content: str | None = None
+
+
 class GetChatHistoryResponse(BaseModel):
     chatId: str
     messages: list[MessageOut]
@@ -87,12 +107,15 @@ class GetChatHistoryResponse(BaseModel):
     reasoningBlocks: list[ReasoningBlockOut]
     contextItems: list[ContextItemOut]
     todos: list[TodoOut]
+    plans: list[ProjectPlanOut] = Field(default_factory=list)
     maxTokens: int
     model: str
 
 
 class SendMessageRequest(BaseModel):
     content: str = Field(min_length=1, max_length=100_000)
+    mode: Literal["default", "planning", "plan_edit"] | None = None
+    activePlanId: str | None = None
 
 
 class SendMessageResponse(BaseModel):
@@ -151,3 +174,24 @@ class EditMessageRequest(BaseModel):
 
 class EditMessageResponse(BaseModel):
     revertedHistory: RevertToCheckpointResponse
+
+
+class UpdatePlanRequest(BaseModel):
+    content: str = Field(min_length=1)
+    title: str | None = None
+    baseRevision: int | None = None
+    lastEditor: str | None = None
+
+
+class UpdatePlanResponse(BaseModel):
+    plan: ProjectPlanOut
+    conflict: bool = False
+
+
+class ApprovePlanRequest(BaseModel):
+    action: Literal["keep_context", "clear_context"]
+
+
+class ApprovePlanResponse(BaseModel):
+    plan: ProjectPlanOut
+    implementationChatId: str | None = None

@@ -34,6 +34,12 @@ import type {
   RevertFileResponse,
   EditMessageRequest,
   EditMessageResponse,
+  GetPlansResponse,
+  GetPlanResponse,
+  UpdatePlanRequest,
+  UpdatePlanResponse,
+  ApprovePlanRequest,
+  ApprovePlanResponse,
   CreateProjectRequest,
   CreateProjectResponse,
   UpdateProjectRequest,
@@ -384,7 +390,11 @@ export class ApiClient {
       const res = await this.request<SendMessageResponse>(
         'POST',
         `/chat/${req.chatId}/messages`,
-        { content: req.content },
+        {
+          content: req.content,
+          mode: req.mode,
+          activePlanId: req.activePlanId,
+        },
         `send-${req.chatId}`,
       );
       return res;
@@ -476,6 +486,29 @@ export class ApiClient {
   /** Edit a user message — reverts to the message's checkpoint and re-runs the agent. */
   async editMessage(req: EditMessageRequest): Promise<ApiResponse<EditMessageResponse>> {
     return this.request('PUT', `/chat/${req.chatId}/messages/${req.messageId}`, { content: req.content });
+  }
+
+  async getPlans(chatId: string): Promise<ApiResponse<GetPlansResponse>> {
+    return this.request('GET', `/chat/${chatId}/plans`);
+  }
+
+  async getPlan(chatId: string, planId: string): Promise<ApiResponse<GetPlanResponse>> {
+    return this.request('GET', `/chat/${chatId}/plans/${planId}`);
+  }
+
+  async updatePlan(req: UpdatePlanRequest): Promise<ApiResponse<UpdatePlanResponse>> {
+    return this.request('PUT', `/chat/${req.chatId}/plans/${req.planId}`, {
+      content: req.content,
+      title: req.title,
+      baseRevision: req.baseRevision,
+      lastEditor: req.lastEditor,
+    });
+  }
+
+  async approvePlan(req: ApprovePlanRequest): Promise<ApiResponse<ApprovePlanResponse>> {
+    return this.request('POST', `/chat/${req.chatId}/plans/${req.planId}/approve`, {
+      action: req.action,
+    });
   }
 
   /* ── Data fetching (backend → frontend) ──────────────────────── */

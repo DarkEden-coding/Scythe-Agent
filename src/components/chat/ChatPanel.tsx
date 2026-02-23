@@ -35,10 +35,17 @@ interface ChatPanelProps {
   readonly onRevert: (checkpointId: string) => void;
   readonly contextItems: ContextItem[];
   readonly maxTokens: number;
-  readonly onSendMessage?: (content: string) => void;
+  readonly onSendMessage?: (
+    content: string,
+    options?: {
+      mode?: 'default' | 'planning' | 'plan_edit';
+      activePlanId?: string;
+    },
+  ) => void;
   readonly onCancel?: () => void;
   readonly projects: Project[];
   readonly activeChatId?: string | null;
+  readonly activePlanId?: string | null;
   readonly onSwitchChat?: (chatId: string) => void;
   readonly isProcessing?: boolean;
   readonly onCreateProject?: (name: string, path: string) => Promise<void> | void;
@@ -75,6 +82,7 @@ export function ChatPanel({
   onCancel,
   projects,
   activeChatId: externalActiveChatId,
+  activePlanId = null,
   onSwitchChat,
   isProcessing = false,
   onCreateProject,
@@ -95,6 +103,7 @@ export function ChatPanel({
   onRetryPersistentError,
 }: ChatPanelProps) {
   const [inputValue, setInputValue] = useState('');
+  const [composeMode, setComposeMode] = useState<'default' | 'planning'>('default');
   const [activeTab, setActiveTab] = useHashTab<'chat' | 'projects'>('chat', ['chat', 'projects']);
   const [activeChatId, setActiveChatId] = useState(externalActiveChatId ?? null);
   const [showNewModal, setShowNewModal] = useState(false);
@@ -118,7 +127,13 @@ export function ChatPanel({
 
   const handleSend = () => {
     if (!inputValue.trim() || !activeChatId) return;
-    onSendMessage?.(inputValue.trim());
+    const options = composeMode === 'planning'
+      ? {
+          mode: activePlanId ? ('plan_edit' as const) : ('planning' as const),
+          activePlanId: activePlanId ?? undefined,
+        }
+      : undefined;
+    onSendMessage?.(inputValue.trim(), options);
     setInputValue('');
   };
 
@@ -272,6 +287,8 @@ export function ChatPanel({
               onChange={setInputValue}
               onSubmit={handleSend}
               onCancel={onCancel}
+              composeMode={composeMode}
+              onComposeModeChange={setComposeMode}
               activeChatId={activeChatId}
               isProcessing={isProcessing}
             />
