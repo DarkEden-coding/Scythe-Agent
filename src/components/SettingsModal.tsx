@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Settings, Key, Bot, ChevronRight, FolderOpen, Plug, Zap, Sparkles, Brain } from 'lucide-react';
+import { Settings, Key, Bot, ChevronRight, ChevronDown, FolderOpen, Plug, Zap, Sparkles, Server, Brain, Layers } from 'lucide-react';
 import { cn } from '@/utils/cn';
 import { Modal } from './Modal';
 import { OpenRouterSettingsPanel } from './settings/OpenRouterSettingsPanel';
@@ -8,6 +8,7 @@ import { OpenAISubSettingsPanel } from './settings/OpenAISubSettingsPanel';
 import { AgentSettingsPanel } from './settings/AgentSettingsPanel';
 import { MCPSettingsPanel } from './settings/MCPSettingsPanel';
 import { MemorySettingsPanel } from './settings/MemorySettingsPanel';
+import { ContextSettingsPanel } from './settings/ContextSettingsPanel';
 import type { ProviderId, SettingsTabId } from './ProviderSettingsDropdown';
 
 const PROVIDER_TABS: { id: ProviderId; label: string; icon: React.ReactNode }[] = [
@@ -32,10 +33,15 @@ export function SettingsModal({
 }: SettingsModalProps) {
   const [activeTab, setActiveTab] = useState<SettingsTabId>(initialTab ?? 'openrouter');
   const [providersExpanded, setProvidersExpanded] = useState(true);
+  const [backendExpanded, setBackendExpanded] = useState(true);
 
   useEffect(() => {
     if (visible) {
-      setActiveTab(initialTab ?? 'openrouter');
+      const tab = initialTab ?? 'openrouter';
+      setActiveTab(tab);
+      if (tab === 'memory' || tab === 'context') {
+        setBackendExpanded(true);
+      }
     }
   }, [visible, initialTab]);
 
@@ -106,6 +112,9 @@ export function SettingsModal({
     }
     if (activeTab === 'memory') {
       return <MemorySettingsPanel activeChatId={activeChatId} />;
+    }
+    if (activeTab === 'context') {
+      return <ContextSettingsPanel />;
     }
     return null;
   };
@@ -186,18 +195,60 @@ export function SettingsModal({
               <Bot className="w-4 h-4" />
               System Prompt
             </button>
-            <button
-              onClick={() => setActiveTab('memory')}
+            <div
               className={cn(
-                'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
-                activeTab === 'memory'
-                  ? 'bg-violet-500/20 text-violet-300 border border-violet-500/30'
-                  : 'text-gray-400 hover:bg-gray-800/50 hover:text-gray-200',
+                'mt-2 overflow-hidden rounded-lg border transition-all',
+                backendExpanded
+                  ? 'border-violet-500/20 bg-violet-500/5'
+                  : 'border-gray-700/30 bg-gray-800/30',
               )}
             >
-              <Brain className="w-4 h-4" />
-              Memory
-            </button>
+              <button
+                onClick={() => setBackendExpanded(!backendExpanded)}
+                className={cn(
+                  'flex items-center gap-2 w-full text-left px-3 hover:bg-gray-800/30 transition-colors',
+                  backendExpanded ? 'py-2 rounded-t-lg' : 'py-1.5 rounded-lg',
+                )}
+              >
+                {backendExpanded ? (
+                  <ChevronDown className="w-3.5 h-3.5 text-gray-500 shrink-0" />
+                ) : (
+                  <ChevronRight className="w-3.5 h-3.5 text-gray-500 shrink-0" />
+                )}
+                <Server className="w-4 h-4 text-violet-400 shrink-0" />
+                <span className="text-xs font-medium text-gray-300 uppercase tracking-wider truncate">
+                  Backend
+                </span>
+              </button>
+              {backendExpanded && (
+                <div className="border-t border-gray-700/30 pb-1 pt-0.5">
+                  <button
+                    onClick={() => setActiveTab('memory')}
+                    className={cn(
+                      'w-full flex items-center gap-3 pl-6 pr-3 py-2 text-sm transition-colors',
+                      activeTab === 'memory'
+                        ? 'bg-violet-500/20 text-violet-300 border-l-2 border-l-violet-500/50'
+                        : 'text-gray-400 hover:bg-gray-800/50 hover:text-gray-200 border-l-2 border-l-transparent',
+                    )}
+                  >
+                    <Brain className="w-4 h-4 shrink-0" />
+                    Memory
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('context')}
+                    className={cn(
+                      'w-full flex items-center gap-3 pl-6 pr-3 py-2 text-sm transition-colors',
+                      activeTab === 'context'
+                        ? 'bg-violet-500/20 text-violet-300 border-l-2 border-l-violet-500/50'
+                        : 'text-gray-400 hover:bg-gray-800/50 hover:text-gray-200 border-l-2 border-l-transparent',
+                    )}
+                  >
+                    <Layers className="w-4 h-4 shrink-0" />
+                    Context
+                  </button>
+                </div>
+              )}
+            </div>
           </nav>
         </aside>
 

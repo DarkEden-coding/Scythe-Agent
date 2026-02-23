@@ -3,29 +3,51 @@ import { Check, Loader2 } from 'lucide-react';
 import { api } from '@/api/client';
 import { cn } from '@/utils/cn';
 
-const DEFAULT_OVERFLOW_THRESHOLD = 0.95;
-const MIN = 0.01;
-const MAX = 1;
-const STEP = 0.01;
+const DEFAULT_SPILL_THRESHOLD = 2000;
+const DEFAULT_PREVIEW_TOKENS = 500;
+const MIN_SPILL = 100;
+const MAX_SPILL = 50000;
+const MIN_PREVIEW = 50;
+const MAX_PREVIEW = 5000;
+
+function parseSpill(s: string): number | null {
+  const n = parseInt(s, 10);
+  if (Number.isNaN(n) || n < MIN_SPILL || n > MAX_SPILL) return null;
+  return n;
+}
+
+function parsePreview(s: string): number | null {
+  const n = parseInt(s, 10);
+  if (Number.isNaN(n) || n < MIN_PREVIEW || n > MAX_PREVIEW) return null;
+  return n;
+}
 
 export function ContextSettingsPanel() {
-  const [overflowThreshold, setOverflowThreshold] = useState(DEFAULT_OVERFLOW_THRESHOLD);
+  const [spillInput, setSpillInput] = useState(String(DEFAULT_SPILL_THRESHOLD));
+  const [previewInput, setPreviewInput] = useState(String(DEFAULT_PREVIEW_TOKENS));
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
-  const [original, setOriginal] = useState(DEFAULT_OVERFLOW_THRESHOLD);
+  const [originalSpill, setOriginalSpill] = useState(DEFAULT_SPILL_THRESHOLD);
+  const [originalPreview, setOriginalPreview] = useState(DEFAULT_PREVIEW_TOKENS);
 
   const fetchSettings = useCallback(async () => {
     setLoading(true);
     const res = await api.getMemorySettings();
     if (res.ok) {
-      const val =
-        typeof res.data.overflow_threshold === 'number'
-          ? Math.max(MIN, Math.min(MAX, res.data.overflow_threshold))
-          : DEFAULT_OVERFLOW_THRESHOLD;
-      setOverflowThreshold(val);
-      setOriginal(val);
+      const spill =
+        typeof res.data.tool_output_token_threshold === 'number'
+          ? Math.max(MIN_SPILL, Math.min(MAX_SPILL, res.data.tool_output_token_threshold))
+          : DEFAULT_SPILL_THRESHOLD;
+      const preview =
+        typeof res.data.tool_output_preview_tokens === 'number'
+          ? Math.max(MIN_PREVIEW, Math.min(MAX_PREVIEW, res.data.tool_output_preview_tokens))
+          : DEFAULT_PREVIEW_TOKENS;
+      setSpillInput(String(spill));
+      setPreviewInput(String(preview));
+      setOriginalSpill(spill);
+      setOriginalPreview(preview);
     }
     setLoading(false);
   }, []);
@@ -36,15 +58,40 @@ export function ContextSettingsPanel() {
 
   const handleSave = async () => {
     setSaveError(null);
+    const spill = parseSpill(spillInput);
+    const preview = parsePreview(previewInput);
+    if (spill === null) {
+      setSaveError(
+        `Spill threshold must be a number between ${MIN_SPILL} and ${MAX_SPILL}`,
+      );
+      return;
+    }
+    if (preview === null) {
+      setSaveError(
+        `Preview tokens must be a number between ${MIN_PREVIEW} and ${MAX_PREVIEW}`,
+      );
+      return;
+    }
     setSaveSuccess(false);
     setSaving(true);
-    const res = await api.setMemorySettings({ overflowThreshold: overflowThreshold });
+    const res = await api.setMemorySettings({
+      toolOutputTokenThreshold: spill,
+      toolOutputPreviewTokens: preview,
+    });
     setSaving(false);
     if (res.ok) {
-      const val =
-        typeof res.data.overflow_threshold === 'number' ? res.data.overflow_threshold : overflowThreshold;
-      setOverflowThreshold(val);
-      setOriginal(val);
+      const savedSpill =
+        typeof res.data.tool_output_token_threshold === 'number'
+          ? res.data.tool_output_token_threshold
+          : spill;
+      const savedPreview =
+        typeof res.data.tool_output_preview_tokens === 'number'
+          ? res.data.tool_output_preview_tokens
+          : preview;
+      setSpillInput(String(savedSpill));
+      setPreviewInput(String(savedPreview));
+      setOriginalSpill(savedSpill);
+      setOriginalPreview(savedPreview);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
     } else {
@@ -52,94 +99,65 @@ export function ContextSettingsPanel() {
     }
   };
 
-  const hasChanges = Math.abs(overflowThreshold - original) > 0.001;
-  const pct = Math.round(overflowThreshold * 100);
+  const spill = parseSpill(spillInput);
+  const preview = parsePreview(previewInput);
+  const hasChanges =
+    (spill !== null && spill !== originalSpill) ||
+    (preview !== null && preview !== originalPreview);
+  const canSave = hasChanges && spill !== null && preview !== null;
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex-1 overflow-y-auto px-6 py-6 space-y-4">
+      <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
         <p className="text-sm text-gray-400">
-          When the context fills past this fraction of the model's limit, older messages are
-          summarized to reclaim space. Higher values delay compaction until the context is fuller.
+          Configure when large tool outputs are saved to temp files and how much
+          preview content is shown to the agent.
         </p>
 
-        <label htmlFor="overflow-threshold" className="block text-sm font-medium text-gray-300">
-          Overflow threshold
-        </label>
-        <div className="flex items-center gap-4">
-          <input
-            id="overflow-threshold"
-            type="range"
-            min={MIN}
-            max={MAX}
-            step={STEP}
-            value={overflowThreshold}
-            onChange={(e) => setOverflowThreshold(parseFloat(e.target.value))}
-            disabled={loading}
-            className="w-full max-w-[200px] px-3 py-2 bg-gray-900/50 border border-gray-700/50 rounded-lg text-gray-200"
-          />
-          <span className="w-12 text-sm font-mono text-gray-200">{pct}%</span>
-        </div>
-
         <div className="space-y-2">
-          <label htmlFor="overflow-threshold" className="block text-sm font-medium text-gray-300">
-            Overflow token threshold
-          </label>
-          <div className="flex items-center gap-4">
-            <input
-              id="overflow-threshold"
-              type="range"
-              min={0.01}
-              max={1}
-              step={0.01}
-              value={overflowThreshold}
-              onChange={(e) => setOverflowThreshold(Number.parseFloat(e.target.value))}
-              disabled={loading}
-              className="flex-1 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-violet-500"
-            />
-            <span className="w-12 text-sm font-mono text-gray-200">{pct}%</span>
-          </div>
-          <p className="text-xs text-gray-500">
-            When context fills past this fraction of the model limit, older messages are summarized.
-          </p>
-        </div>
-
-        <div className="space-y-2">
-          <label htmlFor="spill-threshold" className="block text-sm font-medium text-gray-300">
+          <label
+            htmlFor="spill-threshold"
+            className="block text-sm font-medium text-gray-300"
+          >
             Tool output spill threshold (tokens)
           </label>
           <input
             id="spill-threshold"
-            type="number"
-            min={1}
-            value={spillThreshold}
-            onChange={(e) => setSpillThreshold(parseInt(e.target.value, 10) || 10000)}
+            type="text"
+            inputMode="numeric"
+            value={spillInput}
+            onChange={(e) => setSpillInput(e.target.value)}
             disabled={loading}
-            className="flex-1 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-violet-500"
+            placeholder={`${MIN_SPILL}–${MAX_SPILL}`}
+            className="w-full max-w-[200px] px-3 py-2 bg-gray-900/50 border border-gray-700/50 rounded-lg text-gray-200"
           />
           <p className="text-xs text-gray-500">
-            When tool output exceeds this many tokens, it is saved to a file and a preview is shown.
+            When tool output exceeds this many tokens, it is saved to a file and
+            a preview is shown. The agent can read the full output via read_file
+            if needed.
           </p>
         </div>
-        <p className="text-xs text-gray-500">
-          {pct}% of context limit triggers summarization (e.g. 95% of 128k ≈ 122k tokens)
-        </p>
 
         <div className="space-y-2">
-          <label htmlFor="preview-tokens" className="block text-sm font-medium text-gray-300">
+          <label
+            htmlFor="preview-tokens"
+            className="block text-sm font-medium text-gray-300"
+          >
             Tool output preview (tokens)
           </label>
           <input
             id="preview-tokens"
-            type="number"
-            min={1}
-            value={previewTokens}
-            onChange={(e) => setPreviewTokens(parseInt(e.target.value, 10) || 1000)}
+            type="text"
+            inputMode="numeric"
+            value={previewInput}
+            onChange={(e) => setPreviewInput(e.target.value)}
             disabled={loading}
+            placeholder={`${MIN_PREVIEW}–${MAX_PREVIEW}`}
             className="w-full max-w-[200px] px-3 py-2 bg-gray-900/50 border border-gray-700/50 rounded-lg text-gray-200"
           />
           <p className="text-xs text-gray-500">
-            Tokens shown (first + last half) when tool output is spilled.
+            Tokens shown (first + last) when tool output is spilled. Higher
+            values give more context but use more budget.
           </p>
         </div>
 
@@ -159,11 +177,11 @@ export function ContextSettingsPanel() {
         <div className="flex gap-3">
           <button
             onClick={handleSave}
-            disabled={saving || loading || !hasChanges}
+            disabled={saving || loading || !canSave}
             className={cn(
               'flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg font-medium transition-colors',
               'bg-violet-500 hover:bg-violet-600 text-white',
-              (saving || loading || !hasChanges) && 'opacity-50 cursor-not-allowed',
+              (saving || loading || !canSave) && 'opacity-50 cursor-not-allowed',
             )}
           >
             {saving ? (

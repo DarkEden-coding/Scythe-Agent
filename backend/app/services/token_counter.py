@@ -31,6 +31,36 @@ def count_text_tokens(text: str, model: str | None = None) -> int:
         return max(1, len(text) // 4)
 
 
+def extract_preview_by_tokens(
+    text: str, preview_tokens: int, *, model: str | None = None
+) -> str:
+    """
+    Return first N + last N tokens of text as a preview string.
+
+    When tiktoken is unavailable, falls back to approximate char-based slicing.
+    """
+    if not text or preview_tokens <= 0:
+        return text
+    try:
+        import tiktoken
+        enc_name = _encoding_for_model(model or "")
+        enc = tiktoken.get_encoding(enc_name)
+        token_ids = enc.encode(text)
+        total = len(token_ids)
+        if total <= preview_tokens * 2:
+            return text
+        first_ids = token_ids[:preview_tokens]
+        last_ids = token_ids[-preview_tokens:]
+        first_text = enc.decode(first_ids)
+        last_text = enc.decode(last_ids)
+        return f"{first_text}\n\n... [truncated; {total} tokens total] ...\n\n{last_text}"
+    except Exception:
+        approx_chars = preview_tokens * 4
+        if len(text) <= approx_chars * 2:
+            return text
+        return f"{text[:approx_chars]}\n\n... [truncated] ...\n\n{text[-approx_chars:]}"
+
+
 def _encoding_for_model(model: str) -> str:
     """Resolve tiktoken encoding name for a model id."""
     for pattern, encoding in _ENCODING_MAP:

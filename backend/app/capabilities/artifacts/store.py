@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from app.services.output_spillover import (
-    PREVIEW_LINES,
+    PREVIEW_TOKENS,
     TOOL_OUTPUT_TOKEN_THRESHOLD,
     spill_tool_output,
 )
@@ -20,8 +20,8 @@ logger = logging.getLogger(__name__)
 class ArtifactRecord:
     artifact_type: str
     file_path: str
-    line_count: int | None = None
-    preview_lines: int | None = None
+    total_tokens: int | None = None
+    preview_tokens: int | None = None
 
 
 class ArtifactStore:
@@ -38,12 +38,17 @@ class ArtifactStore:
         *,
         project_id: str,
         model: str | None = None,
+        max_tokens: int | None = None,
+        preview_tokens: int | None = None,
     ) -> tuple[str, list[ArtifactRecord]]:
         """Return output preview and persisted artifacts when over token threshold."""
-        preview, file_path, total_lines = spill_tool_output(
+        tokens = max_tokens if max_tokens is not None else self._token_threshold
+        prev = preview_tokens if preview_tokens is not None else PREVIEW_TOKENS
+        preview, file_path, total_tokens = spill_tool_output(
             output,
             project_id,
-            max_tokens=self._token_threshold,
+            max_tokens=tokens,
+            preview_tokens=prev,
             model=model,
         )
         if file_path is None:
@@ -52,8 +57,8 @@ class ArtifactStore:
             ArtifactRecord(
                 artifact_type="tool_output",
                 file_path=file_path,
-                line_count=total_lines,
-                preview_lines=PREVIEW_LINES,
+                total_tokens=total_tokens,
+                preview_tokens=prev,
             )
         ]
         return preview, artifacts

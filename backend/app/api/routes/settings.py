@@ -403,6 +403,8 @@ def set_memory_settings(request: SetMemorySettingsRequest, db: Session = Depends
             buffer_tokens=request.bufferTokens,
             reflector_threshold=request.reflectorThreshold,
             show_observations_in_chat=request.showObservationsInChat,
+            tool_output_token_threshold=request.toolOutputTokenThreshold,
+            tool_output_preview_tokens=request.toolOutputPreviewTokens,
             updated_at=utc_now_iso(),
         )
         repo.commit()

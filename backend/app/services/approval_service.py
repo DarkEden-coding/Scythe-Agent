@@ -99,9 +99,12 @@ class ApprovalService:
             output_to_store = result.output
             created_artifacts: list[dict] = []
             if chat:
+                mem = self.settings_repo.get_memory_settings()
                 preview, artifacts = self.artifact_store.materialize_tool_output(
                     result.output,
                     project_id=chat.project_id,
+                    max_tokens=mem.get("tool_output_token_threshold"),
+                    preview_tokens=mem.get("tool_output_preview_tokens"),
                 )
                 output_to_store = preview
                 for artifact in artifacts:
@@ -112,16 +115,16 @@ class ApprovalService:
                         project_id=chat.project_id,
                         artifact_type=artifact.artifact_type,
                         file_path=artifact.file_path,
-                        line_count=artifact.line_count,
-                        preview_lines=artifact.preview_lines,
+                        line_count=artifact.total_tokens,
+                        preview_lines=artifact.preview_tokens,
                         created_at=utc_now_iso(),
                     )
                     created_artifacts.append(
                         {
                             "type": artifact.artifact_type,
                             "path": artifact.file_path,
-                            "lineCount": artifact.line_count,
-                            "previewLines": artifact.preview_lines,
+                            "lineCount": artifact.total_tokens,
+                            "previewLines": artifact.preview_tokens,
                         }
                     )
 

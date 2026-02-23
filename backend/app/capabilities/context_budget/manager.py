@@ -90,8 +90,11 @@ class ContextBudgetManager:
         messages: list[dict],
         project_id: str,
         model: str,
+        *,
+        max_tokens: int,
+        preview_tokens: int,
     ) -> list[dict]:
-        """Spill oversized tool outputs to temp files; replace with first+last 50 lines."""
+        """Spill oversized tool outputs to temp files; replace with preview."""
         out: list[dict] = []
         for msg in messages:
             if msg.get("role") == "tool" and isinstance(msg.get("content"), str):
@@ -100,6 +103,8 @@ class ContextBudgetManager:
                     content,
                     project_id,
                     model=model,
+                    max_tokens=max_tokens,
+                    preview_tokens=preview_tokens,
                 )
                 if preview != content:
                     msg = {**msg, "content": preview}
@@ -175,7 +180,14 @@ class ContextBudgetManager:
         messages = apply_initial_information(messages, project_path=project_path)
         chat = self._chat_repo.get_chat(chat_id)
         project_id = chat.project_id if chat else ""
-        messages = self._apply_tool_output_spillover(messages, project_id, model)
+        mem = self._settings_repo.get_memory_settings()
+        messages = self._apply_tool_output_spillover(
+            messages,
+            project_id,
+            model,
+            max_tokens=mem.get("tool_output_token_threshold", 2000),
+            preview_tokens=mem.get("tool_output_preview_tokens", 500),
+        )
 
         strategy = get_memory_strategy(mem_cfg.mode)
         mem_result = await strategy.build_context(

@@ -29,3 +29,5 @@ class Settings(Base):
     buffer_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True, default=6000)
     reflector_threshold: Mapped[int | None] = mapped_column(Integer, nullable=True, default=8000)
     show_observations_in_chat: Mapped[int | None] = mapped_column(Integer, nullable=True, default=0)
+    tool_output_token_threshold: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    tool_output_preview_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)

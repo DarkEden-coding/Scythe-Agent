@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from app.services.output_spillover import (
+    PREVIEW_TOKENS,
     TOOL_OUTPUT_TOKEN_THRESHOLD,
     preview_tool_output_if_over_threshold,
 )
@@ -98,6 +99,7 @@ def build_context_items(
             output_text,
             token_counter.count(output_text),
             max_tokens=TOOL_OUTPUT_TOKEN_THRESHOLD,
+            preview_tokens=PREVIEW_TOKENS,
         )
         payload = f"{tc.name}({tc.input_json})"
         if output_text:

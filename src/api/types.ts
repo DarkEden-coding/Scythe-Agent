@@ -473,6 +473,8 @@ export interface MemorySettings {
   buffer_tokens: number;
   reflector_threshold: number;
   show_observations_in_chat: boolean;
+  tool_output_token_threshold?: number;
+  tool_output_preview_tokens?: number;
 }
 
 export interface SetMemorySettingsRequest {
@@ -483,6 +485,8 @@ export interface SetMemorySettingsRequest {
   bufferTokens?: number;
   reflectorThreshold?: number;
   showObservationsInChat?: boolean;
+  toolOutputTokenThreshold?: number;
+  toolOutputPreviewTokens?: number;
 }
 
 export interface ChatObservationSnapshot {

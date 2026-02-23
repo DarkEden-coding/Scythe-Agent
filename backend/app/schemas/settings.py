@@ -132,3 +132,5 @@ class SetMemorySettingsRequest(BaseModel):
     bufferTokens: int | None = None
     reflectorThreshold: int | None = None
     showObservationsInChat: bool | None = None
+    toolOutputTokenThreshold: int | None = None
+    toolOutputPreviewTokens: int | None = None

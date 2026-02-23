@@ -172,6 +172,8 @@ class SettingsRepository(BaseRepository):
                 "buffer_tokens": 6000,
                 "reflector_threshold": 8000,
                 "show_observations_in_chat": False,
+                "tool_output_token_threshold": 2000,
+                "tool_output_preview_tokens": 500,
             }
         observer_threshold = s.observer_threshold if s.observer_threshold is not None else 30000
         buffer_tokens = (
@@ -187,6 +189,8 @@ class SettingsRepository(BaseRepository):
             "buffer_tokens": buffer_tokens,
             "reflector_threshold": s.reflector_threshold if s.reflector_threshold is not None else 8000,
             "show_observations_in_chat": bool(s.show_observations_in_chat),
+            "tool_output_token_threshold": s.tool_output_token_threshold if s.tool_output_token_threshold is not None else 2000,
+            "tool_output_preview_tokens": s.tool_output_preview_tokens if s.tool_output_preview_tokens is not None else 500,
         }
 
     def set_memory_settings(
@@ -199,6 +203,8 @@ class SettingsRepository(BaseRepository):
         buffer_tokens: int | None = None,
         reflector_threshold: int | None = None,
         show_observations_in_chat: bool | None = None,
+        tool_output_token_threshold: int | None = None,
+        tool_output_preview_tokens: int | None = None,
         updated_at: str,
     ) -> None:
         s = self.get_settings()
@@ -220,6 +226,10 @@ class SettingsRepository(BaseRepository):
             s.reflector_threshold = reflector_threshold
         if show_observations_in_chat is not None:
             s.show_observations_in_chat = 1 if show_observations_in_chat else 0
+        if tool_output_token_threshold is not None:
+            s.tool_output_token_threshold = max(1, tool_output_token_threshold)
+        if tool_output_preview_tokens is not None:
+            s.tool_output_preview_tokens = max(1, tool_output_preview_tokens)
         s.updated_at = updated_at
 
     def list_auto_approve_rules(self) -> list[AutoApproveRule]:

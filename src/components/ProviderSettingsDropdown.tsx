@@ -1,10 +1,10 @@
 import { useState, useRef, useEffect } from 'react';
-import { Settings, ChevronDown, Key, Bot, Plug, Brain } from 'lucide-react';
+import { Settings, ChevronDown, Key, Bot, Plug, Server } from 'lucide-react';
 import { cn } from '../utils/cn';
 
 export type ProviderId = 'openrouter' | 'groq' | 'openai-sub';
 
-export type SettingsTabId = ProviderId | 'agent' | 'mcp' | 'memory';
+export type SettingsTabId = ProviderId | 'agent' | 'mcp' | 'memory' | 'context';
 
 interface DropdownOption {
   id: SettingsTabId;
@@ -16,7 +16,7 @@ const DROPDOWN_OPTIONS: DropdownOption[] = [
   { id: 'openrouter', label: 'Providers', icon: <Key className="w-4 h-4 text-cyan-400" /> },
   { id: 'mcp', label: 'MCP', icon: <Plug className="w-4 h-4 text-cyan-400" /> },
   { id: 'agent', label: 'System Prompt', icon: <Bot className="w-4 h-4 text-cyan-400" /> },
-  { id: 'memory', label: 'Memory', icon: <Brain className="w-4 h-4 text-violet-400" /> },
+  { id: 'memory', label: 'Backend', icon: <Server className="w-4 h-4 text-violet-400" /> },
 ];
 
 interface ProviderSettingsDropdownProps {
