@@ -1,3 +1,5 @@
+"""Sub-agent run model: one row per spawn_sub_agent tool invocation."""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -9,25 +11,23 @@ from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.db.models.chat import Chat
-    from app.db.models.sub_agent_run import SubAgentRun
+    from app.db.models.tool_call import ToolCall
 
 
-class ToolCall(Base):
-    __tablename__ = "tool_calls"
+class SubAgentRun(Base):
+    """Represents a single sub-agent execution spawned by spawn_sub_agent."""
+
+    __tablename__ = "sub_agent_runs"
 
     id: Mapped[str] = mapped_column(Text, primary_key=True)
     chat_id: Mapped[str] = mapped_column(ForeignKey("chats.id", ondelete="CASCADE"), nullable=False)
-    checkpoint_id: Mapped[str | None] = mapped_column(ForeignKey("checkpoints.id", ondelete="SET NULL"), nullable=True)
-    name: Mapped[str] = mapped_column(Text, nullable=False)
+    tool_call_id: Mapped[str] = mapped_column(ForeignKey("tool_calls.id", ondelete="CASCADE"), nullable=False)
+    task: Mapped[str] = mapped_column(Text, nullable=False)
+    model: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(Text, nullable=False)
-    input_json: Mapped[str] = mapped_column(Text, nullable=False)
     output_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     timestamp: Mapped[str] = mapped_column(Text, nullable=False)
     duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    parallel: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    parallel_group: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    chat: Mapped["Chat"] = relationship(back_populates="tool_calls")
-    sub_agent_run: Mapped["SubAgentRun | None"] = relationship(
-        back_populates="tool_call", uselist=False
-    )
+    chat: Mapped["Chat"] = relationship(back_populates="sub_agent_runs")
+    tool_call: Mapped["ToolCall"] = relationship(back_populates="sub_agent_run")

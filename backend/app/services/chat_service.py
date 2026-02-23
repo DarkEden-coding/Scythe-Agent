@@ -112,25 +112,61 @@ class ChatService:
         # Cancel any in-flight observation cycle for this chat.
         get_om_background_runner().cancel(chat_id)
 
+        cancelled_task = False
         existing_task = self.task_manager.pop(chat_id)
-        if existing_task is None or existing_task.done():
-            return False
-        for tc in self.repo.list_tool_calls(chat_id):
-            if tc.status == "pending":
-                try:
-                    await ApprovalService(self.repo.db).reject(
-                        chat_id=chat_id,
-                        tool_call_id=tc.id,
-                        reason=reject_reason,
-                    )
-                except ValueError:
-                    pass
-        existing_task.cancel()
-        try:
-            await existing_task
-        except (asyncio.CancelledError, Exception):
-            pass
-        return True
+        if existing_task is not None and not existing_task.done():
+            for tc in self.repo.list_tool_calls(chat_id):
+                if tc.status == "pending":
+                    try:
+                        await ApprovalService(self.repo.db).reject(
+                            chat_id=chat_id,
+                            tool_call_id=tc.id,
+                            reason=reject_reason,
+                        )
+                    except ValueError:
+                        pass
+            existing_task.cancel()
+            try:
+                await existing_task
+            except (asyncio.CancelledError, Exception):
+                pass
+            cancelled_task = True
+
+        await self._cancel_running_sub_agents(chat_id)
+        return cancelled_task
+
+    async def _cancel_running_sub_agents(self, chat_id: str) -> None:
+        """Mark any lingering in-progress sub-agent runs as cancelled and publish end events."""
+        changed = []
+        for run in self.repo.list_sub_agent_runs(chat_id):
+            if run.status not in {"pending", "running"}:
+                continue
+            output_text = run.output_text or "Sub-agent cancelled."
+            self.repo.set_sub_agent_run_status(
+                run,
+                status="cancelled",
+                output_text=output_text,
+            )
+            changed.append((run.id, run.tool_call_id, output_text, run.duration_ms))
+
+        if not changed:
+            return
+        self.repo.commit()
+
+        for sub_agent_id, tool_call_id, output_text, duration_ms in changed:
+            await self.event_bus.publish(
+                chat_id,
+                {
+                    "type": "sub_agent_end",
+                    "payload": {
+                        "subAgentId": sub_agent_id,
+                        "toolCallId": tool_call_id,
+                        "status": "cancelled",
+                        "output": output_text,
+                        "duration": duration_ms or 0,
+                    },
+                },
+            )
 
     async def cancel_agent(self, chat_id: str) -> bool:
         """Cancel the running agent for this chat. Returns True if a task was cancelled."""

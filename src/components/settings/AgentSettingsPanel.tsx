@@ -8,15 +8,28 @@ interface AgentSettingsPanelProps {
 }
 
 export function AgentSettingsPanel({ footer }: AgentSettingsPanelProps) {
-  const { systemPrompt, setSystemPrompt, loading: settingsLoading } = useSettings();
+  const {
+    systemPrompt,
+    setSystemPrompt,
+    maxParallelSubAgents,
+    subAgentMaxIterations,
+    setSubAgentSettings,
+    loading: settingsLoading,
+  } = useSettings();
   const [value, setValue] = useState(systemPrompt);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [maxParallel, setMaxParallel] = useState(maxParallelSubAgents);
+  const [maxIterations, setMaxIterations] = useState(subAgentMaxIterations);
 
   useEffect(() => {
     setValue(systemPrompt);
   }, [systemPrompt]);
+  useEffect(() => {
+    setMaxParallel(maxParallelSubAgents);
+    setMaxIterations(subAgentMaxIterations);
+  }, [maxParallelSubAgents, subAgentMaxIterations]);
 
   const handleSave = async () => {
     setSaveError(null);
@@ -34,9 +47,72 @@ export function AgentSettingsPanel({ footer }: AgentSettingsPanelProps) {
 
   const hasChanges = value !== systemPrompt;
 
+  const handleSubAgentSettingsSave = async () => {
+    const res = await setSubAgentSettings({
+      maxParallelSubAgents: maxParallel,
+      subAgentMaxIterations: maxIterations,
+    });
+    if (res.ok) {
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
+    } else {
+      setSaveError(res.error ?? 'Failed to save sub-agent settings');
+    }
+  };
+
   return (
     <div className="flex flex-col h-full">
       <div className="flex-1 overflow-y-auto px-6 py-6 space-y-4">
+        <div className="space-y-2">
+          <h3 className="text-sm font-medium text-gray-300">Sub-Agent Settings</h3>
+          <p className="text-xs text-gray-500">
+            Max parallel sub-agents and iteration limit for spawn_sub_agent tool.
+          </p>
+          <div className="flex gap-4">
+            <div>
+              <label htmlFor="max-parallel-sub" className="block text-xs text-gray-400">
+                Max parallel sub-agents
+              </label>
+              <input
+                id="max-parallel-sub"
+                type="number"
+                min={1}
+                max={16}
+                value={maxParallel}
+                onChange={(e) => setMaxParallel(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                className={cn(
+                  'mt-1 w-20 px-2 py-1.5 bg-gray-900/50 border border-gray-700/50 rounded text-sm text-gray-200',
+                )}
+              />
+            </div>
+            <div>
+              <label htmlFor="sub-agent-iterations" className="block text-xs text-gray-400">
+                Sub-agent max iterations
+              </label>
+              <input
+                id="sub-agent-iterations"
+                type="number"
+                min={1}
+                max={100}
+                value={maxIterations}
+                onChange={(e) => setMaxIterations(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                className={cn(
+                  'mt-1 w-20 px-2 py-1.5 bg-gray-900/50 border border-gray-700/50 rounded text-sm text-gray-200',
+                )}
+              />
+            </div>
+            <button
+              type="button"
+              onClick={handleSubAgentSettingsSave}
+              className="self-end px-3 py-1.5 text-xs rounded border border-gray-600 text-gray-300 hover:bg-gray-700/50"
+            >
+              Save
+            </button>
+          </div>
+        </div>
+
+        <hr className="border-gray-700/50" />
+
         <p className="text-sm text-gray-400">
           Customize the system prompt sent to the model at the start of each conversation.
         </p>

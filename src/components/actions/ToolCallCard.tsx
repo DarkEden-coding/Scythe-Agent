@@ -7,6 +7,7 @@ import {
   Trash2,
   Plus,
   Terminal,
+  Cpu,
   ChevronDown,
   ChevronRight,
   Clock,
@@ -25,6 +26,7 @@ function safeStr(v: unknown): string {
 }
 
 export const toolIcons: Record<string, React.ReactNode> = {
+  spawn_sub_agent: <Cpu className="w-3.5 h-3.5" />,
   read_file: <FileCode className="w-3.5 h-3.5" />,
   create_file: <Plus className="w-3.5 h-3.5" />,
   edit_file: <Pencil className="w-3.5 h-3.5" />,

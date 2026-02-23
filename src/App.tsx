@@ -430,6 +430,7 @@ export function App() {
         rightPanel={
           <ActionsPanel
             toolCalls={chat.toolCalls}
+            subAgentRuns={chat.subAgentRuns}
             fileEdits={chat.fileEdits}
             checkpoints={chat.checkpoints}
             reasoningBlocks={chat.reasoningBlocks}
@@ -462,12 +463,15 @@ export function App() {
         currentModel={settings.currentModel}
         currentModelProvider={settings.currentModelProvider}
         currentModelKey={settings.currentModelKey}
+        subAgentModel={settings.subAgentModel}
+        subAgentModelKey={settings.subAgentModelKey}
         reasoningLevel={settings.reasoningLevel}
         setReasoningLevel={settings.setReasoningLevel}
         modelsByProvider={settings.modelsByProvider}
         modelMetadataByKey={settings.modelMetadataByKey}
         loading={settings.loading}
         changeModel={settings.changeModel}
+        changeSubAgentModel={settings.changeSubAgentModel}
       />
       <SettingsModal
         visible={settingsTab != null}

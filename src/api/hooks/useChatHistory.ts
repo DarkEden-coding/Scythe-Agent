@@ -11,6 +11,7 @@ import {
   normalizeFileEdit,
   normalizeCheckpoint,
   normalizeReasoningBlock,
+  normalizeSubAgentRun,
   normalizeTodo,
   upsertById,
   uniqueById,
@@ -18,6 +19,7 @@ import {
 } from '@/api/normalizers';
 import type {
   Message,
+  SubAgentRun,
   ToolCall,
   FileEdit,
   Checkpoint,
@@ -226,6 +228,57 @@ function toObservationTimeline(memory: ChatMemoryStateResponse): ObservationData
   });
 }
 
+function reconcileSubAgentRunsWithToolCalls(
+  runs: SubAgentRun[],
+  toolCalls: ToolCall[],
+): SubAgentRun[] {
+  if (runs.length === 0 || toolCalls.length === 0) return runs;
+
+  const toolCallById = new Map(toolCalls.map((toolCall) => [toolCall.id, toolCall]));
+  const reconciled: SubAgentRun[] = [];
+
+  for (const run of runs) {
+    const parentToolCall = toolCallById.get(run.toolCallId);
+    if (!parentToolCall || parentToolCall.name !== 'spawn_sub_agent') {
+      reconciled.push(run);
+      continue;
+    }
+
+    const isInFlight = run.status === 'pending' || run.status === 'running';
+    if (!isInFlight) {
+      reconciled.push(run);
+      continue;
+    }
+
+    if (parentToolCall.status === 'error') {
+      const hasActivity = run.toolCalls.length > 0 || Boolean(run.output?.trim());
+      if (!hasActivity) {
+        // Spawn failed before the sub-agent produced any events; hide this empty run.
+        continue;
+      }
+      reconciled.push({
+        ...run,
+        status: 'error',
+        output: run.output ?? parentToolCall.output,
+      });
+      continue;
+    }
+
+    if (parentToolCall.status === 'completed') {
+      reconciled.push({
+        ...run,
+        status: 'completed',
+        output: run.output ?? parentToolCall.output,
+      });
+      continue;
+    }
+
+    reconciled.push(run);
+  }
+
+  return uniqueById(reconciled);
+}
+
 function applyObservationalContextOverlay(
   contextItems: ContextItem[],
   memory: ChatMemoryStateResponse | null,
@@ -333,6 +386,7 @@ function applyObservationalContextOverlay(
 export function useChatHistory(chatId: string | null | undefined, client: ApiClient = defaultApi) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [toolCalls, setToolCalls] = useState<ToolCall[]>([]);
+  const [subAgentRuns, setSubAgentRuns] = useState<SubAgentRun[]>([]);
   const [fileEdits, setFileEdits] = useState<FileEdit[]>([]);
   const [checkpoints, setCheckpoints] = useState<Checkpoint[]>([]);
   const [reasoningBlocks, setReasoningBlocks] = useState<ReasoningBlock[]>([]);
@@ -402,6 +456,8 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
       setLoading(false);
       setMessages([]);
       setToolCalls([]);
+      toolCallsRef.current = [];
+      setSubAgentRuns([]);
       setFileEdits([]);
       setCheckpoints([]);
       setReasoningBlocks([]);
@@ -429,6 +485,8 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
     setLoading(true);
     setMessages([]);
     setToolCalls([]);
+    toolCallsRef.current = [];
+    setSubAgentRuns([]);
     setFileEdits([]);
     setCheckpoints([]);
     setReasoningBlocks([]);
@@ -451,6 +509,12 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
         setMessages(uniqueById(d.messages.map(normalizeMessage)));
         setToolCalls(normalizedToolCalls);
         toolCallsRef.current = normalizedToolCalls;
+        setSubAgentRuns(
+          reconcileSubAgentRunsWithToolCalls(
+            uniqueById((d.subAgentRuns ?? []).map(normalizeSubAgentRun)),
+            normalizedToolCalls,
+          ),
+        );
         setFileEdits(uniqueById(d.fileEdits.map(normalizeFileEdit)));
         setCheckpoints(uniqueById(d.checkpoints.map(normalizeCheckpoint)));
         setReasoningBlocks(uniqueById(d.reasoningBlocks.map(normalizeReasoningBlock)));
@@ -561,9 +625,16 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
       }
       const res = await client.approveCommand({ chatId, toolCallId });
       if (res.ok) {
-        setToolCalls((prev) =>
-          prev.map((tc) => (tc.id === toolCallId ? normalizeToolCall(res.data.toolCall) : tc)),
+        const nextToolCalls = toolCallsRef.current.map((toolCall) =>
+          toolCall.id === toolCallId ? normalizeToolCall(res.data.toolCall) : toolCall,
         );
+        toolCallsRef.current = nextToolCalls;
+        setToolCalls(nextToolCalls);
+        if (res.data.toolCall.name === 'spawn_sub_agent') {
+          setSubAgentRuns((prev) =>
+            reconcileSubAgentRunsWithToolCalls(prev, nextToolCalls),
+          );
+        }
         if (res.data.fileEdits.length) {
           setFileEdits((prev) =>
             uniqueById([...prev, ...res.data.fileEdits.map(normalizeFileEdit)]),
@@ -582,11 +653,17 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
       }
       const res = await client.rejectCommand({ chatId, toolCallId, reason });
       if (res.ok) {
-        setToolCalls((prev) =>
-          prev.map((tc) =>
-            tc.id === toolCallId ? { ...tc, status: 'error' as const } : tc,
-          ),
+        const nextToolCalls = toolCallsRef.current.map((toolCall) =>
+          toolCall.id === toolCallId ? { ...toolCall, status: 'error' as const } : toolCall,
         );
+        toolCallsRef.current = nextToolCalls;
+        setToolCalls(nextToolCalls);
+        const rejectedToolCall = nextToolCalls.find((toolCall) => toolCall.id === toolCallId);
+        if (rejectedToolCall?.name === 'spawn_sub_agent') {
+          setSubAgentRuns((prev) =>
+            reconcileSubAgentRunsWithToolCalls(prev, nextToolCalls),
+          );
+        }
       }
       return res;
     },
@@ -664,8 +741,16 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
       const res = await client.revertToCheckpoint({ chatId, checkpointId });
       if (res.ok) {
         resetTransientStreamState();
+        const normalizedToolCalls = uniqueById(res.data.toolCalls.map(normalizeToolCall));
         setMessages(uniqueById(res.data.messages.map(normalizeMessage)));
-        setToolCalls(uniqueById(res.data.toolCalls.map(normalizeToolCall)));
+        setToolCalls(normalizedToolCalls);
+        toolCallsRef.current = normalizedToolCalls;
+        setSubAgentRuns(
+          reconcileSubAgentRunsWithToolCalls(
+            uniqueById((res.data.subAgentRuns ?? []).map(normalizeSubAgentRun)),
+            normalizedToolCalls,
+          ),
+        );
         setFileEdits(uniqueById(res.data.fileEdits.map(normalizeFileEdit)));
         setCheckpoints(uniqueById(res.data.checkpoints.map(normalizeCheckpoint)));
         setReasoningBlocks(uniqueById(res.data.reasoningBlocks.map(normalizeReasoningBlock)));
@@ -736,8 +821,16 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
       if (res.ok) {
         resetTransientStreamState();
         const d = res.data.revertedHistory;
+        const normalizedToolCalls = uniqueById(d.toolCalls.map(normalizeToolCall));
         setMessages(uniqueById(d.messages.map(normalizeMessage)));
-        setToolCalls(uniqueById(d.toolCalls.map(normalizeToolCall)));
+        setToolCalls(normalizedToolCalls);
+        toolCallsRef.current = normalizedToolCalls;
+        setSubAgentRuns(
+          reconcileSubAgentRunsWithToolCalls(
+            uniqueById((d.subAgentRuns ?? []).map(normalizeSubAgentRun)),
+            normalizedToolCalls,
+          ),
+        );
         setFileEdits(uniqueById(d.fileEdits.map(normalizeFileEdit)));
         setCheckpoints(uniqueById(d.checkpoints.map(normalizeCheckpoint)));
         setReasoningBlocks(uniqueById(d.reasoningBlocks.map(normalizeReasoningBlock)));
@@ -877,8 +970,15 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
             approvalRequired: false,
           };
           const tcWithTs = normalizeToolCall(toolCall);
-          setToolCalls((prev) => updateById(prev, tcWithTs));
+          const nextToolCalls = updateById(toolCallsRef.current, tcWithTs);
+          toolCallsRef.current = nextToolCalls;
+          setToolCalls(nextToolCalls);
           if (event.type === 'tool_call_end') {
+            if (tcWithTs.name === 'spawn_sub_agent') {
+              setSubAgentRuns((prev) =>
+                reconcileSubAgentRunsWithToolCalls(prev, nextToolCalls),
+              );
+            }
             scheduleContextRefresh(event.chatId);
           }
           const cpId = (payload.toolCall as { checkpointId?: string })?.checkpointId;
@@ -917,7 +1017,9 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
             approvalRequired: payload.autoApproved ? false : (toolCall.approvalRequired ?? true),
             description: payload.description ?? toolCall.description,
           };
-          setToolCalls((prev) => updateById(prev, tcWithTs));
+          const nextToolCalls = updateById(toolCallsRef.current, tcWithTs);
+          toolCallsRef.current = nextToolCalls;
+          setToolCalls(nextToolCalls);
           const cpId = (payload.toolCall as { checkpointId?: string })?.checkpointId;
           if (cpId && tcWithTs.id) {
             setCheckpoints((prev) =>
@@ -1019,6 +1121,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
             revertedHistory: {
               messages: Message[];
               toolCalls: ToolCall[];
+              subAgentRuns?: SubAgentRun[];
               fileEdits: FileEdit[];
               checkpoints: Checkpoint[];
               reasoningBlocks: ReasoningBlock[];
@@ -1026,8 +1129,16 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
             };
           };
           resetTransientStreamState();
+          const normalizedToolCalls = uniqueById(payload.revertedHistory.toolCalls.map(normalizeToolCall));
           setMessages(uniqueById(payload.revertedHistory.messages.map(normalizeMessage)));
-          setToolCalls(uniqueById(payload.revertedHistory.toolCalls.map(normalizeToolCall)));
+          setToolCalls(normalizedToolCalls);
+          toolCallsRef.current = normalizedToolCalls;
+          setSubAgentRuns(
+            reconcileSubAgentRunsWithToolCalls(
+              uniqueById((payload.revertedHistory.subAgentRuns ?? []).map(normalizeSubAgentRun)),
+              normalizedToolCalls,
+            ),
+          );
           setFileEdits(uniqueById(payload.revertedHistory.fileEdits.map(normalizeFileEdit)));
           setCheckpoints(uniqueById(payload.revertedHistory.checkpoints.map(normalizeCheckpoint)));
           setReasoningBlocks(uniqueById(payload.revertedHistory.reasoningBlocks.map(normalizeReasoningBlock)));
@@ -1042,7 +1153,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
           break;
         }
         case 'todo_list_updated': {
-          const payload = event.payload as { todos: TodoItem[] };
+          const payload = event.payload as unknown as { todos: TodoItem[] };
           if (payload.todos) {
             setTodos(payload.todos.map(normalizeTodo));
           }
@@ -1077,6 +1188,86 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
           }
           break;
         }
+        case 'sub_agent_start': {
+          const payload = event.payload as unknown as {
+            subAgentId: string;
+            task: string;
+            model: string;
+            toolCallId: string;
+          };
+          const parentToolCall = toolCallsRef.current.find((toolCall) => toolCall.id === payload.toolCallId);
+          if (
+            parentToolCall?.name === 'spawn_sub_agent'
+            && (parentToolCall.status === 'error' || parentToolCall.status === 'completed')
+          ) {
+            break;
+          }
+          const run: SubAgentRun = {
+            id: payload.subAgentId,
+            task: payload.task,
+            model: payload.model,
+            status: 'running',
+            toolCalls: [],
+            timestamp: new Date(),
+            toolCallId: payload.toolCallId,
+          };
+          setSubAgentRuns((prev) => upsertById(prev, run));
+          break;
+        }
+        case 'sub_agent_progress': {
+          const payload = event.payload as unknown as { subAgentId: string };
+          setSubAgentRuns((prev) =>
+            prev.map((r) =>
+              r.id === payload.subAgentId ? { ...r, status: 'running' as const } : r,
+            ),
+          );
+          break;
+        }
+        case 'sub_agent_tool_call': {
+          const payload = event.payload as {
+            subAgentId: string;
+            toolCall: ToolCall & { duration?: number };
+          };
+          const tc = normalizeToolCall(payload.toolCall as ToolCall & { duration_ms?: number });
+          setSubAgentRuns((prev) =>
+            prev.map((r) =>
+              r.id === payload.subAgentId
+                ? {
+                    ...r,
+                    toolCalls: upsertById(r.toolCalls, tc),
+                  }
+                : r,
+            ),
+          );
+          break;
+        }
+        case 'sub_agent_end': {
+          const payload = event.payload as unknown as {
+            subAgentId: string;
+            status: string;
+            output: string;
+            duration: number;
+          };
+          const status = ['pending', 'running', 'completed', 'error', 'cancelled', 'max_iterations'].includes(
+            payload.status,
+          )
+            ? (payload.status as SubAgentRun['status'])
+            : ('error' as SubAgentRun['status']);
+          setSubAgentRuns((prev) =>
+            prev.map((r) =>
+              r.id === payload.subAgentId
+                ? {
+                    ...r,
+                    status,
+                    output: payload.output,
+                    duration: payload.duration,
+                  }
+                : r,
+            ),
+          );
+          scheduleContextRefresh(event.chatId, true);
+          break;
+        }
         case 'agent_done': {
           setPersistentError(null);
           scheduleContextRefresh(event.chatId, true);
@@ -1085,13 +1276,19 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
         case 'error': {
           const payload = event.payload as AgentErrorPayload;
           if (payload.toolCallId) {
-            setToolCalls((prev) =>
-              prev.map((tc) =>
-                tc.id === payload.toolCallId
-                  ? { ...tc, status: 'error' as const, output: payload.message ?? tc.output }
-                  : tc,
-              ),
+            const nextToolCalls = toolCallsRef.current.map((toolCall) =>
+              toolCall.id === payload.toolCallId
+                ? { ...toolCall, status: 'error' as const, output: payload.message ?? toolCall.output }
+                : toolCall,
             );
+            toolCallsRef.current = nextToolCalls;
+            setToolCalls(nextToolCalls);
+            const erroredToolCall = nextToolCalls.find((toolCall) => toolCall.id === payload.toolCallId);
+            if (erroredToolCall?.name === 'spawn_sub_agent') {
+              setSubAgentRuns((prev) =>
+                reconcileSubAgentRunsWithToolCalls(prev, nextToolCalls),
+              );
+            }
           } else {
             setPersistentError({
               message: payload.message ?? 'An error occurred.',
@@ -1115,6 +1312,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
   return {
     messages,
     toolCalls,
+    subAgentRuns,
     fileEdits,
     checkpoints,
     todos,

@@ -6,6 +6,18 @@ export interface Message {
   checkpointId?: string;
 }
 
+export interface SubAgentRun {
+  id: string;
+  task: string;
+  model: string | null;
+  status: 'pending' | 'running' | 'completed' | 'error' | 'cancelled' | 'max_iterations';
+  output?: string;
+  toolCalls: ToolCall[];
+  timestamp: Date;
+  duration?: number;
+  toolCallId: string;
+}
+
 export interface ToolCall {
   id: string;
   name: string;

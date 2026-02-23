@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Layers, CheckSquare, ChevronDown } from 'lucide-react';
-import { ToolCall, FileEdit, Checkpoint, ReasoningBlock, TodoItem } from '../types';
+import { SubAgentRun, ToolCall, FileEdit, Checkpoint, ReasoningBlock, TodoItem } from '../types';
 import { cn } from '@/utils/cn';
 import { Timeline } from './actions/Timeline';
 import { TodoList } from './actions/TodoList';
@@ -9,6 +9,7 @@ import type { AutoApproveRule } from '../api';
 
 interface ActionsPanelProps {
   readonly toolCalls: ToolCall[];
+  readonly subAgentRuns?: SubAgentRun[];
   readonly fileEdits: FileEdit[];
   readonly checkpoints: Checkpoint[];
   readonly reasoningBlocks: ReasoningBlock[];
@@ -24,6 +25,7 @@ interface ActionsPanelProps {
 
 export function ActionsPanel({
   toolCalls,
+  subAgentRuns = [],
   fileEdits,
   checkpoints,
   reasoningBlocks,
@@ -41,6 +43,7 @@ export function ActionsPanel({
   const [expandedReasoning, setExpandedReasoning] = useState<Set<string>>(new Set());
   const [collapsedCheckpoints, setCollapsedCheckpoints] = useState<Set<string>>(new Set());
   const [expandedParallelGroups, setExpandedParallelGroups] = useState<Set<string>>(new Set());
+  const [expandedSubAgents, setExpandedSubAgents] = useState<Set<string>>(new Set());
   const [todoDropdownOpen, setTodoDropdownOpen] = useState(false);
   const todoContainerRef = useRef<HTMLDivElement | null>(null);
 
@@ -99,6 +102,12 @@ export function ActionsPanel({
     else next.add(cpId);
     setCollapsedCheckpoints(next);
   };
+  const toggleSubAgent = (runId: string) => {
+    const next = new Set(expandedSubAgents);
+    if (next.has(runId)) next.delete(runId);
+    else next.add(runId);
+    setExpandedSubAgents(next);
+  };
   const toggleParallelGroup = (groupKey: string, _calls: ToolCall[]) => {
     const newExpanded = new Set(expandedParallelGroups);
     if (newExpanded.has(groupKey)) {
@@ -134,6 +143,7 @@ export function ActionsPanel({
         <Timeline
           checkpoints={checkpoints}
           toolCalls={toolCalls}
+          subAgentRuns={subAgentRuns}
           fileEdits={fileEdits}
           reasoningBlocks={reasoningBlocks}
           streamingReasoningBlockIds={streamingReasoningBlockIds}
@@ -142,6 +152,8 @@ export function ActionsPanel({
           expandedReasoning={expandedReasoning}
           collapsedCheckpoints={collapsedCheckpoints}
           expandedParallelGroups={expandedParallelGroups}
+          expandedSubAgents={expandedSubAgents}
+          onToggleSubAgent={toggleSubAgent}
           onToggleTool={toggleTool}
           onToggleFile={toggleFile}
           onToggleReasoning={toggleReasoning}

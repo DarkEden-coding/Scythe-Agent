@@ -73,6 +73,7 @@ class SettingsService:
             if settings_row.system_prompt and settings_row.system_prompt.strip()
             else DEFAULT_SYSTEM_PROMPT
         )
+        sub_settings = self.repo.get_sub_agent_settings()
         return GetSettingsResponse(
             model=settings_row.active_model,
             modelProvider=active_provider,
@@ -94,6 +95,11 @@ class SettingsService:
                 for r in rules
             ],
             systemPrompt=system_prompt,
+            subAgentModel=sub_settings.get("sub_agent_model"),
+            subAgentModelProvider=sub_settings.get("sub_agent_model_provider"),
+            subAgentModelKey=sub_settings.get("sub_agent_model_key"),
+            maxParallelSubAgents=sub_settings.get("max_parallel_sub_agents") or 4,
+            subAgentMaxIterations=sub_settings.get("sub_agent_max_iterations") or 25,
         )
 
     def _now(self) -> str:
@@ -612,6 +618,50 @@ class SettingsService:
         self.repo.commit()
         effective = self.get_system_prompt()
         return SetSystemPromptResponse(systemPrompt=effective)
+
+    def set_sub_agent_model(
+        self, model: str | None, provider: str | None = None, model_key: str | None = None
+    ) -> GetSettingsResponse:
+        """Set or clear sub-agent model override. None clears (inherit main model)."""
+        settings_row = self.repo.get_settings()
+        if settings_row is None:
+            raise ValueError("Settings record missing")
+        if model is None or not model.strip():
+            self.repo.set_sub_agent_model(None, None, None, updated_at=self._now())
+            self.repo.commit()
+            return self.get_settings()
+        models = self.repo.list_models()
+        if not models:
+            raise ValueError("No models available")
+        target = self._resolve_model_selection(
+            model=model,
+            provider=provider,
+            model_key=model_key,
+            models=models,
+            settings_row=settings_row,
+        )
+        self.repo.set_sub_agent_model(
+            target.label,
+            provider=target.provider,
+            model_key=self._to_model_key(target.provider, target.label),
+            updated_at=self._now(),
+        )
+        self.repo.commit()
+        return self.get_settings()
+
+    def set_sub_agent_settings(
+        self,
+        *,
+        max_parallel_sub_agents: int | None = None,
+        sub_agent_max_iterations: int | None = None,
+    ) -> None:
+        """Update sub-agent numeric settings."""
+        self.repo.set_sub_agent_settings(
+            max_parallel_sub_agents=max_parallel_sub_agents,
+            sub_agent_max_iterations=sub_agent_max_iterations,
+            updated_at=self._now(),
+        )
+        self.repo.commit()
 
     def set_reasoning_level(self, reasoning_level: str) -> SetReasoningLevelResponse:
         """Set preferred reasoning effort level used for supported models."""

@@ -10,6 +10,7 @@ from app.schemas.chat import (
     GetChatHistoryResponse,
     MessageOut,
     ReasoningBlockOut,
+    SubAgentRunOut,
     TodoOut,
     ToolCallOut,
 )
@@ -131,6 +132,22 @@ class ChatHistoryAssembler:
             for r in raw_reasoning_blocks
         ]
 
+        raw_sub_agent_runs = self._chat_repo.list_sub_agent_runs(chat_id)
+        sub_agent_runs = [
+            SubAgentRunOut(
+                id=r.id,
+                task=r.task,
+                model=r.model,
+                status=r.status,
+                output=r.output_text,
+                toolCallId=r.tool_call_id,
+                timestamp=r.timestamp,
+                duration=r.duration_ms,
+                toolCalls=[],
+            )
+            for r in raw_sub_agent_runs
+        ]
+
         raw_todos = self._chat_repo.get_current_todos(chat_id)
         todos = [
             TodoOut(
@@ -157,6 +174,7 @@ class ChatHistoryAssembler:
             chatId=chat_id,
             messages=messages,
             toolCalls=tool_calls,
+            subAgentRuns=sub_agent_runs,
             fileEdits=file_edits,
             checkpoints=checkpoints_out,
             reasoningBlocks=reasoning_blocks,

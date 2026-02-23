@@ -193,6 +193,60 @@ class SettingsRepository(BaseRepository):
             "tool_output_preview_tokens": s.tool_output_preview_tokens if s.tool_output_preview_tokens is not None else 500,
         }
 
+    def get_sub_agent_settings(self) -> dict:
+        """Return sub-agent settings as a dict with defaults."""
+        s = self.get_settings()
+        if s is None:
+            return {
+                "sub_agent_model": None,
+                "sub_agent_model_provider": None,
+                "sub_agent_model_key": None,
+                "max_parallel_sub_agents": 4,
+                "sub_agent_max_iterations": 25,
+            }
+        return {
+            "sub_agent_model": s.sub_agent_model,
+            "sub_agent_model_provider": s.sub_agent_model_provider,
+            "sub_agent_model_key": s.sub_agent_model_key,
+            "max_parallel_sub_agents": s.max_parallel_sub_agents if s.max_parallel_sub_agents is not None else 4,
+            "sub_agent_max_iterations": s.sub_agent_max_iterations if s.sub_agent_max_iterations is not None else 25,
+        }
+
+    def set_sub_agent_model(
+        self,
+        model: str | None,
+        provider: str | None = None,
+        model_key: str | None = None,
+        updated_at: str | None = None,
+    ) -> None:
+        """Set or clear sub-agent model override."""
+        from app.utils.time import utc_now_iso
+
+        s = self.get_settings()
+        if s is None:
+            raise ValueError("Settings record missing")
+        s.sub_agent_model = model
+        s.sub_agent_model_provider = provider
+        s.sub_agent_model_key = model_key
+        s.updated_at = updated_at or utc_now_iso()
+
+    def set_sub_agent_settings(
+        self,
+        *,
+        max_parallel_sub_agents: int | None = None,
+        sub_agent_max_iterations: int | None = None,
+        updated_at: str,
+    ) -> None:
+        """Update sub-agent numeric settings."""
+        s = self.get_settings()
+        if s is None:
+            raise ValueError("Settings record missing")
+        if max_parallel_sub_agents is not None:
+            s.max_parallel_sub_agents = max(1, max_parallel_sub_agents)
+        if sub_agent_max_iterations is not None:
+            s.sub_agent_max_iterations = max(1, sub_agent_max_iterations)
+        s.updated_at = updated_at
+
     def set_memory_settings(
         self,
         *,

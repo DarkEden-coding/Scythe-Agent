@@ -26,11 +26,14 @@ def tool_to_openrouter_spec(tool: Tool) -> dict:
     }
 
 
-def get_openrouter_tools() -> list[dict]:
-    """Return all registered tools in OpenRouter format."""
+def get_openrouter_tools(*, exclude_names: set[str] | None = None) -> list[dict]:
+    """Return all registered tools in OpenRouter format, optionally excluding by name."""
     registry = get_tool_registry()
+    exclude = exclude_names or set()
     tools: list[dict] = []
     for name in registry.list_tools():
+        if name in exclude:
+            continue
         tool = registry.get_tool(name)
         if tool:
             tools.append(tool_to_openrouter_spec(tool))

@@ -68,6 +68,7 @@ class RevertService:
         return RevertToCheckpointResponse(
             messages=history.messages,
             toolCalls=history.toolCalls,
+            subAgentRuns=history.subAgentRuns,
             fileEdits=history.fileEdits,
             checkpoints=history.checkpoints,
             reasoningBlocks=history.reasoningBlocks,

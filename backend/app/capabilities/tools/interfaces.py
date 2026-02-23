@@ -14,6 +14,7 @@ class ToolExecutionContext:
     chat_id: str | None = None
     chat_repo: Any | None = None
     checkpoint_id: str | None = None
+    tool_call_id: str | None = None
 
 
 class ToolHandler(Protocol):

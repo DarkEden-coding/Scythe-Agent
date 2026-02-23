@@ -3,12 +3,16 @@ import { Search, Check, Cpu, Star, ArrowUpDown, GripVertical } from 'lucide-reac
 import { cn } from '../utils/cn';
 import { Modal } from './Modal';
 
+type SelectionTarget = 'main' | 'sub_agent';
+
 interface EnhancedModelPickerProps {
   visible: boolean;
   onClose: () => void;
   currentModel: string;
   currentModelProvider?: string | null;
   currentModelKey?: string | null;
+  subAgentModel?: string | null;
+  subAgentModelKey?: string | null;
   reasoningLevel: string;
   setReasoningLevel: (reasoningLevel: string) => Promise<{ ok: boolean; error?: string }>;
   modelsByProvider: Record<string, string[]>;
@@ -25,6 +29,9 @@ interface EnhancedModelPickerProps {
     provider?: string;
     modelKey?: string;
   }) => Promise<{ ok: boolean }>;
+  changeSubAgentModel?: (
+    selection: { model: string; provider?: string; modelKey?: string } | null
+  ) => Promise<{ ok: boolean }>;
 }
 
 interface ModelInfo {
@@ -86,13 +93,17 @@ export function EnhancedModelPicker({
   currentModel,
   currentModelProvider,
   currentModelKey,
+  subAgentModel = null,
+  subAgentModelKey = null,
   reasoningLevel,
   setReasoningLevel,
   modelsByProvider,
   modelMetadataByKey,
   loading,
   changeModel,
+  changeSubAgentModel,
 }: EnhancedModelPickerProps) {
+  const [selectionTarget, setSelectionTarget] = useState<SelectionTarget>('main');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<SortOption>('name');
   const [favoritesOrder, setFavoritesOrder] = useState<string[]>([]);
@@ -149,6 +160,19 @@ export function EnhancedModelPicker({
   const hasAnyModels = Object.keys(allModelsMap).length > 0;
 
   const currentSelectionKey = useMemo(() => {
+    if (selectionTarget === 'sub_agent') {
+      if (subAgentModelKey && allModelsMap[subAgentModelKey]) return subAgentModelKey;
+      if (subAgentModel) {
+        const matches = modelKeysByLabel[subAgentModel] ?? [];
+        if (matches.length === 1) return matches[0];
+        for (const tab of PROVIDER_TABS) {
+          const m = matches.find((k) => parseProviderFromModelKey(k) === tab.id);
+          if (m) return m;
+        }
+        return matches[0] ?? null;
+      }
+      return null;
+    }
     if (currentModelKey && allModelsMap[currentModelKey]) return currentModelKey;
     const matches = modelKeysByLabel[currentModel] ?? [];
     if (matches.length === 0) return null;
@@ -162,7 +186,16 @@ export function EnhancedModelPicker({
       if (match) return match;
     }
     return matches[0];
-  }, [allModelsMap, currentModel, currentModelKey, currentModelProvider, modelKeysByLabel]);
+  }, [
+    allModelsMap,
+    currentModel,
+    currentModelKey,
+    currentModelProvider,
+    modelKeysByLabel,
+    selectionTarget,
+    subAgentModel,
+    subAgentModelKey,
+  ]);
 
   const currentModelMetadata = useMemo(() => {
     if (currentSelectionKey && modelMetadataByKey[currentSelectionKey]) {
@@ -373,11 +406,19 @@ export function EnhancedModelPicker({
 
     setChangingModel(true);
     try {
-      await changeModel({
-        model: model.label,
-        provider: model.provider,
-        modelKey: model.key,
-      });
+      if (selectionTarget === 'sub_agent' && changeSubAgentModel) {
+        await changeSubAgentModel({
+          model: model.label,
+          provider: model.provider,
+          modelKey: model.key,
+        });
+      } else {
+        await changeModel({
+          model: model.label,
+          provider: model.provider,
+          modelKey: model.key,
+        });
+      }
       onClose();
     } catch (error) {
       console.error('Failed to change model:', error);
@@ -531,8 +572,50 @@ export function EnhancedModelPicker({
 
         {/* Main Content */}
         <div className="flex flex-col flex-1 min-h-0 min-w-0">
+          {/* Main Agent / Sub-Agents toggle */}
+          <div className="flex items-center gap-2 px-6 pt-4 pb-2 shrink-0">
+            <div className="inline-flex rounded-lg border border-gray-700/50 bg-gray-900/30 p-0.5">
+              <button
+                type="button"
+                onClick={() => setSelectionTarget('main')}
+                className={cn(
+                  'px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
+                  selectionTarget === 'main'
+                    ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
+                    : 'text-gray-400 hover:text-gray-200',
+                )}
+              >
+                Main Agent
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectionTarget('sub_agent')}
+                className={cn(
+                  'px-3 py-1.5 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5',
+                  selectionTarget === 'sub_agent'
+                    ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
+                    : 'text-gray-400 hover:text-gray-200',
+                )}
+              >
+                Sub-Agents
+                {subAgentModelKey && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" title="Sub-agent model configured" />
+                )}
+              </button>
+            </div>
+            {selectionTarget === 'sub_agent' && changeSubAgentModel && (
+              <button
+                type="button"
+                onClick={() => changeSubAgentModel(null)}
+                className="text-[10px] text-gray-500 hover:text-cyan-400"
+              >
+                Use main model
+              </button>
+            )}
+          </div>
+
           {/* Provider Tabs */}
-          <div className="flex gap-1 px-6 pt-4 border-b border-gray-700/50 shrink-0">
+          <div className="flex gap-1 px-6 pt-2 border-b border-gray-700/50 shrink-0">
             {PROVIDER_TABS.map((tab) => {
               const count = (modelsByProviderWithInfo[tab.id] ?? []).length;
               return (

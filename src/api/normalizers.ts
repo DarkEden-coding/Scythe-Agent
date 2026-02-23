@@ -4,7 +4,15 @@
 
 import { useState, useCallback } from 'react';
 import type { ApiResponse } from './types';
-import type { Message, ToolCall, FileEdit, Checkpoint, ReasoningBlock, TodoItem } from '@/types';
+import type {
+  Message,
+  SubAgentRun,
+  ToolCall,
+  FileEdit,
+  Checkpoint,
+  ReasoningBlock,
+  TodoItem,
+} from '@/types';
 
 export const toDate = (value: Date | string): Date =>
   value instanceof Date ? value : new Date(value);
@@ -33,6 +41,18 @@ export const normalizeCheckpoint = (cp: Checkpoint): Checkpoint => ({
 export const normalizeReasoningBlock = (rb: ReasoningBlock): ReasoningBlock => ({
   ...rb,
   timestamp: toDate(rb.timestamp),
+});
+
+export const normalizeSubAgentRun = (
+  r: SubAgentRun & { duration?: number; output?: string }
+): SubAgentRun => ({
+  ...r,
+  timestamp: toDate(r.timestamp),
+  duration: r.duration ?? undefined,
+  output: r.output ?? undefined,
+  toolCalls: (r.toolCalls ?? []).map((tc) =>
+    normalizeToolCall(tc as ToolCall & { duration_ms?: number })
+  ),
 });
 
 export const normalizeTodo = (t: TodoItem): TodoItem => ({

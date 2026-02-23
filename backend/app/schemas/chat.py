@@ -9,6 +9,18 @@ class MessageOut(BaseModel):
     checkpointId: str | None = None
 
 
+class SubAgentRunOut(BaseModel):
+    id: str
+    task: str
+    model: str | None = None
+    status: str
+    output: str | None = None
+    toolCallId: str
+    timestamp: str
+    duration: int | None = None
+    toolCalls: list[dict] = Field(default_factory=list)
+
+
 class ToolCallOut(BaseModel):
     id: str
     name: str
@@ -69,6 +81,7 @@ class GetChatHistoryResponse(BaseModel):
     chatId: str
     messages: list[MessageOut]
     toolCalls: list[ToolCallOut]
+    subAgentRuns: list[SubAgentRunOut] = Field(default_factory=list)
     fileEdits: list[FileEditOut]
     checkpoints: list[CheckpointOut]
     reasoningBlocks: list[ReasoningBlockOut]
@@ -120,6 +133,7 @@ class SummarizeContextResponse(BaseModel):
 class RevertToCheckpointResponse(BaseModel):
     messages: list[MessageOut]
     toolCalls: list[ToolCallOut]
+    subAgentRuns: list[SubAgentRunOut] = Field(default_factory=list)
     fileEdits: list[FileEditOut]
     checkpoints: list[CheckpointOut]
     reasoningBlocks: list[ReasoningBlockOut]

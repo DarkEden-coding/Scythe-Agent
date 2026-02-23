@@ -102,6 +102,7 @@ class LLMStreamer:
         ts: str,
         checkpoint_id: str,
         reasoning_block_id: str | None = None,
+        silent: bool = False,
     ) -> StreamResult:
         response_chunks: list[str] = []
         tool_calls_from_stream: list[dict] = []
@@ -112,6 +113,9 @@ class LLMStreamer:
         reasoning_started = False
         reasoning_block_ts = ts
 
+        def _should_publish() -> bool:
+            return not silent
+
         async for ev in client.create_chat_completion_stream(
             model=model,
             messages=messages,
@@ -121,20 +125,21 @@ class LLMStreamer:
             reasoning=reasoning_param,
         ):
             if ev.get("type") == "content":
-                if reasoning_started and reasoning_content:
+                if reasoning_started and reasoning_content and _should_publish():
                     await self._emit_reasoning_end(
                         chat_id, checkpoint_id, rb_id, reasoning_block_ts, reasoning_content
                     )
                     reasoning_started = False
                 delta = ev.get("delta", "")
                 response_chunks.append(delta)
-                await self._event_bus.publish(
-                    chat_id,
-                    {
-                        "type": "content_delta",
-                        "payload": {"messageId": msg_id, "delta": delta},
-                    },
-                )
+                if _should_publish():
+                    await self._event_bus.publish(
+                        chat_id,
+                        {
+                            "type": "content_delta",
+                            "payload": {"messageId": msg_id, "delta": delta},
+                        },
+                    )
             elif ev.get("type") == "reasoning":
                 delta_text = ev.get("delta", "")
                 if delta_text:
@@ -144,33 +149,34 @@ class LLMStreamer:
                         reasoning_block_ts = utc_now_iso()
                     reasoning_started = True
                     reasoning_content.append(delta_text)
-                    if is_first:
-                        block_out = {
-                            "id": rb_id,
-                            "content": "".join(reasoning_content),
-                            "timestamp": reasoning_block_ts,
-                            "checkpointId": checkpoint_id,
-                        }
-                        await self._event_bus.publish(
-                            chat_id,
-                            {
-                                "type": "reasoning_start",
-                                "payload": {"reasoningBlock": block_out},
-                            },
-                        )
-                    else:
-                        await self._event_bus.publish(
-                            chat_id,
-                            {
-                                "type": "reasoning_delta",
-                                "payload": {
-                                    "reasoningBlockId": rb_id,
-                                    "delta": delta_text,
+                    if _should_publish():
+                        if is_first:
+                            block_out = {
+                                "id": rb_id,
+                                "content": "".join(reasoning_content),
+                                "timestamp": reasoning_block_ts,
+                                "checkpointId": checkpoint_id,
+                            }
+                            await self._event_bus.publish(
+                                chat_id,
+                                {
+                                    "type": "reasoning_start",
+                                    "payload": {"reasoningBlock": block_out},
                                 },
-                            },
-                        )
+                            )
+                        else:
+                            await self._event_bus.publish(
+                                chat_id,
+                                {
+                                    "type": "reasoning_delta",
+                                    "payload": {
+                                        "reasoningBlockId": rb_id,
+                                        "delta": delta_text,
+                                    },
+                                },
+                            )
             elif ev.get("type") == "tool_calls":
-                if reasoning_started and reasoning_content:
+                if reasoning_started and reasoning_content and _should_publish():
                     await self._emit_reasoning_end(
                         chat_id, checkpoint_id, rb_id, reasoning_block_ts, reasoning_content
                     )
@@ -179,7 +185,7 @@ class LLMStreamer:
             elif ev.get("type") == "finish":
                 finish_reason = ev.get("reason", "stop")
                 finish_content = ev.get("content", "")
-                if reasoning_started and reasoning_content:
+                if reasoning_started and reasoning_content and _should_publish():
                     await self._emit_reasoning_end(
                         chat_id, checkpoint_id, rb_id, reasoning_block_ts, reasoning_content
                     )

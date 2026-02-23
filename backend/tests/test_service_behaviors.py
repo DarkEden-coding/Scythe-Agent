@@ -122,6 +122,43 @@ def test_approve_reject_transitions(client) -> None:
     assert reject_data["toolCallId"] == reject_id
 
 
+def test_cancel_marks_running_sub_agent_runs_cancelled(client) -> None:
+    tc_id = "tc-svc-subagent-cancel"
+    sa_id = "sa-svc-subagent-cancel"
+    ts = utc_now_iso()
+    with get_sessionmaker()() as db:
+        repo = ChatRepository(db)
+        repo.create_tool_call(
+            tool_call_id=tc_id,
+            chat_id="chat-1",
+            checkpoint_id="cp-1",
+            name="spawn_sub_agent",
+            status="running",
+            input_json='{"task":"test"}',
+            timestamp=ts,
+            parallel_group=None,
+        )
+        repo.create_sub_agent_run(
+            sub_agent_id=sa_id,
+            chat_id="chat-1",
+            tool_call_id=tc_id,
+            task="test",
+            model="dummy-model",
+            status="running",
+            timestamp=ts,
+        )
+        db.commit()
+
+    res = client.post("/api/chat/chat-1/cancel")
+    assert res.status_code == 200
+
+    with get_sessionmaker()() as db:
+        repo = ChatRepository(db)
+        run = repo.get_sub_agent_run(sa_id)
+        assert run is not None
+        assert run.status == "cancelled"
+
+
 def test_summarize_reduces_tokens(client) -> None:
     before = client.get("/api/chat/chat-1/history").json()["data"]
     before_tokens = sum(i["tokens"] for i in before["contextItems"])

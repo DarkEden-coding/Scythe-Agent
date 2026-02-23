@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from app.db.models.observation import Observation
     from app.db.models.project import Project
     from app.db.models.reasoning_block import ReasoningBlock
+    from app.db.models.sub_agent_run import SubAgentRun
     from app.db.models.tool_call import ToolCall
 
 
@@ -39,6 +40,9 @@ class Chat(Base):
         back_populates="chat", cascade="all, delete-orphan", passive_deletes=True
     )
     tool_calls: Mapped[list["ToolCall"]] = relationship(
+        back_populates="chat", cascade="all, delete-orphan", passive_deletes=True
+    )
+    sub_agent_runs: Mapped[list["SubAgentRun"]] = relationship(
         back_populates="chat", cascade="all, delete-orphan", passive_deletes=True
     )
     file_edits: Mapped[list["FileEdit"]] = relationship(

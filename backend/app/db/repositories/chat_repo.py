@@ -17,6 +17,7 @@ from app.db.models.reasoning_block import ReasoningBlock
 from app.db.models.todo import Todo
 from app.db.models.tool_artifact import ToolArtifact
 from app.db.models.tool_call import ToolCall
+from app.db.models.sub_agent_run import SubAgentRun
 from app.db.repositories.base_repo import BaseRepository
 from app.utils.ids import generate_id
 from app.utils.json_helpers import safe_parse_json
@@ -69,6 +70,69 @@ class ChatRepository(BaseRepository):
             .order_by(ToolCall.timestamp.asc())
         )
         return list(self.db.scalars(stmt).all())
+
+    def list_sub_agent_runs(self, chat_id: str) -> list[SubAgentRun]:
+        stmt = (
+            select(SubAgentRun)
+            .where(SubAgentRun.chat_id == chat_id)
+            .order_by(SubAgentRun.timestamp.asc())
+        )
+        return list(self.db.scalars(stmt).all())
+
+    def list_sub_agent_runs_for_tool_call(
+        self, tool_call_id: str
+    ) -> list[SubAgentRun]:
+        stmt = (
+            select(SubAgentRun)
+            .where(SubAgentRun.tool_call_id == tool_call_id)
+            .order_by(SubAgentRun.timestamp.asc())
+        )
+        return list(self.db.scalars(stmt).all())
+
+    def get_sub_agent_run(self, sub_agent_id: str) -> SubAgentRun | None:
+        return self.db.get(SubAgentRun, sub_agent_id)
+
+    def create_sub_agent_run(
+        self,
+        *,
+        sub_agent_id: str,
+        chat_id: str,
+        tool_call_id: str,
+        task: str,
+        model: str | None,
+        status: str,
+        timestamp: str,
+        output_text: str | None = None,
+        duration_ms: int | None = None,
+    ) -> SubAgentRun:
+        run = SubAgentRun(
+            id=sub_agent_id,
+            chat_id=chat_id,
+            tool_call_id=tool_call_id,
+            task=task,
+            model=model,
+            status=status,
+            output_text=output_text,
+            timestamp=timestamp,
+            duration_ms=duration_ms,
+        )
+        self.db.add(run)
+        return run
+
+    def set_sub_agent_run_status(
+        self,
+        sub_agent_run: SubAgentRun,
+        *,
+        status: str,
+        output_text: str | None = None,
+        duration_ms: int | None = None,
+    ) -> SubAgentRun:
+        sub_agent_run.status = status
+        if output_text is not None:
+            sub_agent_run.output_text = output_text
+        if duration_ms is not None:
+            sub_agent_run.duration_ms = duration_ms
+        return sub_agent_run
 
     def list_file_edits(self, chat_id: str) -> list[FileEdit]:
         stmt = (
@@ -794,6 +858,17 @@ class ChatRepository(BaseRepository):
                 ),
             )
         )
+        tool_call_ids_to_remove = [
+            t.id
+            for t in self.list_tool_calls_after_checkpoint(chat_id, cutoff, checkpoint_id)
+        ]
+        if tool_call_ids_to_remove:
+            self.db.execute(
+                delete(SubAgentRun).where(
+                    SubAgentRun.chat_id == chat_id,
+                    SubAgentRun.tool_call_id.in_(tool_call_ids_to_remove),
+                )
+            )
         self.db.execute(
             delete(ToolCall).where(
                 ToolCall.chat_id == chat_id,

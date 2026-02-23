@@ -8,6 +8,7 @@
 
 import {
   Message,
+  SubAgentRun,
   ToolCall,
   FileEdit,
   Checkpoint,
@@ -122,6 +123,7 @@ export interface RevertToCheckpointRequest {
 export interface RevertToCheckpointResponse {
   messages: Message[];
   toolCalls: ToolCall[];
+  subAgentRuns?: SubAgentRun[];
   fileEdits: FileEdit[];
   checkpoints: Checkpoint[];
   reasoningBlocks: ReasoningBlock[];
@@ -220,6 +222,7 @@ export interface GetChatHistoryResponse {
   chatId: string;
   messages: Message[];
   toolCalls: ToolCall[];
+  subAgentRuns?: SubAgentRun[];
   fileEdits: FileEdit[];
   checkpoints: Checkpoint[];
   reasoningBlocks: ReasoningBlock[];
@@ -253,6 +256,10 @@ export interface GetFsChildrenResponse {
 export type AgentEventType =
   | 'message'
   | 'content_delta'
+  | 'sub_agent_start'
+  | 'sub_agent_progress'
+  | 'sub_agent_tool_call'
+  | 'sub_agent_end'
   | 'tool_call_start'
   | 'tool_call_end'
   | 'file_edit'
@@ -385,10 +392,42 @@ export interface ModelMetadata {
   defaultReasoningLevel?: string | null;
 }
 
+export interface SubAgentStartPayload {
+  subAgentId: string;
+  task: string;
+  model: string;
+  toolCallId: string;
+}
+
+export interface SubAgentProgressPayload {
+  subAgentId: string;
+  iteration: number;
+  message: string;
+}
+
+export interface SubAgentToolCallPayload {
+  subAgentId: string;
+  toolCall: ToolCall;
+  toolCallId: string;
+}
+
+export interface SubAgentEndPayload {
+  subAgentId: string;
+  toolCallId: string;
+  status: string;
+  output: string;
+  duration: number;
+}
+
 export interface GetSettingsResponse {
   model: string;
   modelProvider?: string | null;
   modelKey?: string | null;
+  subAgentModel?: string | null;
+  subAgentModelProvider?: string | null;
+  subAgentModelKey?: string | null;
+  maxParallelSubAgents?: number;
+  subAgentMaxIterations?: number;
   reasoningLevel: string;
   availableModels: string[];
   modelsByProvider: Record<string, string[]>;

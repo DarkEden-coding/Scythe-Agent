@@ -441,6 +441,23 @@ export class ApiClient {
     return this.request('PUT', '/settings/model', req);
   }
 
+  /** Set or clear sub-agent model override. Pass model: null to inherit main model. */
+  async changeSubAgentModel(req: {
+    model?: string | null;
+    provider?: string | null;
+    modelKey?: string | null;
+  }): Promise<ApiResponse<GetSettingsResponse>> {
+    return this.request('PUT', '/settings/sub-agent-model', req);
+  }
+
+  /** Update sub-agent numeric settings. */
+  async setSubAgentSettings(req: {
+    maxParallelSubAgents?: number;
+    subAgentMaxIterations?: number;
+  }): Promise<ApiResponse<GetSettingsResponse>> {
+    return this.request('PUT', '/settings/sub-agent', req);
+  }
+
   /** Summarize the context window of a chat. */
   async summarizeContext(req: SummarizeContextRequest): Promise<ApiResponse<SummarizeContextResponse>> {
     return this.request('POST', `/chat/${req.chatId}/summarize`);

@@ -11,6 +11,8 @@ from app.config.settings import get_settings
 from app.schemas.settings import (
     SetAutoApproveRequest,
     SetModelRequest,
+    SetSubAgentModelRequest,
+    SetSubAgentSettingsRequest,
     SetApiKeyRequest,
     SetSystemPromptRequest,
     SetReasoningLevelRequest,
@@ -88,6 +90,46 @@ def set_reasoning_level(
     """Set preferred reasoning effort level for supported models."""
     try:
         data = SettingsService(db).set_reasoning_level(request.reasoningLevel)
+        return ok(data.model_dump())
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500, content=err(full_error_message(exc)).model_dump()
+        )
+
+
+@router.put("/sub-agent-model")
+def set_sub_agent_model(
+    request: SetSubAgentModelRequest, db: Session = Depends(get_db)
+):
+    """Set or clear sub-agent model override. Omit model or pass null to inherit main model."""
+    try:
+        data = SettingsService(db).set_sub_agent_model(
+            model=request.model,
+            provider=request.provider,
+            model_key=request.modelKey,
+        )
+        return ok(data.model_dump())
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500, content=err(full_error_message(exc)).model_dump()
+        )
+
+
+@router.put("/sub-agent")
+def set_sub_agent_settings(
+    request: SetSubAgentSettingsRequest, db: Session = Depends(get_db)
+):
+    """Update sub-agent numeric settings (max parallel, iteration limit)."""
+    try:
+        SettingsService(db).set_sub_agent_settings(
+            max_parallel_sub_agents=request.maxParallelSubAgents,
+            sub_agent_max_iterations=request.subAgentMaxIterations,
+        )
+        data = SettingsService(db).get_settings()
         return ok(data.model_dump())
     except ValueError as exc:
         return JSONResponse(status_code=400, content=err(str(exc)).model_dump())

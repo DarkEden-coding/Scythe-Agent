@@ -31,3 +31,8 @@ class Settings(Base):
     show_observations_in_chat: Mapped[int | None] = mapped_column(Integer, nullable=True, default=0)
     tool_output_token_threshold: Mapped[int | None] = mapped_column(Integer, nullable=True)
     tool_output_preview_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    sub_agent_model: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sub_agent_model_provider: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sub_agent_model_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    max_parallel_sub_agents: Mapped[int | None] = mapped_column(Integer, nullable=True, default=4)
+    sub_agent_max_iterations: Mapped[int | None] = mapped_column(Integer, nullable=True, default=25)

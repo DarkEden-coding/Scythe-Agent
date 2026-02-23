@@ -1,8 +1,9 @@
 import { ChevronDown, ChevronRight, GitBranch, RotateCcw } from 'lucide-react';
-import type { ToolCall, FileEdit, Checkpoint, ReasoningBlock } from '@/types';
+import type { SubAgentRun, ToolCall, FileEdit, Checkpoint, ReasoningBlock } from '@/types';
 import { useAutoScroll } from '@/hooks/useAutoScroll';
 import { buildTimeline, type TimelineItem } from './buildTimeline';
 import { ToolCallCard, statusIcons } from './ToolCallCard';
+import { SubAgentCard } from './SubAgentCard';
 import { FileEditCard } from './FileEditCard';
 import { ReasoningBlockView } from './ReasoningBlockView';
 import { cn } from '@/utils/cn';
@@ -11,6 +12,7 @@ function getTimelineItemKey(item: TimelineItem, idx: number): string {
   if (item.type === 'tool') return item.call.id;
   if (item.type === 'file') return item.edit.id;
   if (item.type === 'reasoning') return item.block.id;
+  if (item.type === 'sub_agent') return item.run.id;
   return `parallel-${idx}`;
 }
 
@@ -76,6 +78,7 @@ function ParallelGroupBlock({
 interface TimelineProps {
   readonly checkpoints: Checkpoint[];
   readonly toolCalls: ToolCall[];
+  readonly subAgentRuns?: SubAgentRun[];
   readonly fileEdits: FileEdit[];
   readonly reasoningBlocks: ReasoningBlock[];
   readonly streamingReasoningBlockIds?: Set<string>;
@@ -84,6 +87,8 @@ interface TimelineProps {
   readonly expandedReasoning: Set<string>;
   readonly collapsedCheckpoints: Set<string>;
   readonly expandedParallelGroups: Set<string>;
+  readonly expandedSubAgents: Set<string>;
+  readonly onToggleSubAgent: (id: string) => void;
   readonly onToggleTool: (id: string) => void;
   readonly onToggleFile: (id: string) => void;
   readonly onToggleReasoning: (id: string) => void;
@@ -96,6 +101,7 @@ interface TimelineProps {
 export function Timeline({
   checkpoints,
   toolCalls,
+  subAgentRuns,
   fileEdits,
   reasoningBlocks,
   streamingReasoningBlockIds = new Set(),
@@ -109,11 +115,19 @@ export function Timeline({
   onToggleReasoning,
   onToggleCheckpointCollapse,
   onToggleParallelGroup,
+  expandedSubAgents = new Set(),
+  onToggleSubAgent = () => {},
   onRevertFile,
   onRevertCheckpoint,
 }: TimelineProps) {
-  const timeline = buildTimeline(checkpoints, toolCalls, fileEdits, reasoningBlocks);
-  const scrollTrigger = { toolCalls, fileEdits, reasoningBlocks };
+  const timeline = buildTimeline(
+    checkpoints,
+    toolCalls,
+    fileEdits,
+    reasoningBlocks,
+    subAgentRuns ?? [],
+  );
+  const scrollTrigger = { toolCalls, subAgentRuns, fileEdits, reasoningBlocks };
   const scroll = useAutoScroll(scrollTrigger);
 
   return (
@@ -199,6 +213,15 @@ export function Timeline({
                             onToggle={() => onToggleTool(item.call.id)}
                           />
                         </div>
+                      )}
+                      {item.type === 'sub_agent' && (
+                        <SubAgentCard
+                          run={item.run}
+                          isExpanded={expandedSubAgents.has(item.run.id)}
+                          onToggle={() => onToggleSubAgent(item.run.id)}
+                          expandedTools={expandedTools}
+                          onToggleTool={onToggleTool}
+                        />
                       )}
                       {item.type === 'parallel' && (
                         <ParallelGroupBlock

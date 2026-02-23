@@ -4,11 +4,12 @@
  */
 
 import { uniqueById } from '@/api/normalizers';
-import type { ToolCall, FileEdit, Checkpoint, ReasoningBlock } from '@/types';
+import type { SubAgentRun, ToolCall, FileEdit, Checkpoint, ReasoningBlock } from '@/types';
 
 export type TimelineItem =
   | { type: 'tool'; call: ToolCall }
   | { type: 'parallel'; calls: ToolCall[] }
+  | { type: 'sub_agent'; run: SubAgentRun }
   | { type: 'file'; edit: FileEdit }
   | { type: 'reasoning'; block: ReasoningBlock };
 
@@ -16,6 +17,7 @@ const TYPE_ORDER: Record<TimelineItem['type'], number> = {
   reasoning: 0,
   tool: 1,
   parallel: 2,
+  sub_agent: 2,
   file: 3,
 };
 
@@ -29,6 +31,7 @@ export function buildTimeline(
   toolCalls: ToolCall[],
   fileEdits: FileEdit[],
   reasoningBlocks: ReasoningBlock[],
+  subAgentRuns: SubAgentRun[] = [],
 ): TimelineSegment[] {
   const dedupedFileEdits = uniqueById(fileEdits);
   return checkpoints.map((checkpoint) => {
@@ -37,6 +40,9 @@ export function buildTimeline(
       .filter(
         (tc) => !(tc.name === 'edit_file' && tc.status === 'completed'),
       );
+    const cpSubAgentRuns = subAgentRuns.filter((r) =>
+      cpToolCalls.some((tc) => tc.id === r.toolCallId),
+    );
     const cpFileEdits = dedupedFileEdits.filter((fe) => fe.checkpointId === checkpoint.id);
     const cpReasoningBlocks = reasoningBlocks.filter((rb) =>
       checkpoint.reasoningBlocks?.includes(rb.id),
@@ -65,6 +71,13 @@ export function buildTimeline(
       allItems.push({
         timestamp: calls[0].timestamp.getTime(),
         item: { type: 'parallel', calls },
+      });
+    });
+
+    cpSubAgentRuns.forEach((run) => {
+      allItems.push({
+        timestamp: run.timestamp.getTime(),
+        item: { type: 'sub_agent', run },
       });
     });
 

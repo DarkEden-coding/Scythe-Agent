@@ -42,6 +42,15 @@ export function useSettings(client: ApiClient = defaultApi) {
   const [currentModelKey, setCurrentModelKey] = useState<string | null>(
     cached?.modelKey ?? null,
   );
+  const [subAgentModel, setSubAgentModel] = useState<string | null>(
+    cached?.subAgentModel ?? null,
+  );
+  const [subAgentModelProvider, setSubAgentModelProvider] = useState<string | null>(
+    cached?.subAgentModelProvider ?? null,
+  );
+  const [subAgentModelKey, setSubAgentModelKey] = useState<string | null>(
+    cached?.subAgentModelKey ?? null,
+  );
   const [autoApproveRules, setAutoApproveRules] = useState<AutoApproveRule[]>(
     cached?.autoApproveRules ?? [],
   );
@@ -54,6 +63,9 @@ export function useSettings(client: ApiClient = defaultApi) {
       setCurrentModel(res.data.model);
       setCurrentModelProvider(res.data.modelProvider ?? null);
       setCurrentModelKey(res.data.modelKey ?? null);
+      setSubAgentModel(res.data.subAgentModel ?? null);
+      setSubAgentModelProvider(res.data.subAgentModelProvider ?? null);
+      setSubAgentModelKey(res.data.subAgentModelKey ?? null);
       setAutoApproveRules(res.data.autoApproveRules);
     } else {
       setState((s) => ({
@@ -76,6 +88,9 @@ export function useSettings(client: ApiClient = defaultApi) {
         setCurrentModel(res.data.model);
         setCurrentModelProvider(res.data.modelProvider ?? null);
         setCurrentModelKey(res.data.modelKey ?? null);
+        setSubAgentModel(res.data.subAgentModel ?? null);
+        setSubAgentModelProvider(res.data.subAgentModelProvider ?? null);
+        setSubAgentModelKey(res.data.subAgentModelKey ?? null);
         setAutoApproveRules(res.data.autoApproveRules);
       }
       return res;
@@ -119,6 +134,34 @@ export function useSettings(client: ApiClient = defaultApi) {
               }
             : s,
         );
+      }
+      return res;
+    },
+    [client],
+  );
+
+  const changeSubAgentModel = useCallback(
+    async (selection: { model: string; provider?: string; modelKey?: string } | null) => {
+      const res = await client.changeSubAgentModel(
+        selection === null
+          ? { model: null, provider: null, modelKey: null }
+          : { model: selection.model, provider: selection.provider, modelKey: selection.modelKey },
+      );
+      if (res.ok) {
+        setSubAgentModel(res.data.subAgentModel ?? null);
+        setSubAgentModelProvider(res.data.subAgentModelProvider ?? null);
+        setSubAgentModelKey(res.data.subAgentModelKey ?? null);
+        if (settingsCache) {
+          settingsCache = {
+            ...settingsCache,
+            data: {
+              ...settingsCache.data,
+              subAgentModel: res.data.subAgentModel,
+              subAgentModelProvider: res.data.subAgentModelProvider,
+              subAgentModelKey: res.data.subAgentModelKey,
+            },
+          };
+        }
       }
       return res;
     },
@@ -189,6 +232,33 @@ export function useSettings(client: ApiClient = defaultApi) {
     systemPrompt: state.data?.systemPrompt ?? '',
     autoApproveRules,
     changeModel,
+    changeSubAgentModel,
+    subAgentModel,
+    subAgentModelProvider,
+    subAgentModelKey,
+    maxParallelSubAgents: state.data?.maxParallelSubAgents ?? 4,
+    subAgentMaxIterations: state.data?.subAgentMaxIterations ?? 25,
+    setSubAgentSettings: useCallback(
+      async (opts: { maxParallelSubAgents?: number; subAgentMaxIterations?: number }) => {
+        const res = await client.setSubAgentSettings(opts);
+        if (res.ok) {
+          setState((s) =>
+            s.data
+              ? {
+                  ...s,
+                  data: {
+                    ...s.data,
+                    maxParallelSubAgents: res.data.maxParallelSubAgents ?? 4,
+                    subAgentMaxIterations: res.data.subAgentMaxIterations ?? 25,
+                  },
+                }
+              : s,
+          );
+        }
+        return res;
+      },
+      [client],
+    ),
     updateAutoApproveRules,
     getAutoApproveRules,
     setSystemPrompt,

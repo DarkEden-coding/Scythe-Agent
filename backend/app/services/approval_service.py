@@ -91,6 +91,7 @@ class ApprovalService:
                 "project_root": project_root,
                 "chat_id": chat_id,
                 "chat_repo": self.chat_repo,
+                "tool_call_id": tool_call.id,
             }
             if tool_call.name == "update_todo_list":
                 run_kwargs["checkpoint_id"] = tool_call.checkpoint_id

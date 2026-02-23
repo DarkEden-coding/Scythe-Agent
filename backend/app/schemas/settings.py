@@ -29,6 +29,11 @@ class GetSettingsResponse(BaseModel):
     contextLimit: int
     autoApproveRules: list[AutoApproveRuleOut]
     systemPrompt: str
+    subAgentModel: str | None = None
+    subAgentModelProvider: str | None = None
+    subAgentModelKey: str | None = None
+    maxParallelSubAgents: int = 4
+    subAgentMaxIterations: int = 25
 
 
 class AutoApproveRuleIn(BaseModel):
@@ -53,6 +58,17 @@ class SetModelRequest(BaseModel):
     model: str = Field(min_length=1, max_length=500)
     provider: str | None = Field(default=None, min_length=1, max_length=64)
     modelKey: str | None = Field(default=None, min_length=3, max_length=600)
+
+
+class SetSubAgentModelRequest(BaseModel):
+    model: str | None = Field(default=None, max_length=500)
+    provider: str | None = Field(default=None, min_length=1, max_length=64)
+    modelKey: str | None = Field(default=None, min_length=3, max_length=600)
+
+
+class SetSubAgentSettingsRequest(BaseModel):
+    maxParallelSubAgents: int | None = None
+    subAgentMaxIterations: int | None = None
 
 
 class SetModelResponse(BaseModel):
