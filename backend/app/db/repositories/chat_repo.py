@@ -1,6 +1,6 @@
 import json
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import and_, delete, or_
 from sqlalchemy import select
@@ -588,7 +588,7 @@ class ChatRepository(BaseRepository):
         if title is not None:
             plan.title = title
         if checkpoint_id is not self._UNSET:
-            plan.checkpoint_id = checkpoint_id
+            plan.checkpoint_id = cast(str | None, checkpoint_id)
         if status is not None:
             plan.status = status
         if file_path is not None:
@@ -600,9 +600,9 @@ class ChatRepository(BaseRepository):
         if last_editor is not None:
             plan.last_editor = last_editor
         if approved_action is not self._UNSET:
-            plan.approved_action = approved_action
+            plan.approved_action = cast(str | None, approved_action)
         if implementation_chat_id is not self._UNSET:
-            plan.implementation_chat_id = implementation_chat_id
+            plan.implementation_chat_id = cast(str | None, implementation_chat_id)
         if updated_at is not None:
             plan.updated_at = updated_at
         return plan
@@ -901,8 +901,13 @@ class ChatRepository(BaseRepository):
             except Exception:
                 parsed_state = {}
 
-        raw_buffer = parsed_state.get("buffer") if isinstance(parsed_state.get("buffer"), dict) else {}
-        raw_chunks = raw_buffer.get("chunks") if isinstance(raw_buffer.get("chunks"), list) else []
+        # Safely get 'buffer' and ensure it's a dictionary
+        buffer_data = parsed_state.get("buffer")
+        raw_buffer: dict[str, Any] = buffer_data if isinstance(buffer_data, dict) else {}
+
+        # Safely get 'chunks' from raw_buffer and ensure it's a list
+        chunks_data = raw_buffer.get("chunks")
+        raw_chunks: list[dict[str, Any]] = chunks_data if isinstance(chunks_data, list) else []
         valid_chunks: list[dict[str, Any]] = []
         for raw_chunk in raw_chunks:
             if not isinstance(raw_chunk, dict):

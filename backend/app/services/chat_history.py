@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 from app.db.repositories.chat_repo import ChatRepository
 from app.db.repositories.project_repo import ProjectRepository
 from app.schemas.chat import (
@@ -91,7 +93,7 @@ class ChatHistoryAssembler:
                 action=map_file_action_for_ui(f.action),
                 diff=f.diff,
                 timestamp=f.timestamp,
-                checkpointId=f.checkpoint_id,
+                checkpointId=cast(str, f.checkpoint_id),
             )
             for f in raw_file_edits
         ]
@@ -130,7 +132,7 @@ class ChatHistoryAssembler:
                 content=r.content,
                 timestamp=r.timestamp,
                 duration=r.duration_ms,
-                checkpointId=r.checkpoint_id,
+                checkpointId=cast(str, r.checkpoint_id),
             )
             for r in raw_reasoning_blocks
         ]

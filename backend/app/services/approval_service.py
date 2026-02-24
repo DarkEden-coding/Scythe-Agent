@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import TypedDict
 from pathlib import Path
 
 from sqlalchemy.orm import Session
@@ -18,6 +19,14 @@ from app.utils.json_helpers import safe_parse_json
 from app.services.event_bus import EventBus, get_event_bus
 from app.tools.registry import ToolRegistry, get_tool_registry
 from app.utils.ids import generate_id
+
+
+class _ToolRunKwargs(TypedDict, total=False):
+    project_root: str | None
+    chat_id: str
+    chat_repo: ChatRepository | None
+    checkpoint_id: str | None
+    tool_call_id: str
 
 
 class ApprovalService:
@@ -87,14 +96,15 @@ class ApprovalService:
                 project = self.project_repo.get_project(chat.project_id)
                 if project and project.path:
                     project_root = project.path
-            run_kwargs = {
+            run_kwargs: _ToolRunKwargs = {
                 "project_root": project_root,
                 "chat_id": chat_id,
                 "chat_repo": self.chat_repo,
                 "tool_call_id": tool_call.id,
             }
-            if tool_call.name == "update_todo_list":
-                run_kwargs["checkpoint_id"] = tool_call.checkpoint_id
+            checkpoint_id = tool_call.checkpoint_id
+            if tool_call.name == "update_todo_list" and checkpoint_id is not None:
+                run_kwargs["checkpoint_id"] = checkpoint_id
             result = await tool.run(payload, **run_kwargs)
 
             output_to_store = result.output
@@ -150,6 +160,7 @@ class ApprovalService:
                     content=edit.original_content,
                     timestamp=edit_ts,
                 )
+                file_checkpoint_id = row.checkpoint_id or ""
                 file_edits.append(
                     FileEditOut(
                         id=row.id,
@@ -157,7 +168,7 @@ class ApprovalService:
                         action=map_file_action_for_ui(row.action),
                         diff=row.diff,
                         timestamp=row.timestamp,
-                        checkpointId=row.checkpoint_id,
+                        checkpointId=file_checkpoint_id,
                     )
                 )
                 await self.event_bus.publish(

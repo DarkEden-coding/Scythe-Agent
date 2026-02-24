@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import ForeignKey, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -17,15 +17,15 @@ class ToolCall(Base):
 
     id: Mapped[str] = mapped_column(Text, primary_key=True)
     chat_id: Mapped[str] = mapped_column(ForeignKey("chats.id", ondelete="CASCADE"), nullable=False)
-    checkpoint_id: Mapped[str | None] = mapped_column(ForeignKey("checkpoints.id", ondelete="SET NULL"), nullable=True)
+    checkpoint_id: Mapped[Optional[str]] = mapped_column(ForeignKey("checkpoints.id", ondelete="SET NULL"), nullable=True)
     name: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(Text, nullable=False)
     input_json: Mapped[str] = mapped_column(Text, nullable=False)
-    output_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    output_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     timestamp: Mapped[str] = mapped_column(Text, nullable=False)
-    duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    parallel: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    parallel_group: Mapped[str | None] = mapped_column(Text, nullable=True)
+    duration_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    parallel: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    parallel_group: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     chat: Mapped["Chat"] = relationship(back_populates="tool_calls")
     sub_agent_run: Mapped["SubAgentRun | None"] = relationship(

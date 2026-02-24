@@ -33,7 +33,7 @@ class LLMStreamer:
     async def _emit_reasoning_end(
         self,
         chat_id: str,
-        checkpoint_id: str,
+        checkpoint_id: str | None,
         rb_id: str,
         reasoning_block_ts: str,
         reasoning_content: list[str],
@@ -100,7 +100,7 @@ class LLMStreamer:
         chat_id: str,
         msg_id: str,
         ts: str,
-        checkpoint_id: str,
+        checkpoint_id: str | None,
         reasoning_block_id: str | None = None,
         silent: bool = False,
         suppress_content_events: bool = False,

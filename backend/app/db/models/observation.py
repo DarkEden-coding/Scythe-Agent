@@ -1,4 +1,4 @@
-from __future__ import annotations
+from typing import Optional
 
 from sqlalchemy import ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
@@ -16,10 +16,10 @@ class Observation(Base):
     generation: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     token_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    trigger_token_count: Mapped[int | None] = mapped_column(
+    trigger_token_count: Mapped[Optional[int]] = mapped_column(
         Integer, nullable=True, default=None
     )
-    observed_up_to_message_id: Mapped[str | None] = mapped_column(Text, nullable=True)
-    current_task: Mapped[str | None] = mapped_column(Text, nullable=True)
-    suggested_response: Mapped[str | None] = mapped_column(Text, nullable=True)
+    observed_up_to_message_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    current_task: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    suggested_response: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     timestamp: Mapped[str] = mapped_column(Text, nullable=False)

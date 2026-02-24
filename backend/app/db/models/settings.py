@@ -1,4 +1,6 @@
 from sqlalchemy import Integer, Text
+from typing import Optional
+from typing import Optional
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -9,10 +11,10 @@ class Settings(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     active_model: Mapped[str] = mapped_column(Text, nullable=False)
-    active_model_provider: Mapped[str | None] = mapped_column(Text, nullable=True)
+    active_model_provider: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     context_limit: Mapped[int] = mapped_column(Integer, nullable=False)
     updated_at: Mapped[str] = mapped_column(Text, nullable=False)
-    openrouter_api_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    openrouter_api_key: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     openrouter_base_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     groq_api_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     brave_api_key: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -26,8 +28,8 @@ class Settings(Base):
     memory_mode: Mapped[str | None] = mapped_column(Text, nullable=True, default="observational")
     observer_model: Mapped[str | None] = mapped_column(Text, nullable=True)
     reflector_model: Mapped[str | None] = mapped_column(Text, nullable=True)
-    observer_threshold: Mapped[int | None] = mapped_column(Integer, nullable=True, default=30000)
-    buffer_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True, default=6000)
+    observer_threshold: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, default=30000)
+    buffer_tokens: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, default=6000)
     reflector_threshold: Mapped[int | None] = mapped_column(Integer, nullable=True, default=8000)
     show_observations_in_chat: Mapped[int | None] = mapped_column(Integer, nullable=True, default=0)
     tool_output_token_threshold: Mapped[int | None] = mapped_column(Integer, nullable=True)

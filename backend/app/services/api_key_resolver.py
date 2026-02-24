@@ -13,7 +13,7 @@ from app.providers.openrouter.client import OpenRouterClient
 from app.utils.encryption import decrypt, mask_api_key
 
 if TYPE_CHECKING:
-    from typing import Union
+    from typing import Literal, Union, overload
 
     LLMClient = Union[OpenRouterClient, GroqClient, OpenAISubClient]
 
@@ -62,6 +62,18 @@ class APIKeyResolver:
         if not key:
             return False, ""
         return True, mask_api_key(key)
+
+    @overload
+    def create_client(self, provider: Literal["openrouter"] = "openrouter") -> OpenRouterClient | None: ...
+
+    @overload
+    def create_client(self, provider: Literal["groq"]) -> GroqClient | None: ...
+
+    @overload
+    def create_client(self, provider: Literal["openai-sub"]) -> OpenAISubClient | None: ...
+
+    @overload
+    def create_client(self, provider: str) -> LLMClient | None: ...
 
     def create_client(self, provider: str = "openrouter") -> LLMClient | None:
         """Resolve key and return configured client for the given provider, or None."""

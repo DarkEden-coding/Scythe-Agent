@@ -163,14 +163,46 @@ class ObservationMemoryService:
             except Exception:
                 parsed = {}
 
-        buffer_raw = parsed.get("buffer") if isinstance(parsed.get("buffer"), dict) else {}
+        buffer_candidate = parsed.get("buffer")
+        if isinstance(buffer_candidate, dict):
+            buffer_raw: dict[str, Any] = buffer_candidate
+        else:
+            buffer_raw = {}
+
         normalized_chunks: list[dict[str, Any]] = []
-        for item in buffer_raw.get("chunks", []):
-            if not isinstance(item, dict):
-                continue
-            chunk = BufferedObservationChunk.from_dict(item)
-            if chunk is not None:
-                normalized_chunks.append(chunk.to_dict())
+        buffer_chunks = buffer_raw.get("chunks")
+        if isinstance(buffer_chunks, list):
+            for item in buffer_chunks:
+                if not isinstance(item, dict):
+                    continue
+                chunk = BufferedObservationChunk.from_dict(item)
+                if chunk is not None:
+                    normalized_chunks.append(chunk.to_dict())
+
+        buffer_tokens_candidate = buffer_raw.get("tokens")
+        buffer_tokens: int = (
+            buffer_tokens_candidate
+            if isinstance(buffer_tokens_candidate, int) and buffer_tokens_candidate > 0
+            else max(500, default_buffer_tokens)
+        )
+        buffer_last_boundary_candidate = buffer_raw.get("lastBoundary")
+        buffer_last_boundary: int = (
+            buffer_last_boundary_candidate
+            if isinstance(buffer_last_boundary_candidate, int) and buffer_last_boundary_candidate >= 0
+            else 0
+        )
+        buffer_up_to_message_id_candidate = buffer_raw.get("upToMessageId")
+        buffer_up_to_message_id = (
+            str(buffer_up_to_message_id_candidate)
+            if buffer_up_to_message_id_candidate is not None
+            else None
+        )
+        buffer_up_to_timestamp_candidate = buffer_raw.get("upToTimestamp")
+        buffer_up_to_timestamp = (
+            str(buffer_up_to_timestamp_candidate)
+            if buffer_up_to_timestamp_candidate is not None
+            else None
+        )
 
         return {
             "generation": parsed.get("generation"),
@@ -181,22 +213,10 @@ class ObservationMemoryService:
             "suggestedResponse": parsed.get("suggestedResponse"),
             "timestamp": parsed.get("timestamp"),
             "buffer": {
-                "tokens": int(buffer_raw.get("tokens"))
-                if isinstance(buffer_raw.get("tokens"), int) and int(buffer_raw.get("tokens")) > 0
-                else max(500, int(default_buffer_tokens)),
-                "lastBoundary": int(buffer_raw.get("lastBoundary"))
-                if isinstance(buffer_raw.get("lastBoundary"), int) and int(buffer_raw.get("lastBoundary")) >= 0
-                else 0,
-                "upToMessageId": (
-                    str(buffer_raw.get("upToMessageId"))
-                    if buffer_raw.get("upToMessageId") is not None
-                    else None
-                ),
-                "upToTimestamp": (
-                    str(buffer_raw.get("upToTimestamp"))
-                    if buffer_raw.get("upToTimestamp") is not None
-                    else None
-                ),
+                "tokens": buffer_tokens,
+                "lastBoundary": buffer_last_boundary,
+                "upToMessageId": buffer_up_to_message_id,
+                "upToTimestamp": buffer_up_to_timestamp,
                 "chunks": normalized_chunks,
             },
         }

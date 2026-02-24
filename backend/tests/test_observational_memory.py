@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 from types import SimpleNamespace
+from typing import cast
 
+from app.db.models.observation import Observation
 from app.services.memory.observational.background import OMBackgroundRunner
 from app.services.memory.observational.service import (
     BufferedObservationChunk,
@@ -639,7 +641,7 @@ def test_activate_buffered_observations_increments_generation() -> None:
 
     activated = svc.activate_buffered_observations(
         chat_id="chat-1",
-        base_observation=base_observation,
+        base_observation=cast(Observation, base_observation),
         chunks=[chunk],
     )
 

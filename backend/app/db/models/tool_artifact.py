@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from sqlalchemy import ForeignKey, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
+from typing import Optional
 
 from app.db.base import Base
 
@@ -15,6 +16,6 @@ class ToolArtifact(Base):
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
     artifact_type: Mapped[str] = mapped_column(Text, nullable=False)
     file_path: Mapped[str] = mapped_column(Text, nullable=False)
-    line_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    preview_lines: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    line_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    preview_lines: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     created_at: Mapped[str] = mapped_column(Text, nullable=False)

@@ -619,7 +619,7 @@ def test_sse_ordering_and_disconnect_cleanup(client) -> None:
 
 
 def test_continue_agent_schedules_latest_checkpoint(client, monkeypatch) -> None:
-    captured: dict[str, str] = {}
+    captured: dict[str, str | None] = {}
     history_before = client.get("/api/chat/chat-1/history").json()["data"]
     latest_checkpoint = history_before["checkpoints"][-1]["id"]
     message_by_id = {m["id"]: m["content"] for m in history_before["messages"]}

@@ -85,9 +85,10 @@ def _ensure_additional_properties_false(schema: dict) -> dict:
     if not isinstance(schema, dict) or schema.get("type") != "object":
         return schema
     result = {**schema, "additionalProperties": False}
-    if "properties" in result:
+    properties = result.get("properties")
+    if isinstance(properties, dict):
         new_props = {}
-        for key, prop in result["properties"].items():
+        for key, prop in properties.items():
             if isinstance(prop, dict):
                 if prop.get("type") == "object":
                     new_props[key] = _ensure_additional_properties_false(prop)
@@ -113,10 +114,11 @@ def _ensure_all_required(schema: dict) -> dict:
     if not isinstance(schema, dict) or schema.get("type") != "object":
         return schema
     result = {**schema, "additionalProperties": False}
-    if "properties" in result:
-        result["required"] = list(result["properties"].keys())
+    properties = result.get("properties")
+    if isinstance(properties, dict):
+        result["required"] = list(properties.keys())
         new_props = {}
-        for key, prop in result["properties"].items():
+        for key, prop in properties.items():
             if isinstance(prop, dict):
                 if prop.get("type") == "object":
                     new_props[key] = _ensure_all_required(prop)

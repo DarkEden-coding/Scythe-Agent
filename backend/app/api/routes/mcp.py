@@ -8,6 +8,7 @@ from app.api.envelope import err, ok
 from app.middleware.error_handler import full_error_message
 from app.schemas.mcp import (
     CreateMCPServerRequest,
+    MCPServerOut,
     MCPServersResponse,
     RefreshMCPResponse,
     SetMCPServerEnabledRequest,
@@ -24,7 +25,8 @@ def list_mcp_servers(db=Depends(get_db)):
     """List all MCP servers with their tools."""
     try:
         data = MCPService(db).list_servers()
-        return ok(MCPServersResponse(servers=data).model_dump())
+        servers = [MCPServerOut.model_validate(item) for item in data]
+        return ok(MCPServersResponse(servers=servers).model_dump())
     except Exception as exc:
         return JSONResponse(status_code=500, content=err(full_error_message(exc)).model_dump())
 

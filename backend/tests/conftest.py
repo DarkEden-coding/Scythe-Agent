@@ -1,4 +1,5 @@
 import os
+from collections.abc import Generator
 
 import pytest
 from fastapi.testclient import TestClient
@@ -84,7 +85,7 @@ def test_env() -> None:
 
 
 @pytest.fixture
-def client() -> TestClient:
+def client() -> Generator[TestClient, None, None]:
     app = create_app()
     with TestClient(app) as test_client:
         reset_mcp_client_manager()

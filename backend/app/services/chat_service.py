@@ -3,6 +3,7 @@ import json
 import logging
 
 import httpx
+from typing import Mapping, cast
 from sqlalchemy.orm import Session
 
 from app.db.models.chat import Chat
@@ -40,12 +41,14 @@ logger = logging.getLogger(__name__)
 
 def _extract_http_error_detail(body: object) -> str:
     """Best-effort extraction of a useful provider error message from JSON/text bodies."""
-    if isinstance(body, dict):
-        err = body.get("error")
+    if isinstance(body, Mapping):
+        body_dict = cast(dict[str, object], body)
+        err = body_dict.get("error")
         if isinstance(err, dict):
-            msg = err.get("message")
-            typ = err.get("type")
-            param = err.get("param")
+            err_dict = cast(dict[str, object], err)
+            msg = err_dict.get("message")
+            typ = err_dict.get("type")
+            param = err_dict.get("param")
             parts = [str(msg).strip()] if isinstance(msg, str) and str(msg).strip() else []
             if isinstance(typ, str) and typ.strip():
                 parts.append(f"type={typ.strip()}")
@@ -53,10 +56,10 @@ def _extract_http_error_detail(body: object) -> str:
                 parts.append(f"param={param.strip()}")
             if parts:
                 return " | ".join(parts)
-        msg = body.get("message")
+        msg = body_dict.get("message")
         if isinstance(msg, str) and msg.strip():
             return msg.strip()
-        detail = body.get("detail")
+        detail = body_dict.get("detail")
         if isinstance(detail, str) and detail.strip():
             return detail.strip()
         if isinstance(detail, list):
@@ -64,7 +67,7 @@ def _extract_http_error_detail(body: object) -> str:
             if joined:
                 return joined
         try:
-            compact = json.dumps(body, separators=(",", ":"), ensure_ascii=True)
+            compact = json.dumps(body_dict, separators=(",", ":"), ensure_ascii=True)
             return compact[:500]
         except Exception:
             return ""

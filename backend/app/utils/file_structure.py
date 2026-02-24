@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal, cast
 
 logger = logging.getLogger(__name__)
 
-_EXT_TO_LANG: dict[str, str] = {
+_EXT_TO_LANG: dict[str, Literal["python", "javascript", "typescript", "go", "rust", "java", "ruby", "c", "cpp", "csharp", "php", "swift", "kotlin", "scala", "toml", "json", "yaml"]] = {
     ".py": "python",
     ".js": "javascript",
     ".jsx": "javascript",
@@ -166,7 +166,7 @@ def get_file_structure(content: str, path: str) -> str:
         )
 
     try:
-        from tree_sitter_language_pack import get_parser  # type: ignore[import-untyped]
+        from tree_sitter_language_pack import get_parser
     except ImportError as e:
         logger.warning("tree-sitter-language-pack not available: %s", e)
         return (
@@ -183,7 +183,7 @@ def get_file_structure(content: str, path: str) -> str:
         )
 
     try:
-        parser = get_parser(lang)
+        parser = get_parser(cast(Any, lang))
     except Exception as exc:
         logger.debug("tree-sitter parser for %s: %s", lang, exc)
         return (

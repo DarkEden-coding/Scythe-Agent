@@ -1,5 +1,6 @@
 import logging
 from contextlib import asynccontextmanager
+from typing import Any, cast
 
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
@@ -91,13 +92,13 @@ async def lifespan(app: FastAPI):
         resolver = APIKeyResolver(repo)
 
         or_client = resolver.create_client("openrouter")
-        if or_client:
+        if or_client is not None:
             await OpenRouterModelCatalogService(session, client=or_client).sync_models_on_startup()
         else:
             logger.info("No OpenRouter API key configured - skipping model sync")
 
         groq_client = resolver.create_client("groq")
-        if groq_client:
+        if groq_client is not None:
             await GroqModelCatalogService(session, client=groq_client).sync_models_on_startup()
         else:
             logger.info("No Groq API key configured - skipping model sync")
@@ -147,18 +148,28 @@ async def lifespan(app: FastAPI):
 def create_app() -> FastAPI:
     settings = get_settings()
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
+    cors_origins = list(settings.cors_origins)
     app.add_middleware(
-        CORSMiddleware,
-        allow_origins=settings.cors_origins,
+        cast(Any, CORSMiddleware),
+        allow_origins=cors_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
 
     # Register error handlers
-    app.add_exception_handler(RequestValidationError, validation_error_handler)
-    app.add_exception_handler(ServiceError, service_error_handler)
-    app.add_exception_handler(Exception, catch_all_handler)
+    app.add_exception_handler(
+        RequestValidationError,
+        cast(Any, validation_error_handler),
+    )
+    app.add_exception_handler(
+        ServiceError,
+        cast(Any, service_error_handler),
+    )
+    app.add_exception_handler(
+        Exception,
+        cast(Any, catch_all_handler),
+    )
 
     app.include_router(projects_router)
     app.include_router(filesystem_router)

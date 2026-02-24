@@ -1,3 +1,4 @@
+from typing import Optional
 from sqlalchemy import Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -10,7 +11,7 @@ class ProviderModelCache(Base):
     id: Mapped[str] = mapped_column(Text, primary_key=True)
     provider: Mapped[str] = mapped_column(Text, nullable=False)
     label: Mapped[str] = mapped_column(Text, nullable=False)
-    context_limit: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    context_limit: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     raw_json: Mapped[str] = mapped_column(Text, nullable=False)
     fetched_at: Mapped[str] = mapped_column(Text, nullable=False)
 

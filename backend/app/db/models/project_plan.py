@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import ForeignKey, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -24,7 +24,7 @@ class ProjectPlan(Base):
     project_id: Mapped[str] = mapped_column(
         ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
     )
-    checkpoint_id: Mapped[str | None] = mapped_column(
+    checkpoint_id: Mapped[Optional[str]] = mapped_column(
         ForeignKey("checkpoints.id", ondelete="SET NULL"), nullable=True
     )
     title: Mapped[str] = mapped_column(Text, nullable=False, default="Implementation Plan")
@@ -33,14 +33,14 @@ class ProjectPlan(Base):
     revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     content_sha256: Mapped[str] = mapped_column(Text, nullable=False)
     last_editor: Mapped[str] = mapped_column(Text, nullable=False, default="agent")
-    approved_action: Mapped[str | None] = mapped_column(Text, nullable=True)
-    implementation_chat_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    approved_action: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    implementation_chat_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[str] = mapped_column(Text, nullable=False)
     updated_at: Mapped[str] = mapped_column(Text, nullable=False)
 
     chat: Mapped["Chat"] = relationship(back_populates="project_plans")
     project: Mapped["Project"] = relationship(back_populates="project_plans")
-    checkpoint: Mapped["Checkpoint | None"] = relationship()
+    checkpoint: Mapped[Optional["Checkpoint"]] = relationship()
     revisions: Mapped[list["ProjectPlanRevision"]] = relationship(
         back_populates="plan", cascade="all, delete-orphan", passive_deletes=True
     )

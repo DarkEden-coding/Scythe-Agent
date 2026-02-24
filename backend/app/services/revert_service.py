@@ -181,7 +181,9 @@ class RevertService:
                 action=map_file_action_for_ui(f.action),
                 diff=f.diff,
                 timestamp=f.timestamp,
-                checkpointId=f.checkpoint_id,
+                checkpointId=f.checkpoint_id
+                if isinstance(f.checkpoint_id, str)
+                else "",
             )
             for f in self.repo.list_file_edits(chat_id)
         ]

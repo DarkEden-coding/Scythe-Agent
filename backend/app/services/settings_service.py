@@ -513,6 +513,7 @@ class SettingsService:
         Manually trigger Groq model sync.
         Returns list of model labels.
         """
+        from app.providers.groq.client import GroqClient
         from app.providers.groq.model_catalog import GroqModelCatalogService
         from app.services.api_key_resolver import APIKeyResolver
 
@@ -520,6 +521,7 @@ class SettingsService:
         client = resolver.create_client("groq")
         if not client:
             raise ValueError("No Groq API key configured")
+        assert isinstance(client, GroqClient)
 
         catalog_service = GroqModelCatalogService(self.repo.db, client=client)
         labels = await catalog_service.sync_models_on_startup(force_refresh=True)
@@ -701,6 +703,7 @@ class SettingsService:
         Manually trigger OpenRouter model sync.
         Returns list of model labels.
         """
+        from app.providers.openrouter.client import OpenRouterClient
         from app.providers.openrouter.model_catalog import OpenRouterModelCatalogService
         from app.services.api_key_resolver import APIKeyResolver
 
@@ -708,6 +711,7 @@ class SettingsService:
         client = resolver.create_client()
         if not client:
             raise ValueError("No OpenRouter API key configured")
+        assert isinstance(client, OpenRouterClient)
 
         catalog_service = OpenRouterModelCatalogService(self.repo.db, client=client)
         labels = await catalog_service.sync_models_on_startup(force_refresh=True)
