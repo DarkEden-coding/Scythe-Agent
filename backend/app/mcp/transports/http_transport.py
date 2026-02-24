@@ -58,7 +58,7 @@ class HttpTransport:
 
     async def _send_notification(self, method: str) -> None:
         msg = {"jsonrpc": "2.0", "method": method}
-        await self._post(msg)
+        await self._post(msg, allow_empty_response=True)
 
     async def _send_request(self, method: str, params: dict) -> dict | None:
         req_id = self._next_id()
@@ -71,7 +71,7 @@ class HttpTransport:
             raise RuntimeError(err.get("message", str(err)))
         return resp.get("result")
 
-    async def _post(self, payload: dict) -> dict | None:
+    async def _post(self, payload: dict, *, allow_empty_response: bool = False) -> dict | None:
         headers = {
             "Content-Type": "application/json",
             "Accept": "application/json, text/event-stream",
@@ -83,6 +83,8 @@ class HttpTransport:
                 response.raise_for_status()
                 body = response.text or ""
                 if not body.strip():
+                    if allow_empty_response:
+                        return None
                     logger.warning("MCP HTTP empty response: url=%s status=%s", self._url, response.status_code)
                     raise RuntimeError(
                         f"Empty response from {self._url} (status {response.status_code})"
@@ -90,13 +92,9 @@ class HttpTransport:
                 try:
                     return json.loads(body)
                 except json.JSONDecodeError as e:
-                    if body.strip().startswith("data:"):
-                        raw = body.strip()[5:].split("\n")[0].strip()
-                        if raw:
-                            try:
-                                return json.loads(raw)
-                            except json.JSONDecodeError:
-                                pass
+                    sse_payload = self._extract_json_from_sse(body)
+                    if sse_payload is not None:
+                        return sse_payload
                     preview = body[:500].replace("\n", " ")
                     if len(body) > 500:
                         preview += "..."
@@ -113,3 +111,30 @@ class HttpTransport:
             raise RuntimeError(
                 f"HTTP {e.response.status_code} from {self._url}: {body}"
             ) from e
+
+    @staticmethod
+    def _extract_json_from_sse(body: str) -> dict | None:
+        # Support SSE-framed MCP responses such as:
+        # event: message
+        # data: {"jsonrpc":"2.0", ...}
+        normalized = body.replace("\r\n", "\n").replace("\r", "\n")
+        blocks = normalized.split("\n\n")
+        for block in blocks:
+            if not block.strip():
+                continue
+            data_lines: list[str] = []
+            for line in block.split("\n"):
+                if line.startswith("data:"):
+                    data_lines.append(line[5:].lstrip())
+            if not data_lines:
+                continue
+            payload = "\n".join(data_lines).strip()
+            if not payload or payload == "[DONE]":
+                continue
+            try:
+                parsed = json.loads(payload)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(parsed, dict):
+                return parsed
+        return None
