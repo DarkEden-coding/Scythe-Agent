@@ -18,7 +18,7 @@ from app.utils.todos import normalize_todo_items
 
 logger = logging.getLogger(__name__)
 
-SUB_AGENT_EXCLUDED_TOOLS = {"spawn_sub_agent"}
+SUB_AGENT_EXCLUDED_TOOLS = {"spawn_sub_agent", "user_query"}
 
 
 @dataclass

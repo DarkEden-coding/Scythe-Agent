@@ -29,6 +29,7 @@ PLANNING_ALLOWED_TOOLS = {
     "spawn_sub_agent",
     "update_todo_list",
     "submit_task",
+    "user_query",
 }
 PLANNING_PROMPT_APPENDIX = """
 PLANNING MODE:
@@ -324,8 +325,9 @@ class AgentLoop:
                         {
                             "role": "user",
                             "content": (
-                                "You must call the submit_task tool when all tasks are complete. "
-                                "The agent loop continues until you call submit_task."
+                                "You must call the submit_task tool when all tasks are complete, "
+                                "or user_query when you need more information from the user. "
+                                "The agent loop continues until you call one of these tools."
                             ),
                         }
                     )
@@ -393,21 +395,30 @@ class AgentLoop:
                     tc.get("id", ""): tc.get("function", {}).get("name", "")
                     for tc in result.tool_calls
                 }
-                submit_task_succeeded = False
+                loop_ended = False
                 for tr in tool_results:
-                    if tc_id_to_name.get(tr.get("tool_call_id")) == "submit_task":
-                        if (tr.get("content") or "").strip() == "Task submitted.":
-                            submit_task_succeeded = True
+                    tc_name = tc_id_to_name.get(tr.get("tool_call_id"))
+                    content = (tr.get("content") or "").strip()
+                    if tc_name == "submit_task" and content == "Task submitted.":
+                        loop_ended = True
+                        logger.info(
+                            "Conversation ended: submit_task succeeded chat_id=%s checkpoint_id=%s",
+                            chat_id,
+                            checkpoint_id,
+                        )
                         break
-                if submit_task_succeeded:
+                    if tc_name == "user_query" and content == "Awaiting user response.":
+                        loop_ended = True
+                        logger.info(
+                            "Conversation ended: user_query awaiting response chat_id=%s checkpoint_id=%s",
+                            chat_id,
+                            checkpoint_id,
+                        )
+                        break
+                if loop_ended:
                     await self._event_bus.publish(
                         chat_id,
                         {"type": "agent_done", "payload": {"checkpointId": checkpoint_id}},
-                    )
-                    logger.info(
-                        "Conversation ended: submit_task succeeded chat_id=%s checkpoint_id=%s",
-                        chat_id,
-                        checkpoint_id,
                     )
                     return AgentRunResult(
                         completed=True,
