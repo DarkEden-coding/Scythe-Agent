@@ -556,6 +556,65 @@ def test_edit_message_cancels_observation_runner(client, monkeypatch) -> None:
     assert all(chat_id == "chat-1" for chat_id in calls)
 
 
+def test_split_messages_by_waterline_uses_timestamp_when_message_anchor_missing() -> None:
+    svc = ObservationMemoryService(SimpleNamespace())
+    messages = [
+        {
+            "role": "user",
+            "content": "hello",
+            "_message_id": "msg-1",
+            "_timestamp": "2026-02-20T10:00:00+00:00",
+        },
+        {
+            "role": "assistant",
+            "content": "hi",
+            "_message_id": "msg-2",
+            "_timestamp": "2026-02-20T10:01:00+00:00",
+        },
+        {
+            "role": "tool",
+            "content": "tool output",
+            "_timestamp": "2026-02-20T10:01:30+00:00",
+        },
+    ]
+
+    observed, unobserved = svc.split_messages_by_waterline(
+        messages,
+        waterline_message_id="missing-anchor",
+        waterline_timestamp="2026-02-20T10:01:00+00:00",
+    )
+
+    assert [m.get("_message_id") for m in observed] == ["msg-1", "msg-2"]
+    assert [m.get("_message_id") for m in unobserved] == [None]
+
+
+def test_split_messages_by_waterline_parses_z_suffix_timestamps() -> None:
+    svc = ObservationMemoryService(SimpleNamespace())
+    messages = [
+        {
+            "role": "user",
+            "content": "hello",
+            "_message_id": "msg-1",
+            "_timestamp": "2026-02-20T10:00:00+00:00",
+        },
+        {
+            "role": "assistant",
+            "content": "hi",
+            "_message_id": "msg-2",
+            "_timestamp": "2026-02-20T10:01:00+00:00",
+        },
+    ]
+
+    observed, unobserved = svc.split_messages_by_waterline(
+        messages,
+        waterline_message_id=None,
+        waterline_timestamp="2026-02-20T10:01:00Z",
+    )
+
+    assert [m.get("_message_id") for m in observed] == ["msg-1", "msg-2"]
+    assert unobserved == []
+
+
 def test_activate_buffered_observations_starts_generation_at_zero() -> None:
     class FakeRepo:
         def get_latest_observation(self, _chat_id: str):

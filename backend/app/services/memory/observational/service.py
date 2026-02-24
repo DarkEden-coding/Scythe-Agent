@@ -128,11 +128,43 @@ def _as_timestamp(value: Any) -> str | None:
     return None
 
 
+def _parse_iso_timestamp(value: Any) -> datetime | None:
+    raw = _as_timestamp(value)
+    if raw is None:
+        return None
+    normalized = raw[:-1] + "+00:00" if raw.endswith("Z") else raw
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def _timestamp_is_on_or_before(left: Any, right: Any) -> bool:
+    left_raw = _as_timestamp(left)
+    right_raw = _as_timestamp(right)
+    if left_raw is None or right_raw is None:
+        return False
+
+    left_ts = _parse_iso_timestamp(left_raw)
+    right_ts = _parse_iso_timestamp(right_raw)
+    if left_ts is not None and right_ts is not None:
+        return left_ts <= right_ts
+
+    return left_raw <= right_raw
+
+
 def _latest_timestamp(left: str | None, right: str | None) -> str | None:
     if left is None:
         return right
     if right is None:
         return left
+    left_ts = _parse_iso_timestamp(left)
+    right_ts = _parse_iso_timestamp(right)
+    if left_ts is not None and right_ts is not None:
+        return right if right_ts > left_ts else left
     return right if right > left else left
 
 
@@ -272,6 +304,7 @@ class ObservationMemoryService:
             return [], []
 
         observed_flags = [False] * len(all_messages)
+        message_anchor_found = False
 
         if waterline_message_id:
             waterline_idx: int | None = None
@@ -280,16 +313,20 @@ class ObservationMemoryService:
                     waterline_idx = i
                     break
             if waterline_idx is not None:
+                message_anchor_found = True
                 for i in range(0, waterline_idx + 1):
                     if all_messages[i].get("_message_id") is not None:
                         observed_flags[i] = True
 
         if waterline_timestamp:
             for i, msg in enumerate(all_messages):
-                if msg.get("_message_id") is not None:
+                # Primary tracking for real messages is message-id waterline. If that
+                # anchor is absent or no longer present, fall back to timestamp so
+                # pre-observed history is not re-counted as newly unobserved.
+                if msg.get("_message_id") is not None and message_anchor_found:
                     continue
-                ts = _as_timestamp(msg.get("_timestamp") or msg.get("timestamp"))
-                if ts is not None and ts <= waterline_timestamp:
+                ts = msg.get("_timestamp") or msg.get("timestamp")
+                if _timestamp_is_on_or_before(ts, waterline_timestamp):
                     observed_flags[i] = True
 
         observed: list[dict] = []
