@@ -422,7 +422,7 @@ export function App() {
     return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
   });
 
-  if (projectsLoading) {
+  if (projectsLoading && !projects.length) {
     return (
       <div className="h-screen w-screen bg-gray-950 flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
