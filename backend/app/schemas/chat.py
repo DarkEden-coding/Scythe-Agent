@@ -1,6 +1,10 @@
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from app.services.token_counter import count_text_tokens
+
+_MAX_CONTENT_TOKENS = 50_000
 
 
 class MessageOut(BaseModel):
@@ -112,8 +116,24 @@ class GetChatHistoryResponse(BaseModel):
     model: str
 
 
+def _validate_content_tokens(v: str) -> str:
+    """Validate content does not exceed token limit."""
+    tokens = count_text_tokens(v)
+    if tokens > _MAX_CONTENT_TOKENS:
+        raise ValueError(
+            f"Content must be at most {_MAX_CONTENT_TOKENS:,} tokens (got {tokens:,})"
+        )
+    return v
+
+
 class SendMessageRequest(BaseModel):
-    content: str = Field(min_length=1, max_length=100_000)
+    content: str = Field(min_length=1)
+
+    @field_validator("content")
+    @classmethod
+    def validate_content_tokens(cls, v: str) -> str:
+        return _validate_content_tokens(v)
+
     mode: Literal["default", "planning", "plan_edit"] | None = None
     activePlanId: str | None = None
 
@@ -169,7 +189,12 @@ class RevertFileResponse(BaseModel):
 
 
 class EditMessageRequest(BaseModel):
-    content: str = Field(min_length=1, max_length=100_000)
+    content: str = Field(min_length=1)
+
+    @field_validator("content")
+    @classmethod
+    def validate_content_tokens(cls, v: str) -> str:
+        return _validate_content_tokens(v)
 
 
 class EditMessageResponse(BaseModel):

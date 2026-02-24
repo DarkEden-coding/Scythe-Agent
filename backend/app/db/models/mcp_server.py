@@ -1,5 +1,5 @@
-from sqlalchemy import Integer, Text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import Integer, Text  # type: ignore
+from sqlalchemy.orm import Mapped, mapped_column  # type: ignore
 
 from app.db.base import Base
 
@@ -12,5 +12,5 @@ class MCPServer(Base):
     transport: Mapped[str] = mapped_column(Text, nullable=False)
     config_json: Mapped[str] = mapped_column(Text, nullable=False)
     enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    last_connected_at: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_connected_at: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 

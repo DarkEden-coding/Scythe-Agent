@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy import ForeignKey, Text
+from sqlalchemy import ForeignKey, Text  # type: ignore  # type: ignore
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base

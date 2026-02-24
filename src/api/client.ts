@@ -386,13 +386,22 @@ export class ApiClient {
   /** Send a user message to a chat. Manages a per-chat session so
    *  multiple chats can have concurrent in-flight requests. */
   async sendMessage(req: SendMessageRequest): Promise<ApiResponse<SendMessageResponse>> {
+    const content = typeof req.content === 'string' ? req.content.trim() : '';
+    if (!content) {
+      return {
+        ok: false,
+        data: null,
+        error: 'Message content is required and cannot be empty',
+        timestamp: new Date().toISOString(),
+      };
+    }
     this.startSession(req.chatId);
     try {
       const res = await this.request<SendMessageResponse>(
         'POST',
         `/chat/${req.chatId}/messages`,
         {
-          content: req.content,
+          content,
           mode: req.mode,
           activePlanId: req.activePlanId,
         },

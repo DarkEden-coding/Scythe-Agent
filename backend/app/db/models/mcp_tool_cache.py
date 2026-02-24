@@ -1,5 +1,5 @@
-from sqlalchemy import ForeignKey, Integer, Text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import ForeignKey, Integer, Text  # type: ignore
+from sqlalchemy.orm import Mapped, mapped_column  # type: ignore
 
 from app.db.base import Base
 

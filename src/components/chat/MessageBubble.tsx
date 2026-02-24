@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { User, Bot, Pencil, Check, X, RotateCw } from 'lucide-react';
+import { User, Bot, Pencil, Check, X, RotateCw, Copy } from 'lucide-react';
 import type { Message } from '@/types';
 import { Markdown } from '@/components/Markdown';
 import { formatTime } from '@/utils/formatTime';
@@ -52,6 +52,10 @@ export function MessageBubble({ message, onEdit, isProcessing }: MessageBubblePr
     if (e.key === 'Escape') {
       handleCancel();
     }
+  };
+
+  const handleCopy = () => {
+    void navigator.clipboard.writeText(message.content);
   };
 
   return (
@@ -121,26 +125,44 @@ export function MessageBubble({ message, onEdit, isProcessing }: MessageBubblePr
                   <div className="whitespace-pre-wrap">{message.content}</div>
                 )}
               </div>
-              {message.role === 'user' && onEdit && isHovered && !isProcessing && (
-                <div className="absolute -left-7 top-1/2 -translate-y-1/2 flex flex-col gap-0.5">
+            </div>
+            <div
+              className={cn(
+                'mt-1 flex items-center gap-1',
+                message.role === 'user' ? 'justify-end' : 'justify-start',
+              )}
+            >
+              <span className="text-[10px] text-gray-600">{formatTime(message.timestamp)}</span>
+              {message.role === 'user' && isHovered && (
+                <div className="flex items-center gap-0.5">
                   <button
-                    onClick={handleEditStart}
-                    title="Edit message"
+                    onClick={handleCopy}
+                    title="Copy message"
                     className="w-5 h-5 flex items-center justify-center text-gray-600 hover:text-aqua-400 hover:bg-gray-800 rounded-md transition-colors"
                   >
-                    <Pencil className="w-3 h-3" />
+                    <Copy className="w-3 h-3" />
                   </button>
-                  <button
-                    onClick={() => onEdit?.(message.id, message.content)}
-                    title="Retry with same message"
-                    className="w-5 h-5 flex items-center justify-center text-gray-600 hover:text-aqua-400 hover:bg-gray-800 rounded-md transition-colors"
-                  >
-                    <RotateCw className="w-3 h-3" />
-                  </button>
+                  {onEdit && !isProcessing && (
+                    <>
+                      <button
+                        onClick={handleEditStart}
+                        title="Edit message"
+                        className="w-5 h-5 flex items-center justify-center text-gray-600 hover:text-aqua-400 hover:bg-gray-800 rounded-md transition-colors"
+                      >
+                        <Pencil className="w-3 h-3" />
+                      </button>
+                      <button
+                        onClick={() => onEdit?.(message.id, message.content)}
+                        title="Retry with same message"
+                        className="w-5 h-5 flex items-center justify-center text-gray-600 hover:text-aqua-400 hover:bg-gray-800 rounded-md transition-colors"
+                      >
+                        <RotateCw className="w-3 h-3" />
+                      </button>
+                    </>
+                  )}
                 </div>
               )}
             </div>
-            <div className="mt-1 text-[10px] text-gray-600">{formatTime(message.timestamp)}</div>
           </>
         )}
       </div>

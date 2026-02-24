@@ -2,6 +2,7 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes.chat import router as chat_router
@@ -18,7 +19,12 @@ from app.db.seed import seed_app_data
 from app.db.session import get_sessionmaker
 from app.mcp.client_manager import MCPClientManager, get_mcp_client_manager
 from app.mcp.transports import *  # noqa: F401, F403 - registers stdio transport
-from app.middleware.error_handler import ServiceError, catch_all_handler, service_error_handler
+from app.middleware.error_handler import (
+    ServiceError,
+    catch_all_handler,
+    service_error_handler,
+    validation_error_handler,
+)
 from app.providers.openrouter.model_catalog import OpenRouterModelCatalogService
 from app.services.agent_task_manager import AgentTaskManager
 from app.services.approval_waiter import ApprovalWaiter
@@ -150,6 +156,7 @@ def create_app() -> FastAPI:
     )
 
     # Register error handlers
+    app.add_exception_handler(RequestValidationError, validation_error_handler)
     app.add_exception_handler(ServiceError, service_error_handler)
     app.add_exception_handler(Exception, catch_all_handler)
 
