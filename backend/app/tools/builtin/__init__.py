@@ -1,2 +1,0 @@
-"""Builtin tool implementations."""
-

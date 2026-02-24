@@ -18,6 +18,5 @@ from app.db.models.provider_model_cache import ProviderModelCache as ProviderMod
 from app.db.models.reasoning_block import ReasoningBlock as ReasoningBlock
 from app.db.models.sub_agent_run import SubAgentRun as SubAgentRun
 from app.db.models.settings import Settings as Settings
-from app.db.models.todo import Todo as Todo
 from app.db.models.tool_artifact import ToolArtifact as ToolArtifact
 from app.db.models.tool_call import ToolCall as ToolCall

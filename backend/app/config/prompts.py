@@ -1,7 +1,6 @@
-from __future__ import annotations
+"""Default system prompts for the agent."""
 
-from app.preprocessors.base import PreprocessorContext
-from app.providers.base import LLMProvider
+from __future__ import annotations
 
 DEFAULT_SYSTEM_PROMPT = """You are a helpful AI coding assistant in an agentic workflow.
 
@@ -29,24 +28,3 @@ CONTEXT GATHERING TOOL USE:
 - If information is not found: Use the Brave Web Search tool to gather more general context.
 - Large tasks: Use the Scythe Context Engine tool and sub-agents to condense and gather large amounts of context.
 - Small context-gathering tasks: Use Refile and Miss Files tools when you need only a little context to perform the user query."""
-
-
-class SystemPromptPreprocessor:
-    """Inject system prompt at the start of the message list."""
-
-    name = "system_prompt"
-    priority = 10
-
-    def __init__(self, default_prompt: str = DEFAULT_SYSTEM_PROMPT):
-        self._default_prompt = default_prompt
-
-    async def process(
-        self,
-        ctx: PreprocessorContext,
-        _provider: LLMProvider,
-    ) -> PreprocessorContext:
-        prompt = ctx.system_prompt or self._default_prompt
-        first = ctx.messages[0] if ctx.messages else None
-        if first is None or first.get("role") != "system" or first.get("content") != prompt:
-            ctx.messages.insert(0, {"role": "system", "content": prompt})
-        return ctx

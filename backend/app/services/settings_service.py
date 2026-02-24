@@ -14,7 +14,7 @@ from app.utils.time import utc_now_iso
 from app.db.models.auto_approve_rule import AutoApproveRule
 from app.config.settings import get_settings
 from app.db.repositories.settings_repo import SettingsRepository
-from app.preprocessors.system_prompt import DEFAULT_SYSTEM_PROMPT
+from app.config.prompts import DEFAULT_SYSTEM_PROMPT
 from app.schemas.settings import (
     AutoApproveRuleIn,
     AutoApproveRuleOut,

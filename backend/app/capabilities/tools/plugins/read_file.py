@@ -1,26 +1,97 @@
+"""Read file tool — project files, tool outputs, targeted spans."""
+
 from __future__ import annotations
+
+import asyncio
+from pathlib import Path
 
 from app.capabilities.tools.interfaces import ToolExecutionContext, ToolPlugin
 from app.capabilities.tools.types import ToolExecutionResult
-from app.tools.builtin.read_file import ReadFileTool
+from app.tools.path_utils import resolve_path
+from app.utils.file_structure import get_file_structure
 
-_tool = ReadFileTool()
+
+def _read_span_streaming(path: Path, start_idx: int, end_idx: int) -> str:
+    """Stream lines and collect only the requested span; stop after end_idx to save I/O."""
+    span_lines: list[str] = []
+    total = 0
+    with path.open(encoding="utf-8") as f:
+        for i, line in enumerate(f):
+            line_num = i + 1
+            total = line_num
+            if line_num > end_idx:
+                break
+            if line_num >= start_idx:
+                span_lines.append(line.rstrip("\n"))
+    total_str = f"lines {start_idx}-{end_idx}" if total > end_idx else f"{total} lines"
+    return f"File: {path} ({total_str})\n\n" + "\n".join(span_lines)
+
+
+def _read_structure(path: Path) -> str:
+    """Read file and return structure; runs in thread."""
+    content = path.read_text(encoding="utf-8")
+    return get_file_structure(content, str(path))
 
 
 async def _handler(payload: dict, context: ToolExecutionContext) -> ToolExecutionResult:
-    result = await _tool.run(
-        payload,
-        project_root=context.project_root,
-        chat_id=context.chat_id,
-        chat_repo=context.chat_repo,
-    )
-    return ToolExecutionResult(output=result.output, file_edits=result.file_edits, ok=result.ok)
+    try:
+        path = resolve_path(
+            payload.get("path", ""),
+            project_root=context.project_root,
+            allow_external=True,
+        )
+    except ValueError as exc:
+        return ToolExecutionResult(output=str(exc), file_edits=[], ok=False)
+    if not path.exists() or not path.is_file():
+        return ToolExecutionResult(output=f"File not found: {path}", file_edits=[], ok=False)
+
+    start_val = payload.get("start")
+    end_val = payload.get("end")
+    has_span = start_val is not None and end_val is not None
+
+    if has_span and start_val is not None and end_val is not None:
+        try:
+            start_idx = int(start_val)
+            end_idx = int(end_val)
+        except (TypeError, ValueError):
+            return ToolExecutionResult(
+                output="start and end must be integers (1-based line numbers).",
+                file_edits=[],
+                ok=False,
+            )
+        if start_idx < 1 or end_idx < 1:
+            return ToolExecutionResult(
+                output="start and end must be >= 1 (1-based line numbers).",
+                file_edits=[],
+                ok=False,
+            )
+        if start_idx > end_idx:
+            start_idx, end_idx = end_idx, start_idx
+        output = await asyncio.to_thread(_read_span_streaming, path, start_idx, end_idx)
+        return ToolExecutionResult(output=output, file_edits=[])
+
+    output = await asyncio.to_thread(_read_structure, path)
+    return ToolExecutionResult(output=output, file_edits=[])
 
 
 TOOL_PLUGIN = ToolPlugin(
-    name=_tool.name,
-    description=_tool.description,
-    input_schema=_tool.input_schema,
+    name="read_file",
+    description=(
+        "Read a file. path must be absolute. Can read project files, tool output files "
+        "(spilled outputs under tool_outputs/), and other external paths (those require approval). "
+        "Without start/end: returns file structure (declarations with line ranges) and total line count; use that to decide which spans to read. "
+        "With start and end (1-based): returns that line span. "
+        "For files without structure support (unknown extensions), use start/end to read sections. Always prefer targeted spans over reading entire large files."
+    ),
+    input_schema={
+        "type": "object",
+        "required": ["path"],
+        "properties": {
+            "path": {"type": "string"},
+            "start": {"type": "integer", "description": "Start line (1-based). Omit with end to get structure."},
+            "end": {"type": "integer", "description": "End line (1-based). Omit with start to get structure."},
+        },
+    },
     approval_policy="rules",
     handler=_handler,
 )

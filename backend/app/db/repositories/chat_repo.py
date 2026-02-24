@@ -17,7 +17,6 @@ from app.db.models.observation import Observation
 from app.db.models.project_plan import ProjectPlan
 from app.db.models.project_plan_revision import ProjectPlanRevision
 from app.db.models.reasoning_block import ReasoningBlock
-from app.db.models.todo import Todo
 from app.db.models.tool_artifact import ToolArtifact
 from app.db.models.tool_call import ToolCall
 from app.db.models.sub_agent_run import SubAgentRun
@@ -312,40 +311,6 @@ class ChatRepository(BaseRepository):
         )
         return list(self.db.scalars(stmt).all())
 
-    def _delete_todos_after_timestamp(
-        self, chat_id: str, cutoff_ts: str, checkpoint_id: str
-    ) -> None:
-        """Delete legacy Todo rows created after a checkpoint revert cutoff."""
-        cutoff_dt = _parse_ts_safe(cutoff_ts)
-        if cutoff_dt is None:
-            self.db.execute(delete(Todo).where(Todo.chat_id == chat_id))
-            return
-
-        todos = self.list_todos(chat_id)
-        to_delete: list[str] = []
-        for todo in todos:
-            parsed = _parse_ts_safe(todo.timestamp)
-            if parsed is None:
-                to_delete.append(todo.id)
-                continue
-            if parsed > cutoff_dt:
-                to_delete.append(todo.id)
-                continue
-            if parsed == cutoff_dt and (todo.checkpoint_id is None or todo.checkpoint_id != checkpoint_id):
-                to_delete.append(todo.id)
-
-        if to_delete:
-            self.db.execute(delete(Todo).where(Todo.chat_id == chat_id, Todo.id.in_(to_delete)))
-
-    def list_todos(self, chat_id: str) -> list[Todo]:
-        """Return todos for a chat, ordered by sort_order then timestamp."""
-        stmt = (
-            select(Todo)
-            .where(Todo.chat_id == chat_id)
-            .order_by(Todo.sort_order.asc(), Todo.timestamp.asc())
-        )
-        return list(self.db.scalars(stmt).all())
-
     def get_current_todos(self, chat_id: str) -> list[dict]:
         """Return the active todo state derived from the latest successful update_todo_list call."""
         latest_stmt = (
@@ -359,17 +324,7 @@ class ChatRepository(BaseRepository):
         )
         latest = self.db.scalars(latest_stmt).first()
         if latest is None:
-            legacy = self.list_todos(chat_id)
-            return [
-                {
-                    "id": t.id,
-                    "content": t.content,
-                    "status": t.status,
-                    "sort_order": t.sort_order,
-                    "timestamp": t.timestamp,
-                }
-                for t in legacy
-            ]
+            return []
 
         payload = safe_parse_json(latest.input_json)
         items = payload.get("todos") if isinstance(payload, dict) else []
@@ -384,24 +339,6 @@ class ChatRepository(BaseRepository):
             }
             for idx, item in enumerate(normalized)
         ]
-
-    def replace_todos(
-        self, chat_id: str, items: list[dict], *, timestamp: str
-    ) -> None:
-        """Replace all todos for a chat with the given items. Each item has content, status, sort_order."""
-        normalized_ts = _normalize_ts(timestamp)
-        self.db.execute(delete(Todo).where(Todo.chat_id == chat_id))
-        for i, item in enumerate(items):
-            self.db.add(
-                Todo(
-                    id=generate_id("todo"),
-                    chat_id=chat_id,
-                    content=str(item.get("content", "")),
-                    status=str(item.get("status", "pending")),
-                    sort_order=int(item.get("sort_order", i)),
-                    timestamp=normalized_ts,
-                )
-            )
 
     def replace_context_items(
         self, chat_id: str, items: list[tuple[str, str, str, int]]
@@ -1165,7 +1102,6 @@ class ChatRepository(BaseRepository):
                 ),
             )
         )
-        self._delete_todos_after_timestamp(chat_id, cutoff, checkpoint_id)
         self._revert_observational_memory_after_timestamp(
             chat_id=chat_id,
             cutoff_ts=cutoff,

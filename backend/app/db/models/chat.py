@@ -9,7 +9,6 @@ from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.db.models.checkpoint import Checkpoint
-    from app.db.models.todo import Todo
     from app.db.models.context_item import ContextItem
     from app.db.models.file_edit import FileEdit
     from app.db.models.file_snapshot import FileSnapshot
@@ -61,9 +60,6 @@ class Chat(Base):
     observations: Mapped[list["Observation"]] = relationship(
         "Observation", cascade="all, delete-orphan", passive_deletes=True,
         foreign_keys="Observation.chat_id",
-    )
-    todos: Mapped[list["Todo"]] = relationship(
-        back_populates="chat", cascade="all, delete-orphan", passive_deletes=True
     )
     project_plans: Mapped[list["ProjectPlan"]] = relationship(
         back_populates="chat", cascade="all, delete-orphan", passive_deletes=True
