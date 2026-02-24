@@ -60,6 +60,7 @@ import type {
   AgentEvent,
   OpenRouterConfig,
   GroqConfig,
+  BraveConfig,
   OpenAISubConfig,
   OpenAISubAuthStartResponse,
   SetApiKeyRequest,
@@ -616,6 +617,18 @@ export class ApiClient {
   /** Manually trigger Groq model sync. */
   async syncGroqModels(): Promise<ApiResponse<SyncModelsResponse>> {
     return this.request('POST', '/settings/groq/sync');
+  }
+
+  /* ── Brave Search configuration ───────────────────────────────── */
+
+  /** Get Brave configuration (masked API key, connection status). */
+  async getBraveConfig(): Promise<ApiResponse<BraveConfig>> {
+    return this.request('GET', '/settings/brave');
+  }
+
+  /** Set Brave API key (encrypted). */
+  async setBraveApiKey(req: SetApiKeyRequest): Promise<ApiResponse<SetApiKeyResponse>> {
+    return this.request('PUT', '/settings/brave/api-key', req);
   }
 
   /* ── OpenAI Subscription configuration ───────────────────────── */

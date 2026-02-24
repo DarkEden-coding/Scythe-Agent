@@ -94,6 +94,22 @@ class SettingsRepository(BaseRepository):
             return None
         return settings.groq_api_key
 
+    def set_brave_api_key(self, api_key: str, updated_at: str) -> Settings:
+        """Set the Brave API key (should be encrypted before calling this)."""
+        settings = self.get_settings()
+        if settings is None:
+            raise ValueError("Settings record missing")
+        settings.brave_api_key = api_key
+        settings.updated_at = updated_at
+        return settings
+
+    def get_brave_api_key(self) -> str | None:
+        """Get the Brave API key (encrypted)."""
+        settings = self.get_settings()
+        if settings is None:
+            return None
+        return settings.brave_api_key
+
     def set_openai_sub_tokens(
         self, access_token: str | None, refresh_token: str | None, updated_at: str
     ) -> Settings:

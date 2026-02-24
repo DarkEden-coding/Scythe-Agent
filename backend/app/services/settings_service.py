@@ -542,6 +542,32 @@ class SettingsService:
             "modelCount": model_count,
         }
 
+    def get_brave_config(self) -> dict:
+        """Get Brave configuration including masked API key and connection status."""
+        from app.services.api_key_resolver import APIKeyResolver
+
+        resolver = APIKeyResolver(self.repo)
+        has_key, api_key_masked = resolver.resolve_masked("brave")
+        return {
+            "apiKeyMasked": api_key_masked,
+            "connected": has_key,
+        }
+
+    def set_brave_api_key(self, api_key: str) -> dict:
+        """Encrypt and save Brave API key."""
+        if not api_key or not api_key.strip():
+            raise ValueError("API key cannot be empty")
+        api_key = api_key.strip()
+        try:
+            encrypted = encrypt(api_key)
+        except Exception as e:
+            logger.error("Failed to encrypt Brave API key: %s", e)
+            raise ValueError(f"Failed to encrypt API key: {e}") from e
+        self.repo.set_brave_api_key(encrypted, updated_at=self._now())
+        self.repo.commit()
+        logger.info("Brave API key saved successfully")
+        return {"success": True}
+
     def set_openrouter_api_key(self, api_key: str) -> dict:
         """
         Validate, encrypt, and save OpenRouter API key.

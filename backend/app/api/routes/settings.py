@@ -19,6 +19,7 @@ from app.schemas.settings import (
     SetMemorySettingsRequest,
     OpenRouterConfigResponse,
     GroqConfigResponse,
+    BraveConfigResponse,
     OpenAISubConfigResponse,
     SetApiKeyResponse,
     TestConnectionResponse,
@@ -273,6 +274,35 @@ async def test_groq_connection(db: Session = Depends(get_db)):
     except Exception as exc:
         return JSONResponse(
             status_code=500, content=err(f"Test failed: {exc}").model_dump()
+        )
+
+
+# Brave Search configuration endpoints
+@router.get("/brave")
+def get_brave_config(db: Session = Depends(get_db)):
+    """Get Brave configuration including masked API key and connection status."""
+    try:
+        config = SettingsService(db).get_brave_config()
+        response = BraveConfigResponse(**config)
+        return ok(response.model_dump())
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500, content=err(f"Failed to get config: {exc}").model_dump()
+        )
+
+
+@router.put("/brave/api-key")
+def set_brave_api_key(request: SetApiKeyRequest, db: Session = Depends(get_db)):
+    """Set Brave API key (encrypted)."""
+    try:
+        SettingsService(db).set_brave_api_key(request.apiKey)
+        response = SetApiKeyResponse(success=True, modelCount=0, error=None)
+        return ok(response.model_dump())
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500, content=err(f"Failed to set API key: {exc}").model_dump()
         )
 
 

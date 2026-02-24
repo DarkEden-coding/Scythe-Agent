@@ -37,6 +37,9 @@ class APIKeyResolver:
         elif provider == "openai-sub":
             encrypted_key = self._repo.get_openai_sub_access_token()
             env_key = os.getenv("OPENAI_SUB_ACCESS_TOKEN")
+        elif provider == "brave":
+            encrypted_key = self._repo.get_brave_api_key()
+            env_key = os.getenv("BRAVE_API_KEY")
         else:
             return None
         if encrypted_key:

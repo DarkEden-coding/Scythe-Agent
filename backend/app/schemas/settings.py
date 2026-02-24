@@ -92,6 +92,12 @@ class GroqConfigResponse(BaseModel):
     modelCount: int
 
 
+# Brave Search configuration schemas
+class BraveConfigResponse(BaseModel):
+    apiKeyMasked: str
+    connected: bool
+
+
 class OpenAISubConfigResponse(BaseModel):
     apiKeyMasked: str
     connected: bool

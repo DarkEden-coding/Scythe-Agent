@@ -537,6 +537,12 @@ export interface GroqConfig {
   modelCount: number;
 }
 
+// 5b2. Brave Search configuration
+export interface BraveConfig {
+  apiKeyMasked: string;
+  connected: boolean;
+}
+
 // 5c. OpenAI Subscription (OAuth) configuration
 export interface OpenAISubConfig {
   apiKeyMasked: string;

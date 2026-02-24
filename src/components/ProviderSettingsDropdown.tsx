@@ -4,7 +4,7 @@ import { cn } from '../utils/cn';
 
 export type ProviderId = 'openrouter' | 'groq' | 'openai-sub';
 
-export type SettingsTabId = ProviderId | 'agent' | 'mcp' | 'memory' | 'context';
+export type SettingsTabId = ProviderId | 'agent' | 'mcp' | 'memory' | 'context' | 'api-keys';
 
 interface DropdownOption {
   id: SettingsTabId;
@@ -17,6 +17,7 @@ const DROPDOWN_OPTIONS: DropdownOption[] = [
   { id: 'mcp', label: 'MCP', icon: <Plug className="w-4 h-4 text-cyan-400" /> },
   { id: 'agent', label: 'System Prompt', icon: <Bot className="w-4 h-4 text-cyan-400" /> },
   { id: 'memory', label: 'Backend', icon: <Server className="w-4 h-4 text-violet-400" /> },
+  { id: 'api-keys', label: 'API Keys', icon: <Key className="w-4 h-4 text-amber-400" /> },
 ];
 
 interface ProviderSettingsDropdownProps {

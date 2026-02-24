@@ -5,6 +5,7 @@ import { Modal } from './Modal';
 import { OpenRouterSettingsPanel } from './settings/OpenRouterSettingsPanel';
 import { GroqSettingsPanel } from './settings/GroqSettingsPanel';
 import { OpenAISubSettingsPanel } from './settings/OpenAISubSettingsPanel';
+import { ApiKeysSettingsPanel } from './settings/ApiKeysSettingsPanel';
 import { AgentSettingsPanel } from './settings/AgentSettingsPanel';
 import { MCPSettingsPanel } from './settings/MCPSettingsPanel';
 import { MemorySettingsPanel } from './settings/MemorySettingsPanel';
@@ -39,7 +40,7 @@ export function SettingsModal({
     if (visible) {
       const tab = initialTab ?? 'openrouter';
       setActiveTab(tab);
-      if (tab === 'memory' || tab === 'context') {
+      if (tab === 'memory' || tab === 'context' || tab === 'api-keys') {
         setBackendExpanded(true);
       }
     }
@@ -115,6 +116,18 @@ export function SettingsModal({
     }
     if (activeTab === 'context') {
       return <ContextSettingsPanel />;
+    }
+    if (activeTab === 'api-keys') {
+      return (
+        <ApiKeysSettingsPanel
+          footer={
+            <p className="text-xs text-gray-400">
+              API keys for non-LLM services (e.g. Brave Search). LLM providers (OpenRouter, Groq)
+              are configured under Providers.
+            </p>
+          }
+        />
+      );
     }
     return null;
   };
@@ -245,6 +258,18 @@ export function SettingsModal({
                   >
                     <Layers className="w-4 h-4 shrink-0" />
                     Context
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('api-keys')}
+                    className={cn(
+                      'w-full flex items-center gap-3 pl-6 pr-3 py-2 text-sm transition-colors',
+                      activeTab === 'api-keys'
+                        ? 'bg-violet-500/20 text-violet-300 border-l-2 border-l-violet-500/50'
+                        : 'text-gray-400 hover:bg-gray-800/50 hover:text-gray-200 border-l-2 border-l-transparent',
+                    )}
+                  >
+                    <Key className="w-4 h-4 shrink-0" />
+                    API Keys
                   </button>
                 </div>
               )}
