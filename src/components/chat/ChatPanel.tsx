@@ -42,6 +42,7 @@ interface ChatPanelProps {
       mode?: 'default' | 'planning' | 'plan_edit';
       activePlanId?: string;
       referencedFiles?: string[];
+      attachments?: { data: string; mimeType: string; name?: string }[];
     },
   ) => void;
   readonly onCancel?: () => void;
@@ -110,6 +111,7 @@ export function ChatPanel({
 }: ChatPanelProps) {
   const [inputValue, setInputValue] = useState('');
   const [inputReferencedFiles, setInputReferencedFiles] = useState<string[]>([]);
+  const [inputAttachments, setInputAttachments] = useState<{ data: string; mimeType: string; name?: string }[]>([]);
   const [composeMode, setComposeMode] = useState<'default' | 'planning'>('default');
   const [activeTab, setActiveTab] = useHashTab<'chat' | 'projects'>('chat', ['chat', 'projects']);
   const [activeChatId, setActiveChatId] = useState(externalActiveChatId ?? null);
@@ -123,6 +125,7 @@ export function ChatPanel({
     setActiveChatId(externalActiveChatId ?? null);
     setInputValue('');
     setInputReferencedFiles([]);
+    setInputAttachments([]);
   }, [externalActiveChatId]);
 
   const getCheckpointForMessage = (messageId: string) =>
@@ -135,17 +138,21 @@ export function ChatPanel({
   };
 
   const handleSend = () => {
-    if (!inputValue.trim() || !activeChatId) return;
+    const hasContent = inputValue.trim() || inputAttachments.length > 0;
+    if (!hasContent || !activeChatId) return;
+    const content = inputValue.trim() || ' ';
     const options = composeMode === 'planning'
       ? {
           mode: activePlanId ? ('plan_edit' as const) : ('planning' as const),
           activePlanId: activePlanId ?? undefined,
           referencedFiles: inputReferencedFiles,
+          attachments: inputAttachments,
         }
-      : { referencedFiles: inputReferencedFiles };
-    onSendMessage?.(inputValue.trim(), options);
+      : { referencedFiles: inputReferencedFiles, attachments: inputAttachments };
+    onSendMessage?.(content, options);
     setInputValue('');
     setInputReferencedFiles([]);
+    setInputAttachments([]);
   };
 
   const currentProject = activeChatId
@@ -314,6 +321,8 @@ export function ChatPanel({
               onChange={setInputValue}
               referencedFiles={inputReferencedFiles}
               onReferencedFilesChange={setInputReferencedFiles}
+              attachments={inputAttachments}
+              onAttachmentsChange={setInputAttachments}
               onSubmit={handleSend}
               onCancel={onCancel}
               composeMode={composeMode}

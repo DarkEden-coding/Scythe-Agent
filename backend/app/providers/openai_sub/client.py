@@ -163,14 +163,32 @@ def _messages_to_codex_input(messages: list[dict]) -> tuple[list[dict], str]:
             continue
 
         if role == "user":
-            text = content if isinstance(content, str) else ""
-            if text:
-                input_items.append(
-                    {
-                        "role": "user",
-                        "content": [{"type": "input_text", "text": text}],
-                    }
-                )
+            if isinstance(content, str):
+                text = content
+                if text:
+                    input_items.append(
+                        {
+                            "role": "user",
+                            "content": [{"type": "input_text", "text": text}],
+                        }
+                    )
+            elif isinstance(content, list):
+                parts: list[dict] = []
+                for part in content:
+                    if not isinstance(part, dict):
+                        continue
+                    ptype = part.get("type")
+                    if ptype == "text":
+                        t = part.get("text", "")
+                        if t:
+                            parts.append({"type": "input_text", "text": str(t)})
+                    elif ptype == "image_url":
+                        img = part.get("image_url")
+                        url = img.get("url", "") if isinstance(img, dict) else str(img) if img else ""
+                        if url:
+                            parts.append({"type": "input_image", "image_url": url})
+                if parts:
+                    input_items.append({"role": "user", "content": parts})
             continue
 
         if role == "assistant":

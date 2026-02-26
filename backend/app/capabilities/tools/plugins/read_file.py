@@ -3,12 +3,22 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 from pathlib import Path
 
 from app.capabilities.tools.interfaces import ToolExecutionContext, ToolPlugin
 from app.capabilities.tools.types import ToolExecutionResult
 from app.tools.path_utils import resolve_path
 from app.utils.file_structure import get_file_structure
+
+IMAGE_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".gif", ".webp"})
+EXT_TO_MIME: dict[str, str] = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+}
 
 
 def _read_span_streaming(path: Path, start_idx: int, end_idx: int) -> str:
@@ -44,6 +54,26 @@ async def _handler(payload: dict, context: ToolExecutionContext) -> ToolExecutio
         return ToolExecutionResult(output=str(exc), file_edits=[], ok=False)
     if not path.exists() or not path.is_file():
         return ToolExecutionResult(output=f"File not found: {path}", file_edits=[], ok=False)
+
+    if path.suffix.lower() in IMAGE_EXTENSIONS:
+        if context.model_has_vision:
+            def _read_image_base64(p: Path) -> str:
+                data = p.read_bytes()
+                b64 = base64.b64encode(data).decode("ascii")
+                mime = EXT_TO_MIME.get(p.suffix.lower(), "image/png")
+                return f"data:{mime};base64,{b64}"
+            data_url = await asyncio.to_thread(_read_image_base64, path)
+            return ToolExecutionResult(
+                output=f"Image: {path}\n\n{data_url}",
+                file_edits=[],
+            )
+        return ToolExecutionResult(
+            output=(
+                f"Image file at {path} "
+                "(model does not support vision; cannot analyze image content)."
+            ),
+            file_edits=[],
+        )
 
     is_mention_ref = bool(payload.get("__mention_reference__"))
     start_val = payload.get("start")
@@ -85,8 +115,10 @@ async def _handler(payload: dict, context: ToolExecutionContext) -> ToolExecutio
 TOOL_PLUGIN = ToolPlugin(
     name="read_file",
     description=(
-        "Read a file. path must be absolute. Can read project files, tool output files "
+        "Read a file or image. path must be absolute. Can read project files, tool output files "
         "(spilled outputs under tool_outputs/), and other external paths (those require approval). "
+        "Supports text files (.py, .ts, .js, etc.) and images (.png, .jpg, .gif, .webp)—images are returned "
+        "as base64 when the model supports vision. "
         "Without start/end: returns file structure (declarations with line ranges) and total line count; use that to decide which spans to read. "
         "With start and end (1-based): returns that line span. "
         "For files without structure support (unknown extensions), use start/end to read sections. Always prefer targeted spans over reading entire large files."

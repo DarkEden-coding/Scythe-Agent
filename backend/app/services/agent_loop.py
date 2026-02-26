@@ -18,6 +18,7 @@ from app.schemas.chat import MessageOut
 from app.services.llm_streamer import LLMStreamer
 from app.services.memory import MemoryConfig
 from app.services.tool_executor import ToolExecutor
+from app.providers.vision import model_has_vision
 from app.utils.json_helpers import safe_parse_json
 from app.utils.ids import generate_id
 from app.utils.time import utc_now_iso
@@ -192,7 +193,12 @@ class AgentLoop:
             )
 
         settings = self._settings_service.get_settings()
-        conversation_messages = self._assemble_messages(chat_id, content)
+        has_vision = model_has_vision(
+            provider, settings.model, self._settings_repo
+        )
+        conversation_messages = self._assemble_messages(
+            chat_id, content, model_has_vision=has_vision
+        )
         if extra_messages:
             conversation_messages.extend(extra_messages)
         project_path = None
@@ -530,7 +536,9 @@ class AgentLoop:
             return f"{self._default_system_prompt.rstrip()}\n\n{PLAN_EDIT_PROMPT_APPENDIX.strip()}"
         return self._default_system_prompt
 
-    def _assemble_messages(self, chat_id: str, content: str) -> list[dict]:
+    def _assemble_messages(
+        self, chat_id: str, content: str, *, model_has_vision: bool = False
+    ) -> list[dict]:
         """Assemble messages without system prompt; SystemPromptPreprocessor adds it."""
         messages = self._chat_repo.list_messages(chat_id)
         referenced_files_by_checkpoint: dict[str, list[str]] = {}
@@ -549,7 +557,7 @@ class AgentLoop:
         openrouter_messages: list[dict] = []
         for m in messages:
             role = "assistant" if m.role == "assistant" else "user"
-            content_text = m.content
+            content_text = m.content or ""
             if role == "user" and m.checkpoint_id:
                 ref_paths = referenced_files_by_checkpoint.get(m.checkpoint_id, [])
                 if ref_paths:
@@ -565,9 +573,36 @@ class AgentLoop:
                     content_text = (
                         f"{content_text}\n{refs_inline}" if content_text else refs_inline
                     )
+            msg_content: str | list[dict]
+            if role == "user" and model_has_vision:
+                attachments = self._chat_repo.list_attachments_for_message(m.id)
+                if attachments:
+                    parts: list[dict] = []
+                    if content_text:
+                        parts.append({"type": "text", "text": content_text})
+                    for att in attachments:
+                        data_url = f"data:{att.mime_type};base64,{att.content_base64}"
+                        parts.append({
+                            "type": "image_url",
+                            "image_url": {"url": data_url},
+                        })
+                    msg_content = parts
+                else:
+                    msg_content = content_text
+            else:
+                if role == "user":
+                    attachments = self._chat_repo.list_attachments_for_message(m.id)
+                    if attachments and not model_has_vision:
+                        content_text = (
+                            f"{content_text}\n[{len(attachments)} image(s) attached - "
+                            "model does not support vision]"
+                            if content_text
+                            else f"[{len(attachments)} image(s) attached - model does not support vision]"
+                        )
+                msg_content = content_text
             openrouter_messages.append({
                 "role": role,
-                "content": content_text,
+                "content": msg_content,
                 "_message_id": m.id,
             })
         if not openrouter_messages:

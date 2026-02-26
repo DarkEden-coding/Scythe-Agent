@@ -10,6 +10,7 @@ from app.schemas.chat import (
     CheckpointOut,
     FileEditOut,
     GetChatHistoryResponse,
+    MessageAttachmentOut,
     MessageOut,
     ProjectPlanOut,
     ReasoningBlockOut,
@@ -63,21 +64,33 @@ class ChatHistoryAssembler:
             if path not in existing:
                 existing.append(path)
 
-        messages = [
-            MessageOut(
-                id=m.id,
-                role=map_role_for_ui(m.role),
-                content=m.content,
-                timestamp=m.timestamp,
-                checkpointId=m.checkpoint_id,
-                referencedFiles=(
-                    referenced_files_by_checkpoint.get(m.checkpoint_id or "", [])
-                    if m.role == "user"
-                    else []
-                ),
+        messages = []
+        for m in raw_messages:
+            atts: list[MessageAttachmentOut] = []
+            if m.role == "user":
+                for att in self._chat_repo.list_attachments_for_message(m.id):
+                    atts.append(
+                        MessageAttachmentOut(
+                            data=att.content_base64,
+                            mimeType=att.mime_type,
+                            name=None,
+                        )
+                    )
+            messages.append(
+                MessageOut(
+                    id=m.id,
+                    role=map_role_for_ui(m.role),
+                    content=m.content,
+                    timestamp=m.timestamp,
+                    checkpointId=m.checkpoint_id,
+                    referencedFiles=(
+                        referenced_files_by_checkpoint.get(m.checkpoint_id or "", [])
+                        if m.role == "user"
+                        else []
+                    ),
+                    attachments=atts,
+                )
             )
-            for m in raw_messages
-        ]
 
         tool_calls = []
         for t in raw_tool_calls:

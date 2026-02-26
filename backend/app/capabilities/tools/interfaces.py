@@ -15,6 +15,7 @@ class ToolExecutionContext:
     chat_repo: Any | None = None
     checkpoint_id: str | None = None
     tool_call_id: str | None = None
+    model_has_vision: bool = False
 
 
 class ToolHandler(Protocol):

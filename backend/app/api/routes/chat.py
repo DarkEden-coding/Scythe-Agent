@@ -65,6 +65,7 @@ async def send_message(
             mode=request.mode or "default",
             active_plan_id=request.activePlanId,
             referenced_files=request.referencedFiles,
+            attachments=request.attachments,
         )
         return ok(data.model_dump())
     except ValueError as exc:
@@ -159,6 +160,7 @@ async def edit_message(
             message_id=message_id,
             content=request.content,
             referenced_files=request.referencedFiles,
+            attachments=request.attachments,
         )
         return ok(data.model_dump())
     except ValueError as exc:

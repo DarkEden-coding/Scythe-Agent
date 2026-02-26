@@ -22,6 +22,7 @@ export const normalizeMessage = (m: Message): Message => ({
   ...m,
   timestamp: toDate(m.timestamp),
   referencedFiles: Array.isArray(m.referencedFiles) ? m.referencedFiles : [],
+  attachments: Array.isArray(m.attachments) ? m.attachments : [],
 });
 
 export const normalizeToolCall = (tc: ToolCall & { duration_ms?: number }): ToolCall => ({

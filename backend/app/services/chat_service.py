@@ -33,6 +33,7 @@ from app.services.memory.observational.background import get_om_background_runne
 from app.services.revert_service import RevertService
 from app.services.runtime_orchestrator import run_agent_turn
 from app.services.plan_service import PlanService
+from app.providers.vision import model_has_vision
 from app.services.settings_service import SettingsService
 from app.tools.path_utils import resolve_path
 from app.utils.ids import generate_id
@@ -523,6 +524,7 @@ class ChatService:
         mode: str = "default",
         active_plan_id: str | None = None,
         referenced_files: list[str] | None = None,
+        attachments: list[dict] | None = None,
     ) -> SendMessageResponse:
         mode_name = mode if mode in {"default", "planning", "plan_edit"} else "default"
         if mode_name == "plan_edit" and not active_plan_id:
@@ -570,8 +572,24 @@ class ChatService:
         )
         self.repo.link_message_checkpoint(message, checkpoint.id)
         self.repo.update_chat_timestamp(chat, timestamp)
+        if attachments:
+            for i, att in enumerate(attachments):
+                data_b64 = att.get("data") if isinstance(att, dict) else None
+                mime = att.get("mimeType", "image/png") if isinstance(att, dict) else "image/png"
+                if data_b64 and isinstance(data_b64, str):
+                    self.repo.create_message_attachment(
+                        attachment_id=generate_id("att"),
+                        message_id=message.id,
+                        content_base64=data_b64,
+                        mime_type=mime,
+                        sort_order=i,
+                    )
         self.repo.commit()
 
+        attachments_out = [
+            {"data": a.content_base64, "mimeType": a.mime_type, "name": None}
+            for a in self.repo.list_attachments_for_message(message.id)
+        ]
         message_out = MessageOut(
             id=message.id,
             role=map_role_for_ui(message.role),
@@ -579,6 +597,7 @@ class ChatService:
             timestamp=message.timestamp,
             checkpointId=checkpoint.id,
             referencedFiles=[],
+            attachments=attachments_out,
         )
         checkpoint_out = CheckpointOut(
             id=checkpoint.id,
@@ -636,6 +655,7 @@ class ChatService:
         message_id: str,
         content: str,
         referenced_files: list[str] | None = None,
+        attachments: list[dict] | None = None,
     ) -> EditMessageResponse:
         message = self.repo.get_message(message_id)
         if message is None or message.chat_id != chat_id:
@@ -683,6 +703,19 @@ class ChatService:
         if cp is not None:
             label_content = _scrub_content_for_label(content, reference_paths)[:48]
             cp.label = f"User message: {label_content}"
+        self.repo.delete_attachments_for_message(message_id)
+        if attachments:
+            for i, att in enumerate(attachments):
+                data_b64 = att.get("data") if isinstance(att, dict) else None
+                mime = att.get("mimeType", "image/png") if isinstance(att, dict) else "image/png"
+                if data_b64 and isinstance(data_b64, str):
+                    self.repo.create_message_attachment(
+                        attachment_id=generate_id("att"),
+                        message_id=message_id,
+                        content_base64=data_b64,
+                        mime_type=mime,
+                        sort_order=i,
+                    )
         self.repo.commit()
 
         # Publish message_edited event so frontend can update state
@@ -889,10 +922,19 @@ class ChatService:
         tool_calls = self.repo.list_tool_calls(chat_id)
         mentioned_by_checkpoint = self._extract_mentioned_tool_calls_by_checkpoint(tool_calls)
 
+        settings = self.settings_service.get_settings()
+        provider = settings.modelProvider or self.settings_repo.get_provider_for_model(
+            settings.model
+        )
+        has_vision = bool(
+            provider
+            and model_has_vision(provider, settings.model, self.settings_repo)
+        )
+
         openrouter_messages: list[dict] = []
         for m in messages:
             role = "assistant" if m.role == "assistant" else "user"
-            message_content = m.content
+            message_content = m.content or ""
             if role == "user" and m.checkpoint_id:
                 referenced_paths: list[str] = []
                 for _, path in mentioned_by_checkpoint.get(m.checkpoint_id, []):
@@ -905,6 +947,19 @@ class ChatService:
                     message_content = (
                         f"{message_content}\n{refs_inline}" if message_content else refs_inline
                     )
+            if role == "user" and has_vision:
+                attachments = self.repo.list_attachments_for_message(m.id)
+                if attachments:
+                    parts: list[dict] = []
+                    if message_content:
+                        parts.append({"type": "text", "text": message_content})
+                    for att in attachments:
+                        data_url = f"data:{att.mime_type};base64,{att.content_base64}"
+                        parts.append({
+                            "type": "image_url",
+                            "image_url": {"url": data_url},
+                        })
+                    message_content = parts
             openrouter_messages.append({"role": role, "content": message_content})
             if role != "user" or not m.checkpoint_id:
                 continue

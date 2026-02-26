@@ -35,6 +35,7 @@ class _PluginToolAdapter:
         chat_repo=None,
         checkpoint_id: str | None = None,
         tool_call_id: str | None = None,
+        model_has_vision: bool = False,
     ) -> ToolResult:
         result = await self._plugin.handler(
             payload,
@@ -44,6 +45,7 @@ class _PluginToolAdapter:
                 chat_repo=chat_repo,
                 checkpoint_id=checkpoint_id,
                 tool_call_id=tool_call_id,
+                model_has_vision=model_has_vision,
             ),
         )
         output = result.output_preview if result.output_preview is not None else result.output

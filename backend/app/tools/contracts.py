@@ -33,4 +33,5 @@ class Tool(Protocol):
         chat_repo=None,
         checkpoint_id: str | None = None,
         tool_call_id: str | None = None,
+        model_has_vision: bool = False,
     ) -> ToolResult: ...

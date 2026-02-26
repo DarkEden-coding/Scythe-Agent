@@ -7,6 +7,12 @@ from app.services.token_counter import count_text_tokens
 _MAX_CONTENT_TOKENS = 50_000
 
 
+class MessageAttachmentOut(BaseModel):
+    data: str
+    mimeType: str
+    name: str | None = None
+
+
 class MessageOut(BaseModel):
     id: str
     role: str
@@ -14,6 +20,7 @@ class MessageOut(BaseModel):
     timestamp: str
     checkpointId: str | None = None
     referencedFiles: list[str] = Field(default_factory=list)
+    attachments: list[MessageAttachmentOut] = Field(default_factory=list)
 
 
 class SubAgentRunOut(BaseModel):
@@ -138,6 +145,7 @@ class SendMessageRequest(BaseModel):
     mode: Literal["default", "planning", "plan_edit"] | None = None
     activePlanId: str | None = None
     referencedFiles: list[str] | None = None
+    attachments: list[dict] | None = None  # [{data: base64, mimeType, name?}]
 
 
 class SendMessageResponse(BaseModel):
@@ -199,6 +207,7 @@ class EditMessageRequest(BaseModel):
         return _validate_content_tokens(v)
 
     referencedFiles: list[str] | None = None
+    attachments: list[dict] | None = None  # [{data: base64, mimeType, name?}]
 
 
 class EditMessageResponse(BaseModel):

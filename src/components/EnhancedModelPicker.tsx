@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import { Search, Check, Cpu, Star, ArrowUpDown, GripVertical } from 'lucide-react';
+import { Search, Check, Cpu, Star, ArrowUpDown, GripVertical, Eye } from 'lucide-react';
 import { cn } from '../utils/cn';
 import { Modal } from './Modal';
 
@@ -22,6 +22,7 @@ interface EnhancedModelPickerProps {
     reasoningSupported?: boolean;
     reasoningLevels?: string[];
     defaultReasoningLevel?: string | null;
+    vision?: boolean;
   }>;
   loading: boolean;
   changeModel: (selection: {
@@ -40,6 +41,7 @@ interface ModelInfo {
   label: string;
   contextLimit?: number;
   pricePerMillion?: number;
+  vision?: boolean;
 }
 
 const PROVIDER_TABS = [
@@ -131,6 +133,7 @@ export function EnhancedModelPicker({
             meta?.contextLimit ??
             (label.includes('200k') ? 200_000 : label.includes('128k') ? 128_000 : undefined),
           pricePerMillion: meta?.pricePerMillion ?? undefined,
+          vision: meta?.vision ?? false,
         };
       });
     }
@@ -552,7 +555,12 @@ export function EnhancedModelPicker({
                           className="w-3 h-3 text-gray-500 shrink-0 cursor-grab active:cursor-grabbing opacity-0 group-hover/fav:opacity-100"
                         />
                         <div className="flex-1 min-w-0">
-                          <p className="text-xs font-medium truncate text-gray-200">{model.label}</p>
+                          <p className="text-xs font-medium text-gray-200 flex items-center gap-1.5 min-w-0">
+                            <span className="truncate">{model.label}</span>
+                            {model.vision && (
+                              <Eye className="w-3 h-3 text-gray-500 shrink-0" title="Vision capable" />
+                            )}
+                          </p>
                           {(model.contextLimit != null || model.pricePerMillion != null) && (
                             <p className="text-[10px] text-gray-500 truncate">
                               {formatContextLimit(model.contextLimit)}
@@ -779,11 +787,14 @@ export function EnhancedModelPicker({
                         <div className="flex-1 min-w-0 text-left">
                           <p
                             className={cn(
-                              'text-sm font-medium truncate',
+                              'text-sm font-medium flex items-center gap-1.5 min-w-0',
                               isActive ? 'text-cyan-300' : 'text-gray-200',
                             )}
                           >
-                            {model.label}
+                            <span className="truncate">{model.label}</span>
+                            {model.vision && (
+                              <Eye className="w-3.5 h-3.5 text-gray-500 shrink-0" title="Vision capable" />
+                            )}
                           </p>
                         </div>
                       </div>

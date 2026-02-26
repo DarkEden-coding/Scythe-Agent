@@ -559,6 +559,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
         mode?: 'default' | 'planning' | 'plan_edit';
         activePlanId?: string;
         referencedFiles?: string[];
+        attachments?: { data: string; mimeType: string; name?: string }[];
       },
     ) => {
       if (!isValidChatId(chatId)) {
@@ -573,6 +574,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
           mode: options?.mode,
           activePlanId: options?.activePlanId,
           referencedFiles: options?.referencedFiles,
+          attachments: options?.attachments,
         });
         if (res.ok) {
           const nextMessage = normalizeMessage(res.data.message);

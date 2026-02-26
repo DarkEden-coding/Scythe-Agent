@@ -9,6 +9,7 @@ from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.db.models.chat import Chat
+    from app.db.models.message_attachment import MessageAttachment
 
 
 class Message(Base):
@@ -22,3 +23,6 @@ class Message(Base):
     checkpoint_id: Mapped[Optional[str]] = mapped_column(ForeignKey("checkpoints.id", ondelete="SET NULL"), nullable=True)
 
     chat: Mapped["Chat"] = relationship(back_populates="messages")
+    attachments: Mapped[list["MessageAttachment"]] = relationship(
+        back_populates="message", cascade="all, delete-orphan", passive_deletes=True
+    )

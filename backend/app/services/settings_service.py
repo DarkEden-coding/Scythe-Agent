@@ -161,8 +161,14 @@ class SettingsService:
         meta: dict = {}
         if model.context_limit is not None:
             meta["contextLimit"] = model.context_limit
+        raw: dict = {}
         try:
             raw = json_module.loads(model.raw_json) if model.raw_json else {}
+            if not isinstance(raw, dict):
+                raw = {}
+        except (json_module.JSONDecodeError, TypeError):
+            raw = {}
+        try:
             pricing = raw.get("pricing") if isinstance(raw, dict) else {}
             if isinstance(pricing, dict):
                 prompt = _parse_price(pricing.get("prompt"))
@@ -181,6 +187,12 @@ class SettingsService:
             meta["defaultReasoningLevel"] = reasoning_caps.default_level
         except (json_module.JSONDecodeError, TypeError):
             pass
+        from app.providers.vision import model_has_vision
+
+        raw_dict = raw if isinstance(raw, dict) else None
+        meta["vision"] = model_has_vision(
+            model.provider, model.label, self.repo, raw_model=raw_dict
+        )
         return ModelMetadata(**meta)
 
     def _lookup_context_limit(self, model_label: str, provider: str | None = None) -> int:

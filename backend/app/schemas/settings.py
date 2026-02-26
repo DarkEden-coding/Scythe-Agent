@@ -15,6 +15,7 @@ class ModelMetadata(BaseModel):
     reasoningSupported: bool = False
     reasoningLevels: list[str] = Field(default_factory=list)
     defaultReasoningLevel: str | None = None
+    vision: bool = False
 
 
 class GetSettingsResponse(BaseModel):

@@ -32,6 +32,7 @@ class MCPBridgeTool:
         chat_repo=None,
         checkpoint_id: str | None = None,
         tool_call_id: str | None = None,
+        model_has_vision: bool = False,
     ) -> ToolResult:
         manager = get_mcp_client_manager()
         result = await manager.call_tool(self.server_id, self.tool_name, payload)

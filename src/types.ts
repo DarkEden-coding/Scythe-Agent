@@ -1,3 +1,9 @@
+export interface MessageAttachment {
+  data: string;
+  mimeType: string;
+  name?: string;
+}
+
 export interface Message {
   id: string;
   role: 'user' | 'agent';
@@ -5,6 +11,7 @@ export interface Message {
   timestamp: Date;
   checkpointId?: string;
   referencedFiles?: string[];
+  attachments?: MessageAttachment[];
 }
 
 export interface SubAgentRun {

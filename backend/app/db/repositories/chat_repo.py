@@ -13,6 +13,7 @@ from app.db.models.file_edit import FileEdit
 from app.db.models.file_snapshot import FileSnapshot
 from app.db.models.memory_state import MemoryState
 from app.db.models.message import Message
+from app.db.models.message_attachment import MessageAttachment
 from app.db.models.observation import Observation
 from app.db.models.project_plan import ProjectPlan
 from app.db.models.project_plan_revision import ProjectPlanRevision
@@ -376,6 +377,36 @@ class ChatRepository(BaseRepository):
         )
         self.db.add(message)
         return message
+
+    def create_message_attachment(
+        self,
+        *,
+        attachment_id: str,
+        message_id: str,
+        content_base64: str,
+        mime_type: str,
+        sort_order: int = 0,
+    ) -> MessageAttachment:
+        attachment = MessageAttachment(
+            id=attachment_id,
+            message_id=message_id,
+            content_base64=content_base64,
+            mime_type=mime_type,
+            sort_order=sort_order,
+        )
+        self.db.add(attachment)
+        return attachment
+
+    def list_attachments_for_message(self, message_id: str) -> list[MessageAttachment]:
+        stmt = (
+            select(MessageAttachment)
+            .where(MessageAttachment.message_id == message_id)
+            .order_by(MessageAttachment.sort_order.asc())
+        )
+        return list(self.db.scalars(stmt).all())
+
+    def delete_attachments_for_message(self, message_id: str) -> None:
+        self.db.execute(delete(MessageAttachment).where(MessageAttachment.message_id == message_id))
 
     def create_checkpoint(
         self,

@@ -14,6 +14,7 @@ from app.capabilities.artifacts.store import ArtifactStore
 from app.utils.mappers import map_file_action_for_ui
 from app.utils.time import utc_now_iso
 from app.tools.path_utils import get_tool_outputs_root
+from app.providers.vision import model_has_vision
 from app.utils.auto_approve import matches_auto_approve_rules
 from app.utils.json_helpers import safe_parse_json
 from app.services.event_bus import EventBus, get_event_bus
@@ -27,6 +28,7 @@ class _ToolRunKwargs(TypedDict, total=False):
     chat_repo: ChatRepository | None
     checkpoint_id: str | None
     tool_call_id: str
+    model_has_vision: bool
 
 
 class ApprovalService:
@@ -105,6 +107,15 @@ class ApprovalService:
             checkpoint_id = tool_call.checkpoint_id
             if tool_call.name == "update_todo_list" and checkpoint_id is not None:
                 run_kwargs["checkpoint_id"] = checkpoint_id
+            settings_row = self.settings_repo.get_settings()
+            if settings_row:
+                provider = settings_row.active_model_provider or self.settings_repo.get_provider_for_model(
+                    settings_row.active_model
+                )
+                if provider:
+                    run_kwargs["model_has_vision"] = model_has_vision(
+                        provider, settings_row.active_model, self.settings_repo
+                    )
             result = await tool.run(payload, **run_kwargs)
 
             output_to_store = result.output

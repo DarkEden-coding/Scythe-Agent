@@ -56,8 +56,40 @@ class ContextBudgetManager:
             return out
 
         content = out[last_user_idx].get("content") or ""
-        content = _ENV_BLOCK_PATTERN.sub("", content)
-        if todos:
+        if isinstance(content, list):
+            for part in content:
+                if isinstance(part, dict) and part.get("type") == "text":
+                    text_val = part.get("text") or ""
+                    part["text"] = _ENV_BLOCK_PATTERN.sub("", text_val)
+                    if todos:
+                        lines = [
+                            "<environment_details>",
+                            "REMINDERS",
+                            "",
+                            "Current reminders for this task:",
+                            "",
+                            "| # | Content | Status |",
+                            "|---|---------|--------|",
+                        ]
+                        for j, t in enumerate(todos, 1):
+                            status = str(t["status"]).replace("_", " ").title()
+                            item = str(t["content"] or "").replace("|", "\\|")[:80]
+                            if len(str(t["content"] or "")) > 80:
+                                item += "..."
+                            lines.append(f"| {j} | {item} | {status} |")
+                        lines.extend(
+                            [
+                                "",
+                                "IMPORTANT: call `update_todo_list` whenever task status changes.",
+                                "When done, call `submit_task` to end the agent loop.",
+                                "</environment_details>",
+                            ]
+                        )
+                        part["text"] = part["text"].rstrip() + "\n\n" + "\n".join(lines)
+                    break
+        else:
+            content = _ENV_BLOCK_PATTERN.sub("", content)
+        if todos and isinstance(content, str):
             lines = [
                 "<environment_details>",
                 "REMINDERS",
@@ -82,7 +114,8 @@ class ContextBudgetManager:
                 ]
             )
             content = content.rstrip() + "\n\n" + "\n".join(lines)
-        out[last_user_idx] = {**out[last_user_idx], "content": content}
+        if isinstance(content, str):
+            out[last_user_idx] = {**out[last_user_idx], "content": content}
         return out
 
     def _apply_tool_output_spillover(

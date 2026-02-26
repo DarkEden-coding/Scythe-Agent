@@ -20,7 +20,33 @@ function fileLabel(path: string): string {
 /** Matches {{FILE:i}} plus any trailing stray braces (e.g. typo {{FILE:0}}}) */
 const FILE_PLACEHOLDER = /\{\{FILE:(\d+)\}\}\}*/g;
 
-function renderUserContent(content: string, referencedFiles: string[]): React.ReactNode {
+function renderUserContent(
+  content: string,
+  referencedFiles: string[],
+  attachments?: { data: string; mimeType: string; name?: string }[],
+): React.ReactNode {
+  const textPart = referencedFiles.length === 0 ? (
+    <span className="whitespace-pre-wrap break-words">{content}</span>
+  ) : (
+    renderUserTextWithRefs(content, referencedFiles)
+  );
+  if (!attachments?.length) return textPart;
+  return (
+    <div className="flex flex-col gap-2">
+      {attachments.map((att, i) => (
+        <img
+          key={i}
+          src={`data:${att.mimeType};base64,${att.data}`}
+          alt={att.name ?? 'Attachment'}
+          className="max-w-[280px] max-h-[200px] rounded-lg object-contain border border-gray-600/50"
+        />
+      ))}
+      {content.trim() ? <div>{textPart}</div> : null}
+    </div>
+  );
+}
+
+function renderUserTextWithRefs(content: string, referencedFiles: string[]): React.ReactNode {
   if (referencedFiles.length === 0) return <span className="whitespace-pre-wrap break-words">{content}</span>;
   if (!/\{\{FILE:\d+\}\}/.test(content)) {
     return (
@@ -229,7 +255,11 @@ export function MessageBubble({ message, onEdit, isProcessing }: MessageBubblePr
                   <Markdown content={message.content} />
                 ) : (
                   <div className="flex flex-wrap items-center gap-1.5">
-                    {renderUserContent(message.content, message.referencedFiles ?? [])}
+                    {renderUserContent(
+                      message.content,
+                      message.referencedFiles ?? [],
+                      message.attachments,
+                    )}
                   </div>
                 )}
               </div>

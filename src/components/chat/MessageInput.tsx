@@ -1,13 +1,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FileText, Send, Square } from 'lucide-react';
+import { FileText, Send, Square, X } from 'lucide-react';
 import { api as defaultApi } from '@/api/client';
 import { cn } from '@/utils/cn';
+
+const IMAGE_MIMES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
+const MAX_ATTACHMENT_SIZE_MB = 8;
+
+interface ImageAttachment {
+  data: string;
+  mimeType: string;
+  name?: string;
+}
 
 interface MessageInputProps {
   readonly value: string;
   readonly onChange: (value: string) => void;
   readonly referencedFiles?: string[];
   readonly onReferencedFilesChange?: (paths: string[]) => void;
+  readonly attachments?: ImageAttachment[];
+  readonly onAttachmentsChange?: (attachments: ImageAttachment[]) => void;
   readonly onSubmit: () => void;
   readonly onCancel?: () => void;
   readonly composeMode?: 'default' | 'planning';
@@ -337,11 +348,26 @@ function setRangeByOffset(container: Node, range: Range, startOffset: number, en
   return false;
 }
 
+function fileToBase64(file: File): Promise<{ data: string; mimeType: string; name: string }> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      const base64 = result.includes(',') ? result.split(',')[1]! : result;
+      resolve({ data: base64, mimeType: file.type || 'image/png', name: file.name });
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
 export function MessageInput({
   value,
   onChange,
   referencedFiles = [],
   onReferencedFilesChange,
+  attachments = [],
+  onAttachmentsChange,
   onSubmit,
   onCancel,
   composeMode = 'default',
@@ -395,6 +421,60 @@ export function MessageInput({
   const [indexLoading, setIndexLoading] = useState(false);
   const [indexError, setIndexError] = useState<string | null>(null);
   const [selectedMentionIndex, setSelectedMentionIndex] = useState(0);
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      if (!onAttachmentsChange || !activeChatId || disabled) return;
+      const files = Array.from(e.dataTransfer?.files ?? []);
+      const imageFiles = files.filter(
+        (f) => IMAGE_MIMES.has(f.type) && f.size <= MAX_ATTACHMENT_SIZE_MB * 1024 * 1024,
+      );
+      if (imageFiles.length === 0) return;
+      Promise.all(imageFiles.map(fileToBase64)).then((newAtts) => {
+        onAttachmentsChange([...attachments, ...newAtts]);
+      });
+    },
+    [onAttachmentsChange, attachments, activeChatId, disabled],
+  );
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  }, []);
+
+  const removeAttachment = useCallback(
+    (index: number) => {
+      if (!onAttachmentsChange) return;
+      onAttachmentsChange(attachments.filter((_, i) => i !== index));
+    },
+    [onAttachmentsChange, attachments],
+  );
+
+  const handlePaste = useCallback(
+    (e: React.ClipboardEvent) => {
+      if (!onAttachmentsChange || !activeChatId || disabled) return;
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      const imageFiles: File[] = [];
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item?.kind === 'file' && IMAGE_MIMES.has(item.type)) {
+          const file = item.getAsFile();
+          if (file && file.size <= MAX_ATTACHMENT_SIZE_MB * 1024 * 1024) {
+            imageFiles.push(file);
+          }
+        }
+      }
+      if (imageFiles.length > 0) {
+        e.preventDefault();
+        Promise.all(imageFiles.map(fileToBase64)).then((newAtts) => {
+          onAttachmentsChange([...attachments, ...newAtts]);
+        });
+      }
+    },
+    [onAttachmentsChange, attachments, activeChatId, disabled],
+  );
 
   const mentionOpen = mentionContext != null;
 
@@ -591,7 +671,35 @@ export function MessageInput({
         </button>
       </div>
       <div className="flex items-end gap-2">
-        <div className="flex-1 relative">
+        <div
+          className="flex-1 relative"
+          onDrop={handleDrop}
+          onDragOver={handleDragOver}
+        >
+          {attachments.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-2">
+              {attachments.map((att, i) => (
+                <div
+                  key={i}
+                  className="relative group inline-flex rounded-lg border border-gray-600 overflow-hidden bg-gray-800/80"
+                >
+                  <img
+                    src={`data:${att.mimeType};base64,${att.data}`}
+                    alt={att.name ?? 'Attachment'}
+                    className="w-14 h-14 object-cover"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeAttachment(i)}
+                    className="absolute top-0.5 right-0.5 p-1 rounded bg-black/60 text-gray-300 hover:text-white hover:bg-red-600/80 transition-colors"
+                    title="Remove"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
           {showMentionPopup && (
             <div className="absolute bottom-full left-0 right-0 mb-2 z-20 rounded-xl border border-gray-700/70 bg-gray-850 shadow-xl shadow-black/40 overflow-hidden">
               <div className="px-3 py-1.5 text-[10px] uppercase tracking-wide text-gray-400 border-b border-gray-700/60">
@@ -672,6 +780,7 @@ export function MessageInput({
                 }
               }}
               onKeyDown={(e) => handleKeyDown(e)}
+              onPaste={handlePaste}
             />
           </div>
         </div>

@@ -408,6 +408,7 @@ export class ApiClient {
           mode: req.mode,
           activePlanId: req.activePlanId,
           referencedFiles: req.referencedFiles,
+          attachments: req.attachments,
         },
         `send-${req.chatId}`,
       );

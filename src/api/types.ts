@@ -31,12 +31,19 @@ export interface ApiResponse<T> {
 /* ── Actions (client → backend) ────────────────────────────────── */
 
 // 1. Send a message
+export interface MessageAttachmentIn {
+  data: string;
+  mimeType: string;
+  name?: string;
+}
+
 export interface SendMessageRequest {
   chatId: string;
   content: string;
   mode?: 'default' | 'planning' | 'plan_edit';
   activePlanId?: string;
   referencedFiles?: string[];
+  attachments?: MessageAttachmentIn[];
 }
 
 export interface SendMessageResponse {
@@ -474,6 +481,7 @@ export interface ModelMetadata {
   reasoningSupported?: boolean;
   reasoningLevels?: string[];
   defaultReasoningLevel?: string | null;
+  vision?: boolean;
 }
 
 export interface SubAgentStartPayload {
