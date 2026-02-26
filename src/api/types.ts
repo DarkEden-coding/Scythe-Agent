@@ -36,6 +36,7 @@ export interface SendMessageRequest {
   content: string;
   mode?: 'default' | 'planning' | 'plan_edit';
   activePlanId?: string;
+  referencedFiles?: string[];
 }
 
 export interface SendMessageResponse {
@@ -148,6 +149,7 @@ export interface EditMessageRequest {
   chatId: string;
   messageId: string;
   content: string;
+  referencedFiles?: string[];
 }
 
 export interface EditMessageResponse {

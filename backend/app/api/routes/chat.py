@@ -64,6 +64,7 @@ async def send_message(
             content=request.content,
             mode=request.mode or "default",
             active_plan_id=request.activePlanId,
+            referenced_files=request.referencedFiles,
         )
         return ok(data.model_dump())
     except ValueError as exc:
@@ -154,7 +155,10 @@ async def edit_message(
 ):
     try:
         data = await ChatService(db).edit_message(
-            chat_id=chat_id, message_id=message_id, content=request.content
+            chat_id=chat_id,
+            message_id=message_id,
+            content=request.content,
+            referenced_files=request.referencedFiles,
         )
         return ok(data.model_dump())
     except ValueError as exc:

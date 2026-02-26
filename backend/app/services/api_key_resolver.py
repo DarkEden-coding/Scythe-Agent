@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, overload
 
 from app.db.repositories.settings_repo import SettingsRepository
 from app.providers.groq.client import GroqClient
@@ -13,7 +13,7 @@ from app.providers.openrouter.client import OpenRouterClient
 from app.utils.encryption import decrypt, mask_api_key
 
 if TYPE_CHECKING:
-    from typing import Literal, Union, overload
+    from typing import Literal, Union
 
     LLMClient = Union[OpenRouterClient, GroqClient, OpenAISubClient]
 

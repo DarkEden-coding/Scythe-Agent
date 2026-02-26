@@ -13,6 +13,7 @@ class MessageOut(BaseModel):
     content: str
     timestamp: str
     checkpointId: str | None = None
+    referencedFiles: list[str] = Field(default_factory=list)
 
 
 class SubAgentRunOut(BaseModel):
@@ -136,6 +137,7 @@ class SendMessageRequest(BaseModel):
 
     mode: Literal["default", "planning", "plan_edit"] | None = None
     activePlanId: str | None = None
+    referencedFiles: list[str] | None = None
 
 
 class SendMessageResponse(BaseModel):
@@ -195,6 +197,8 @@ class EditMessageRequest(BaseModel):
     @classmethod
     def validate_content_tokens(cls, v: str) -> str:
         return _validate_content_tokens(v)
+
+    referencedFiles: list[str] | None = None
 
 
 class EditMessageResponse(BaseModel):

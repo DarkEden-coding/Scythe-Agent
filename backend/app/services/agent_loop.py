@@ -5,7 +5,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from dataclasses import dataclass
+from pathlib import Path
 
 import httpx
 
@@ -16,11 +18,13 @@ from app.schemas.chat import MessageOut
 from app.services.llm_streamer import LLMStreamer
 from app.services.memory import MemoryConfig
 from app.services.tool_executor import ToolExecutor
+from app.utils.json_helpers import safe_parse_json
 from app.utils.ids import generate_id
 from app.utils.time import utc_now_iso
 
 logger = logging.getLogger(__name__)
 REPETITIVE_TOOL_CALL_STREAK_LIMIT = 5
+_MENTION_INPUT_FLAG = "__mention_reference__"
 GUARDED_REPEAT_TOOLS = {"read_file", "list_files", "grep"}
 PLANNING_ALLOWED_TOOLS = {
     "list_files",
@@ -529,12 +533,41 @@ class AgentLoop:
     def _assemble_messages(self, chat_id: str, content: str) -> list[dict]:
         """Assemble messages without system prompt; SystemPromptPreprocessor adds it."""
         messages = self._chat_repo.list_messages(chat_id)
+        referenced_files_by_checkpoint: dict[str, list[str]] = {}
+        for tc in self._chat_repo.list_tool_calls(chat_id):
+            if not tc.checkpoint_id or tc.name != "read_file":
+                continue
+            payload = safe_parse_json(tc.input_json)
+            if not bool(payload.get(_MENTION_INPUT_FLAG)):
+                continue
+            path = str(payload.get("path", "")).strip()
+            if not path:
+                continue
+            bucket = referenced_files_by_checkpoint.setdefault(tc.checkpoint_id, [])
+            if path not in bucket:
+                bucket.append(path)
         openrouter_messages: list[dict] = []
         for m in messages:
             role = "assistant" if m.role == "assistant" else "user"
+            content_text = m.content
+            if role == "user" and m.checkpoint_id:
+                ref_paths = referenced_files_by_checkpoint.get(m.checkpoint_id, [])
+                if ref_paths:
+
+                    def _replace_file_placeholder(match: re.Match[str], paths: list[str] = ref_paths) -> str:
+                        idx = int(match.group(1))
+                        return Path(paths[idx]).name if 0 <= idx < len(paths) else match.group(0)
+
+                    content_text = re.sub(r"\{\{FILE:(\d+)\}\}\}*", _replace_file_placeholder, content_text)
+                    refs_inline = " ".join(
+                        f"<File reference: {path} do not re-read file>" for path in ref_paths
+                    )
+                    content_text = (
+                        f"{content_text}\n{refs_inline}" if content_text else refs_inline
+                    )
             openrouter_messages.append({
                 "role": role,
-                "content": m.content,
+                "content": content_text,
                 "_message_id": m.id,
             })
         if not openrouter_messages:

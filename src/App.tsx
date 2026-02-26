@@ -149,7 +149,11 @@ export function App() {
 
   const handleSendMessage = async (
     content: string,
-    options?: { mode?: 'default' | 'planning' | 'plan_edit'; activePlanId?: string },
+    options?: {
+      mode?: 'default' | 'planning' | 'plan_edit';
+      activePlanId?: string;
+      referencedFiles?: string[];
+    },
   ) => {
     if (activeChatId == null) return;
     const chatIdToProcess = activeChatId;
@@ -250,12 +254,12 @@ export function App() {
     else showToast(`Error: ${res.error}`);
   };
 
-  const handleEditMessage = (messageId: string, newContent: string) => {
+  const handleEditMessage = (messageId: string, newContent: string, referencedFiles?: string[]) => {
     if (!window.confirm('This will revert all changes after this message and re-run the agent with the new content. Continue?')) {
       return;
     }
     setProcessingChats((prev) => new Set(prev).add(activeChatId!));
-    chat.editMessage(messageId, newContent).then((res) => {
+    chat.editMessage(messageId, newContent, referencedFiles).then((res) => {
       if (res.ok) showToast('Message updated — re-running agent');
       else {
         showToast(`Error: ${res.error}`);

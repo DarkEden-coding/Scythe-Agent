@@ -40,6 +40,7 @@ interface ChatPanelProps {
     options?: {
       mode?: 'default' | 'planning' | 'plan_edit';
       activePlanId?: string;
+      referencedFiles?: string[];
     },
   ) => void;
   readonly onCancel?: () => void;
@@ -56,7 +57,7 @@ interface ChatPanelProps {
   readonly onReorderProjects?: (projectIds: string[]) => Promise<void> | void;
   readonly onReorderChats?: (projectId: string, chatIds: string[]) => Promise<void> | void;
   readonly onDeleteProject?: (projectId: string) => Promise<void> | void;
-  readonly onEditMessage?: (messageId: string, newContent: string) => void;
+  readonly onEditMessage?: (messageId: string, newContent: string, referencedFiles?: string[]) => void;
   readonly verificationIssues?: Record<string, VerificationIssues>;
   readonly observationStatus?: ObservationStatus;
   readonly observation?: ObservationData | null;
@@ -103,6 +104,7 @@ export function ChatPanel({
   onRetryPersistentError,
 }: ChatPanelProps) {
   const [inputValue, setInputValue] = useState('');
+  const [inputReferencedFiles, setInputReferencedFiles] = useState<string[]>([]);
   const [composeMode, setComposeMode] = useState<'default' | 'planning'>('default');
   const [activeTab, setActiveTab] = useHashTab<'chat' | 'projects'>('chat', ['chat', 'projects']);
   const [activeChatId, setActiveChatId] = useState(externalActiveChatId ?? null);
@@ -114,6 +116,8 @@ export function ChatPanel({
 
   useEffect(() => {
     setActiveChatId(externalActiveChatId ?? null);
+    setInputValue('');
+    setInputReferencedFiles([]);
   }, [externalActiveChatId]);
 
   const getCheckpointForMessage = (messageId: string) =>
@@ -131,10 +135,12 @@ export function ChatPanel({
       ? {
           mode: activePlanId ? ('plan_edit' as const) : ('planning' as const),
           activePlanId: activePlanId ?? undefined,
+          referencedFiles: inputReferencedFiles,
         }
-      : undefined;
+      : { referencedFiles: inputReferencedFiles };
     onSendMessage?.(inputValue.trim(), options);
     setInputValue('');
+    setInputReferencedFiles([]);
   };
 
   const currentProject = activeChatId
@@ -285,11 +291,14 @@ export function ChatPanel({
             <MessageInput
               value={inputValue}
               onChange={setInputValue}
+              referencedFiles={inputReferencedFiles}
+              onReferencedFilesChange={setInputReferencedFiles}
               onSubmit={handleSend}
               onCancel={onCancel}
               composeMode={composeMode}
               onComposeModeChange={setComposeMode}
               activeChatId={activeChatId}
+              activeProjectPath={currentProject?.path ?? null}
               isProcessing={isProcessing}
             />
           </div>

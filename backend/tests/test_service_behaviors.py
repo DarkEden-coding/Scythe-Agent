@@ -33,6 +33,133 @@ def test_send_message_checkpoint_persistence(client) -> None:
     assert any(c["id"] == data["checkpoint"]["id"] for c in history["checkpoints"])
 
 
+def test_send_message_with_file_mention_creates_read_file_tool_call(client) -> None:
+    project_root = Path("/tmp/test-project")
+    project_root.mkdir(parents=True, exist_ok=True)
+    target = project_root / "mention_target.py"
+    target.write_text("def mentioned():\n    return 42\n", encoding="utf-8")
+
+    response = client.post(
+        "/api/chat/chat-1/messages",
+        json={"content": "Please inspect @mention_target.py before coding."},
+    )
+    assert response.status_code == 200
+    data = response.json()["data"]
+    checkpoint_id = data["checkpoint"]["id"]
+
+    history = client.get("/api/chat/chat-1/history").json()["data"]
+    matching = [
+        tc for tc in history["toolCalls"]
+        if tc["name"] == "read_file"
+        and tc.get("input", {}).get("path") == str(target)
+        and tc.get("status") in {"completed", "error"}
+    ]
+    assert matching, "Expected a read_file tool call created from @mention."
+    assert any(tc.get("id") in data["checkpoint"]["toolCalls"] for tc in matching)
+
+    # The pre-read tool call should be attached to the user checkpoint that triggered it.
+    checkpoint = next((cp for cp in history["checkpoints"] if cp["id"] == checkpoint_id), None)
+    assert checkpoint is not None
+    assert any(tc["id"] in checkpoint["toolCalls"] for tc in matching)
+
+
+def test_send_message_with_referenced_files_payload_creates_read_file_tool_call(client) -> None:
+    project_root = Path("/tmp/test-project")
+    project_root.mkdir(parents=True, exist_ok=True)
+    target = project_root / "payload_reference.py"
+    target.write_text("VALUE = 7\n", encoding="utf-8")
+
+    response = client.post(
+        "/api/chat/chat-1/messages",
+        json={"content": "Review this file context.", "referencedFiles": [str(target)]},
+    )
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert str(target) in data["message"].get("referencedFiles", [])
+
+    history = client.get("/api/chat/chat-1/history").json()["data"]
+    matching = [
+        tc for tc in history["toolCalls"]
+        if tc["name"] == "read_file"
+        and tc.get("input", {}).get("path") == str(target)
+        and tc.get("input", {}).get("__mention_reference__") is True
+    ]
+    assert matching
+
+
+def test_chat_debug_includes_mention_read_file_context(client) -> None:
+    project_root = Path("/tmp/test-project")
+    project_root.mkdir(parents=True, exist_ok=True)
+    target = project_root / "mention_debug.py"
+    target.write_text("class DebugMention:\n    pass\n", encoding="utf-8")
+
+    send_res = client.post(
+        "/api/chat/chat-1/messages",
+        json={"content": "Use @mention_debug.py for context."},
+    )
+    assert send_res.status_code == 200
+    tool_call_ids = set(send_res.json()["data"]["checkpoint"]["toolCalls"])
+    assert tool_call_ids
+
+    debug_res = client.get("/api/chat/chat-1/debug")
+    assert debug_res.status_code == 200
+    assembled = debug_res.json()["data"]["assembledMessages"]
+
+    assistant_tool_messages = [
+        m for m in assembled
+        if m.get("role") == "assistant"
+        and isinstance(m.get("tool_calls"), list)
+        and any(tc.get("id") in tool_call_ids for tc in m.get("tool_calls", []))
+    ]
+    assert assistant_tool_messages
+
+    tool_messages = [
+        m for m in assembled
+        if m.get("role") == "tool"
+        and m.get("tool_call_id") in tool_call_ids
+    ]
+    assert tool_messages
+    assert any(
+        m.get("role") == "user"
+        and "<File reference: " in str(m.get("content", ""))
+        and "do not re-read file>" in str(m.get("content", ""))
+        for m in assembled
+    )
+
+
+def test_edit_message_with_referenced_files_preserves_file_context(client) -> None:
+    project_root = Path("/tmp/test-project")
+    project_root.mkdir(parents=True, exist_ok=True)
+    target = project_root / "edit_reference.py"
+    target.write_text("def edited_reference():\n    return 'ok'\n", encoding="utf-8")
+
+    send_res = client.post(
+        "/api/chat/chat-1/messages",
+        json={"content": "Initial message without references."},
+    )
+    assert send_res.status_code == 200
+    message_id = send_res.json()["data"]["message"]["id"]
+
+    edit_res = client.put(
+        f"/api/chat/chat-1/messages/{message_id}",
+        json={"content": "Edited content still needs file context.", "referencedFiles": [str(target)]},
+    )
+    assert edit_res.status_code == 200
+
+    history = client.get("/api/chat/chat-1/history").json()["data"]
+    matching = [
+        tc for tc in history["toolCalls"]
+        if tc["name"] == "read_file"
+        and tc.get("input", {}).get("path") == str(target)
+        and tc.get("input", {}).get("__mention_reference__") is True
+    ]
+    assert matching
+
+    edited_message = next((m for m in history["messages"] if m["id"] == message_id), None)
+    assert edited_message is not None
+    assert str(target) in edited_message.get("referencedFiles", [])
+
+
 def test_auto_approve_rule_matcher_fields(client) -> None:
     set_rules = client.put(
         "/api/settings/auto-approve",
@@ -633,6 +760,7 @@ def test_continue_agent_schedules_latest_checkpoint(client, monkeypatch) -> None
         content: str,
         mode: str,
         active_plan_id: str | None,
+        extra_messages: list[dict] | None = None,
         session_factory,
         event_bus,
         task_manager,
@@ -642,6 +770,7 @@ def test_continue_agent_schedules_latest_checkpoint(client, monkeypatch) -> None
         captured["content"] = content
         captured["mode"] = mode
         captured["active_plan_id"] = active_plan_id
+        captured["extra_messages_count"] = str(len(extra_messages or []))
 
     monkeypatch.setattr(chat_service_module, "_schedule_background_task", _fake_schedule_background_task)
 
@@ -657,6 +786,67 @@ def test_continue_agent_schedules_latest_checkpoint(client, monkeypatch) -> None
     assert captured["content"] == expected_content
     assert captured["mode"] == "default"
     assert captured["active_plan_id"] is None
+    assert captured["extra_messages_count"] == "0"
+
+
+def test_continue_agent_rehydrates_referenced_file_context(client, monkeypatch) -> None:
+    captured_calls: list[dict] = []
+
+    def _fake_schedule_background_task(
+        *,
+        chat_id: str,
+        checkpoint_id: str,
+        content: str,
+        mode: str,
+        active_plan_id: str | None,
+        extra_messages: list[dict] | None = None,
+        session_factory,
+        event_bus,
+        task_manager,
+    ) -> None:
+        captured_calls.append(
+            {
+                "chat_id": chat_id,
+                "checkpoint_id": checkpoint_id,
+                "content": content,
+                "mode": mode,
+                "active_plan_id": active_plan_id,
+                "extra_messages": extra_messages or [],
+            }
+        )
+
+    monkeypatch.setattr(chat_service_module, "_schedule_background_task", _fake_schedule_background_task)
+
+    project_root = Path("/tmp/test-project")
+    project_root.mkdir(parents=True, exist_ok=True)
+    target = project_root / "continue_reference.py"
+    target.write_text("REFERENCE_OK = 123\n", encoding="utf-8")
+
+    send_res = client.post(
+        "/api/chat/chat-1/messages",
+        json={"content": "Use this reference.", "referencedFiles": [str(target)]},
+    )
+    assert send_res.status_code == 200
+
+    continue_res = client.post("/api/chat/chat-1/continue")
+    assert continue_res.status_code == 200
+    body = continue_res.json()
+    _assert_envelope(body)
+    assert body["data"]["started"] is True
+
+    assert len(captured_calls) >= 2
+    continue_call = captured_calls[-1]
+    extra_messages = continue_call["extra_messages"]
+    assert extra_messages, "Expected continue to include hydrated read_file context."
+    assert any(
+        message.get("role") == "assistant"
+        and any(tc.get("function", {}).get("name") == "read_file" for tc in message.get("tool_calls", []))
+        for message in extra_messages
+    )
+    assert any(
+        message.get("role") == "tool" and "REFERENCE_OK = 123" in str(message.get("content", ""))
+        for message in extra_messages
+    )
 
 
 def test_format_runtime_error_http_status_includes_provider_detail() -> None:

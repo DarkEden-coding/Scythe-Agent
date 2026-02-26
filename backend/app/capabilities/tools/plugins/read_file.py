@@ -45,9 +45,17 @@ async def _handler(payload: dict, context: ToolExecutionContext) -> ToolExecutio
     if not path.exists() or not path.is_file():
         return ToolExecutionResult(output=f"File not found: {path}", file_edits=[], ok=False)
 
+    is_mention_ref = bool(payload.get("__mention_reference__"))
     start_val = payload.get("start")
     end_val = payload.get("end")
     has_span = start_val is not None and end_val is not None
+
+    if is_mention_ref and not has_span:
+        lines = path.read_text(encoding="utf-8").splitlines()
+        total = len(lines)
+        if total > 0:
+            output = await asyncio.to_thread(_read_span_streaming, path, 1, total)
+            return ToolExecutionResult(output=output, file_edits=[])
 
     if has_span and start_val is not None and end_val is not None:
         try:

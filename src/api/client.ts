@@ -404,6 +404,7 @@ export class ApiClient {
           content,
           mode: req.mode,
           activePlanId: req.activePlanId,
+          referencedFiles: req.referencedFiles,
         },
         `send-${req.chatId}`,
       );
@@ -495,7 +496,10 @@ export class ApiClient {
 
   /** Edit a user message — reverts to the message's checkpoint and re-runs the agent. */
   async editMessage(req: EditMessageRequest): Promise<ApiResponse<EditMessageResponse>> {
-    return this.request('PUT', `/chat/${req.chatId}/messages/${req.messageId}`, { content: req.content });
+    return this.request('PUT', `/chat/${req.chatId}/messages/${req.messageId}`, {
+      content: req.content,
+      referencedFiles: req.referencedFiles,
+    });
   }
 
   async getPlans(chatId: string): Promise<ApiResponse<GetPlansResponse>> {

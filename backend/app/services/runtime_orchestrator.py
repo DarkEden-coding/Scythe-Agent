@@ -150,6 +150,7 @@ async def run_agent_turn(
     event_bus,
     mode: str = "default",
     active_plan_id: str | None = None,
+    extra_messages: list[dict] | None = None,
 ) -> FollowUpTurn | None:
     """
     Run a full agent turn: AgentLoop + post-agent verification.
@@ -171,7 +172,7 @@ async def run_agent_turn(
         default_prompt = settings_svc.get_system_prompt()
         plan_svc = PlanService(session, event_bus=event_bus)
 
-        extra_messages: list[dict] = []
+        mode_extra_messages: list[dict] = []
         if run_mode == "planning":
             await event_bus.publish(
                 chat_id,
@@ -188,7 +189,7 @@ async def run_agent_turn(
             await plan_svc.sync_external_if_needed(chat_id, active_plan_id)
             existing_plan = await plan_svc.get_plan(chat_id, active_plan_id, include_content=True)
             existing_content = existing_plan.content or ""
-            extra_messages.append(
+            mode_extra_messages.append(
                 {
                     "role": "system",
                     "content": (
@@ -198,7 +199,7 @@ async def run_agent_turn(
                     ),
                 }
             )
-            extra_messages.append(
+            mode_extra_messages.append(
                 {
                     "role": "user",
                     "content": (
@@ -226,7 +227,7 @@ async def run_agent_turn(
             content=content,
             max_iterations=max_iterations,
             mode=run_mode,
-            extra_messages=extra_messages or None,
+            extra_messages=[*(extra_messages or []), *mode_extra_messages] or None,
         )
 
         if run_mode == "planning":

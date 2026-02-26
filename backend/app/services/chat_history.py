@@ -44,6 +44,25 @@ class ChatHistoryAssembler:
         if chat is None:
             raise ValueError(f"Chat not found: {chat_id}")
 
+        raw_tool_calls = self._chat_repo.list_tool_calls(chat_id)
+        raw_file_edits = self._chat_repo.list_file_edits(chat_id)
+        raw_reasoning_blocks = self._chat_repo.list_reasoning_blocks(chat_id)
+        raw_messages = self._chat_repo.list_messages(chat_id)
+
+        referenced_files_by_checkpoint: dict[str, list[str]] = {}
+        for t in raw_tool_calls:
+            if not t.checkpoint_id or t.name != "read_file":
+                continue
+            payload = safe_parse_json(t.input_json)
+            if not bool(payload.get("__mention_reference__")):
+                continue
+            path = str(payload.get("path", "")).strip()
+            if not path:
+                continue
+            existing = referenced_files_by_checkpoint.setdefault(t.checkpoint_id, [])
+            if path not in existing:
+                existing.append(path)
+
         messages = [
             MessageOut(
                 id=m.id,
@@ -51,13 +70,14 @@ class ChatHistoryAssembler:
                 content=m.content,
                 timestamp=m.timestamp,
                 checkpointId=m.checkpoint_id,
+                referencedFiles=(
+                    referenced_files_by_checkpoint.get(m.checkpoint_id or "", [])
+                    if m.role == "user"
+                    else []
+                ),
             )
-            for m in self._chat_repo.list_messages(chat_id)
+            for m in raw_messages
         ]
-
-        raw_tool_calls = self._chat_repo.list_tool_calls(chat_id)
-        raw_file_edits = self._chat_repo.list_file_edits(chat_id)
-        raw_reasoning_blocks = self._chat_repo.list_reasoning_blocks(chat_id)
 
         tool_calls = []
         for t in raw_tool_calls:

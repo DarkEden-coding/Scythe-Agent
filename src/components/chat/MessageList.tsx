@@ -9,7 +9,7 @@ interface MessageListProps {
   readonly activeChatId: string | null;
   readonly isProcessing: boolean;
   readonly onRevert: (checkpointId: string) => void;
-  readonly onEditMessage?: (messageId: string, newContent: string) => void;
+  readonly onEditMessage?: (messageId: string, newContent: string, referencedFiles?: string[]) => void;
   readonly getCheckpointForMessage: (messageId: string) => Checkpoint | undefined;
   readonly verificationIssues?: Record<string, VerificationIssues>;
   readonly observation?: ObservationData | null;

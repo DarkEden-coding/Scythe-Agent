@@ -8,6 +8,8 @@ PATH CONVENTIONS: All paths in tool calls (read_file, edit_file, list_files, exe
 
 READ_FILE BEHAVIOR: Call read_file without start/end to get the file structure (outline with line ranges) and total line count. Supported formats include code (.py, .ts, .js, etc.) and config (.toml, .json, .yaml, .yml). Use the structure to decide which spans to read, then call read_file with start and end (1-based line numbers) for specific sections. For unsupported extensions or when structure is unavailable, use read_file with start and end directly. Always prefer targeted spans over reading entire large files.
 
+FILE REFERENCE CHIPS: User messages may include inline markers like `<File reference: /absolute/path/to/file do not re-read file>`. These indicate file content was already pre-read and provided via tool output for this turn. Treat those files as available context and avoid calling read_file on the same paths again unless the user explicitly asks for a refresh.
+
 PARALLEL TOOL CALLS: Prefer issuing multiple independent tool calls in a single turn when they can run in parallel (e.g. reading several files at once, listing directories while grepping). This reduces latency and speeds up tasks. Only serialize calls when one depends on another's output.
 
 TOOL USAGE: Always use tool calls in every message except when you call submit_task to signal completion or user_query to request more information. In intermediate turns, never respond with text alone—always include tool calls to gather information or take action. When all tasks are complete, call the submit_task tool to end the agent loop. When you need clarification, decisions, or additional context from the user, write your questions in your message and call the user_query tool to pause until they respond.

@@ -558,6 +558,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
       options?: {
         mode?: 'default' | 'planning' | 'plan_edit';
         activePlanId?: string;
+        referencedFiles?: string[];
       },
     ) => {
       if (!isValidChatId(chatId)) {
@@ -571,6 +572,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
           content,
           mode: options?.mode,
           activePlanId: options?.activePlanId,
+          referencedFiles: options?.referencedFiles,
         });
         if (res.ok) {
           const nextMessage = normalizeMessage(res.data.message);
@@ -855,11 +857,11 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
   );
 
   const editMessage = useCallback(
-    async (messageId: string, content: string) => {
+    async (messageId: string, content: string, referencedFiles?: string[]) => {
       if (!isValidChatId(chatId)) {
         return { ok: false as const, data: null, error: 'No chat selected', timestamp: new Date().toISOString() };
       }
-      const res = await client.editMessage({ chatId, messageId, content });
+      const res = await client.editMessage({ chatId, messageId, content, referencedFiles });
       if (res.ok) {
         resetTransientStreamState();
         const d = res.data.revertedHistory;
@@ -1011,7 +1013,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
         case 'message': {
           const payload = event.payload as { message: Message };
           pendingContentDeltas.current.delete(payload.message.id);
-          const message = { ...payload.message, timestamp: asDate(payload.message.timestamp) };
+          const message = normalizeMessage({ ...payload.message, timestamp: asDate(payload.message.timestamp) });
           setMessages((prev) => {
             const idx = prev.findIndex((m) => m.id === message.id);
             if (idx === -1) return [...prev, message];
@@ -1210,10 +1212,25 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
               reasoningBlocks: ReasoningBlock[];
               todos?: TodoItem[];
             };
+            messageId?: string;
+            content?: string;
+            referencedFiles?: string[];
           };
           resetTransientStreamState();
           const normalizedToolCalls = uniqueById(payload.revertedHistory.toolCalls.map(normalizeToolCall));
-          setMessages(uniqueById(payload.revertedHistory.messages.map(normalizeMessage)));
+          setMessages(
+            uniqueById(payload.revertedHistory.messages.map(normalizeMessage)).map((message) =>
+              message.id === payload.messageId
+                ? {
+                    ...message,
+                    content: payload.content ?? message.content,
+                    referencedFiles: Array.isArray(payload.referencedFiles)
+                      ? payload.referencedFiles
+                      : (message.referencedFiles ?? []),
+                  }
+                : message,
+            ),
+          );
           setToolCalls(normalizedToolCalls);
           toolCallsRef.current = normalizedToolCalls;
           setSubAgentRuns(

@@ -1,9 +1,11 @@
 import asyncio
 import json
 import logging
+import re
+from pathlib import Path
+from typing import Mapping, cast
 
 import httpx
-from typing import Mapping, cast
 from sqlalchemy.orm import Session
 
 from app.db.models.chat import Chat
@@ -32,11 +34,32 @@ from app.services.revert_service import RevertService
 from app.services.runtime_orchestrator import run_agent_turn
 from app.services.plan_service import PlanService
 from app.services.settings_service import SettingsService
+from app.tools.path_utils import resolve_path
 from app.utils.ids import generate_id
+from app.utils.json_helpers import safe_parse_json
 from app.utils.mappers import map_role_for_ui
 from app.utils.time import utc_now_iso
 
 logger = logging.getLogger(__name__)
+_MENTION_PATTERN = re.compile(r"(?<![A-Za-z0-9_.-])@([^\s@]+)")
+_TRAILING_MENTION_PUNCTUATION = ".,;:!?)]}>\"'"
+_MAX_MENTION_FILES_PER_MESSAGE = 8
+_MENTION_INPUT_FLAG = "__mention_reference__"
+
+# Matches {{FILE:i}} plus any trailing stray braces for scrubbing labels/previews
+_LABEL_PLACEHOLDER_PATTERN = re.compile(r"\{\{FILE:(\d+)\}\}\}*")
+
+
+def _scrub_content_for_label(content: str, reference_paths: list[str]) -> str:
+    """Replace {{FILE:i}} placeholders (and stray trailing braces) with filenames."""
+
+    def repl(match: re.Match[str]) -> str:
+        idx = int(match.group(1))
+        if 0 <= idx < len(reference_paths):
+            return Path(reference_paths[idx]).name
+        return ""
+
+    return _LABEL_PLACEHOLDER_PATTERN.sub(repl, content)
 
 
 def _extract_http_error_detail(body: object) -> str:
@@ -145,6 +168,7 @@ class ChatService:
             content=message.content,
             timestamp=message.timestamp,
             checkpointId=checkpoint.id,
+            referencedFiles=[],
         )
         checkpoint_out = CheckpointOut(
             id=checkpoint.id,
@@ -156,6 +180,237 @@ class ChatService:
             reasoningBlocks=[],
         )
         return message_out, checkpoint_out
+
+    def _extract_mention_tokens(self, content: str) -> list[str]:
+        if "@" not in content:
+            return []
+        tokens: list[str] = []
+        seen = set()
+        for match in _MENTION_PATTERN.finditer(content):
+            raw = match.group(1).strip()
+            token = raw.rstrip(_TRAILING_MENTION_PUNCTUATION).strip()
+            if not token:
+                continue
+            if token in seen:
+                continue
+            seen.add(token)
+            tokens.append(token)
+            if len(tokens) >= _MAX_MENTION_FILES_PER_MESSAGE:
+                break
+        return tokens
+
+    def _resolve_mention_paths(
+        self,
+        *,
+        content: str,
+        project_root: str | None,
+    ) -> list[str]:
+        if not project_root:
+            return []
+        root = Path(project_root).expanduser().resolve()
+        resolved_paths: list[str] = []
+        seen = set()
+        for token in self._extract_mention_tokens(content):
+            candidate = Path(token)
+            absolute_candidate = candidate if candidate.is_absolute() else (root / candidate)
+            try:
+                resolved = resolve_path(str(absolute_candidate), project_root=str(root), allow_external=False)
+            except ValueError:
+                continue
+            if not resolved.exists() or not resolved.is_file():
+                continue
+            resolved_str = str(resolved)
+            if resolved_str in seen:
+                continue
+            seen.add(resolved_str)
+            resolved_paths.append(resolved_str)
+        return resolved_paths
+
+    def _resolve_explicit_reference_paths(
+        self,
+        *,
+        referenced_files: list[str] | None,
+        project_root: str | None,
+    ) -> list[str]:
+        if not project_root or not referenced_files:
+            return []
+        root = Path(project_root).expanduser().resolve()
+        resolved_paths: list[str] = []
+        seen = set()
+        for raw_path in referenced_files:
+            candidate_text = str(raw_path or "").strip()
+            if not candidate_text:
+                continue
+            candidate = Path(candidate_text)
+            absolute_candidate = candidate if candidate.is_absolute() else (root / candidate)
+            try:
+                resolved = resolve_path(
+                    str(absolute_candidate),
+                    project_root=str(root),
+                    allow_external=False,
+                )
+            except ValueError:
+                continue
+            if not resolved.exists() or not resolved.is_file():
+                continue
+            resolved_str = str(resolved)
+            if resolved_str in seen:
+                continue
+            seen.add(resolved_str)
+            resolved_paths.append(resolved_str)
+        return resolved_paths
+
+    def _collect_reference_paths(
+        self,
+        *,
+        content: str,
+        referenced_files: list[str] | None,
+        project_root: str | None,
+    ) -> list[str]:
+        combined: list[str] = []
+        seen = set()
+        for path in self._resolve_explicit_reference_paths(
+            referenced_files=referenced_files,
+            project_root=project_root,
+        ):
+            if path in seen:
+                continue
+            seen.add(path)
+            combined.append(path)
+        for path in self._resolve_mention_paths(content=content, project_root=project_root):
+            if path in seen:
+                continue
+            seen.add(path)
+            combined.append(path)
+        return combined
+
+    def _extract_mentioned_tool_calls_by_checkpoint(
+        self,
+        tool_calls: list,
+    ) -> dict[str, list[tuple[object, str]]]:
+        by_checkpoint: dict[str, list[tuple[object, str]]] = {}
+        for tc in tool_calls:
+            if not tc.checkpoint_id or tc.name != "read_file":
+                continue
+            payload = safe_parse_json(tc.input_json)
+            if not bool(payload.get(_MENTION_INPUT_FLAG)):
+                continue
+            path = str(payload.get("path", "")).strip()
+            if not path:
+                continue
+            by_checkpoint.setdefault(tc.checkpoint_id, []).append((tc, path))
+        return by_checkpoint
+
+    def _build_mention_injected_messages(
+        self,
+        mentioned_tool_calls: list[tuple[object, str]],
+    ) -> list[dict]:
+        injected_messages: list[dict] = []
+        for tc, path in mentioned_tool_calls:
+            if getattr(tc, "status", None) == "pending":
+                continue
+            tool_call_id = str(getattr(tc, "id", "")).strip()
+            if not tool_call_id:
+                continue
+            model_args_json = json.dumps({"path": path}, separators=(",", ":"))
+            injected_messages.append(
+                {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": tool_call_id,
+                            "type": "function",
+                            "function": {
+                                "name": "read_file",
+                                "arguments": model_args_json,
+                            },
+                        }
+                    ],
+                    "_message_id": generate_id("msg"),
+                }
+            )
+            injected_messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": tool_call_id,
+                    "content": str(getattr(tc, "output_text", "") or ""),
+                    "_message_id": generate_id("msg"),
+                }
+            )
+        return injected_messages
+
+    async def _hydrate_file_mentions(
+        self,
+        *,
+        chat_id: str,
+        checkpoint_id: str,
+        file_paths: list[str],
+    ) -> tuple[list[str], list[dict]]:
+        if not file_paths:
+            return ([], [])
+
+        approval_service = ApprovalService(self.repo.db, event_bus=self.event_bus)
+        tool_call_ids: list[str] = []
+        injected_messages: list[dict] = []
+        for file_path in file_paths:
+            tool_call_id = generate_id("tc")
+            input_payload = {"path": file_path, _MENTION_INPUT_FLAG: True}
+            input_json = json.dumps(input_payload, separators=(",", ":"))
+            model_args_json = json.dumps({"path": file_path}, separators=(",", ":"))
+            self.repo.create_tool_call(
+                tool_call_id=tool_call_id,
+                chat_id=chat_id,
+                checkpoint_id=checkpoint_id,
+                name="read_file",
+                status="pending",
+                input_json=input_json,
+                timestamp=utc_now_iso(),
+                parallel_group=None,
+            )
+            self.repo.commit()
+
+            try:
+                tool_call_out, _ = await approval_service.approve(
+                    chat_id=chat_id,
+                    tool_call_id=tool_call_id,
+                )
+            except Exception:
+                logger.warning(
+                    "Failed to pre-read mentioned file for chat_id=%s path=%s",
+                    chat_id,
+                    file_path,
+                    exc_info=True,
+                )
+                continue
+
+            tool_call_ids.append(tool_call_id)
+            injected_messages.append(
+                {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": tool_call_id,
+                            "type": "function",
+                            "function": {
+                                "name": "read_file",
+                                "arguments": model_args_json,
+                            },
+                        }
+                    ],
+                    "_message_id": generate_id("msg"),
+                }
+            )
+            injected_messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": tool_call_id,
+                    "content": tool_call_out.output or "",
+                    "_message_id": generate_id("msg"),
+                }
+            )
+        return (tool_call_ids, injected_messages)
 
     async def _deny_pending_and_cancel_agent(
         self, chat_id: str, reject_reason: str = "User sent new message"
@@ -240,6 +495,12 @@ class ChatService:
 
         source_message = self.repo.get_message(checkpoint.message_id)
         content = source_message.content if source_message is not None else ""
+        mentioned_by_checkpoint = self._extract_mentioned_tool_calls_by_checkpoint(
+            self.repo.list_tool_calls(chat_id)
+        )
+        mention_messages = self._build_mention_injected_messages(
+            mentioned_by_checkpoint.get(checkpoint.id, [])
+        )
 
         _schedule_background_task(
             chat_id=chat_id,
@@ -247,6 +508,7 @@ class ChatService:
             content=content,
             mode="default",
             active_plan_id=None,
+            extra_messages=mention_messages,
             session_factory=get_sessionmaker(),
             event_bus=self.event_bus,
             task_manager=self.task_manager,
@@ -260,6 +522,7 @@ class ChatService:
         *,
         mode: str = "default",
         active_plan_id: str | None = None,
+        referenced_files: list[str] | None = None,
     ) -> SendMessageResponse:
         mode_name = mode if mode in {"default", "planning", "plan_edit"} else "default"
         if mode_name == "plan_edit" and not active_plan_id:
@@ -281,6 +544,14 @@ class ChatService:
             title = content.strip()[:64] or "New chat"
             chat.title = title
 
+        project = ProjectRepository(self.repo.db).get_project(chat.project_id)
+        reference_paths = self._collect_reference_paths(
+            content=content,
+            referenced_files=referenced_files,
+            project_root=project.path if project else None,
+        )
+        label_content = _scrub_content_for_label(content, reference_paths)[:48]
+
         timestamp = utc_now_iso()
         message = self.repo.create_message(
             message_id=generate_id("msg"),
@@ -294,7 +565,7 @@ class ChatService:
             checkpoint_id=generate_id("cp"),
             chat_id=chat_id,
             message_id=message.id,
-            label=f"User message: {content[:48]}",
+            label=f"User message: {label_content}",
             timestamp=timestamp,
         )
         self.repo.link_message_checkpoint(message, checkpoint.id)
@@ -307,6 +578,7 @@ class ChatService:
             content=message.content,
             timestamp=message.timestamp,
             checkpointId=checkpoint.id,
+            referencedFiles=[],
         )
         checkpoint_out = CheckpointOut(
             id=checkpoint.id,
@@ -317,6 +589,13 @@ class ChatService:
             toolCalls=[],
             reasoningBlocks=[],
         )
+        mention_tool_call_ids, mention_messages = await self._hydrate_file_mentions(
+            chat_id=chat_id,
+            checkpoint_id=checkpoint.id,
+            file_paths=reference_paths,
+        )
+        message_out.referencedFiles = reference_paths
+        checkpoint_out.toolCalls = mention_tool_call_ids
 
         if is_first_message and chat.title != "New chat":
             await self.event_bus.publish(
@@ -344,13 +623,20 @@ class ChatService:
             content=content,
             mode=mode_name,
             active_plan_id=active_plan_id,
+            extra_messages=mention_messages,
             session_factory=get_sessionmaker(),
             event_bus=self.event_bus,
             task_manager=self.task_manager,
         )
         return SendMessageResponse(message=message_out, checkpoint=checkpoint_out)
 
-    async def edit_message(self, chat_id: str, message_id: str, content: str) -> EditMessageResponse:
+    async def edit_message(
+        self,
+        chat_id: str,
+        message_id: str,
+        content: str,
+        referenced_files: list[str] | None = None,
+    ) -> EditMessageResponse:
         message = self.repo.get_message(message_id)
         if message is None or message.chat_id != chat_id:
             raise ValueError(f"Message not found: {message_id}")
@@ -377,13 +663,26 @@ class ChatService:
         revert_svc = RevertService(self.repo.db)
         reverted = revert_svc.revert_to_checkpoint(chat_id, checkpoint.id)
 
+        chat_row = self.repo.get_chat(chat_id)
+        project_path = None
+        if chat_row is not None:
+            project = ProjectRepository(self.repo.db).get_project(chat_row.project_id)
+            if project is not None:
+                project_path = project.path
+        reference_paths = self._collect_reference_paths(
+            content=content,
+            referenced_files=referenced_files,
+            project_root=project_path,
+        )
+
         # Update message content and checkpoint label in-place
         message = self.repo.get_message(message_id)
         if message is not None:
             message.content = content
         cp = self.repo.get_checkpoint(checkpoint.id)
         if cp is not None:
-            cp.label = f"User message: {content[:48]}"
+            label_content = _scrub_content_for_label(content, reference_paths)[:48]
+            cp.label = f"User message: {label_content}"
         self.repo.commit()
 
         # Publish message_edited event so frontend can update state
@@ -395,8 +694,15 @@ class ChatService:
                     "revertedHistory": reverted.model_dump(),
                     "messageId": message_id,
                     "content": content,
+                    "referencedFiles": reference_paths,
                 },
             },
+        )
+
+        _, mention_messages = await self._hydrate_file_mentions(
+            chat_id=chat_id,
+            checkpoint_id=checkpoint.id,
+            file_paths=reference_paths,
         )
 
         _schedule_background_task(
@@ -405,6 +711,7 @@ class ChatService:
             content=content,
             mode="default",
             active_plan_id=None,
+            extra_messages=mention_messages,
             session_factory=get_sessionmaker(),
             event_bus=self.event_bus,
             task_manager=self.task_manager,
@@ -579,10 +886,51 @@ class ChatService:
         project_path = project_model.path if project_model else None
 
         messages = self.repo.list_messages(chat_id)
-        openrouter_messages = [
-            {"role": "assistant" if m.role == "assistant" else "user", "content": m.content}
-            for m in messages
-        ]
+        tool_calls = self.repo.list_tool_calls(chat_id)
+        mentioned_by_checkpoint = self._extract_mentioned_tool_calls_by_checkpoint(tool_calls)
+
+        openrouter_messages: list[dict] = []
+        for m in messages:
+            role = "assistant" if m.role == "assistant" else "user"
+            message_content = m.content
+            if role == "user" and m.checkpoint_id:
+                referenced_paths: list[str] = []
+                for _, path in mentioned_by_checkpoint.get(m.checkpoint_id, []):
+                    if path not in referenced_paths:
+                        referenced_paths.append(path)
+                if referenced_paths:
+                    refs_inline = " ".join(
+                        f"<File reference: {path} do not re-read file>" for path in referenced_paths
+                    )
+                    message_content = (
+                        f"{message_content}\n{refs_inline}" if message_content else refs_inline
+                    )
+            openrouter_messages.append({"role": role, "content": message_content})
+            if role != "user" or not m.checkpoint_id:
+                continue
+            mentioned_tool_calls = mentioned_by_checkpoint.get(m.checkpoint_id, [])
+            for tc, path in mentioned_tool_calls:
+                model_args_json = json.dumps({"path": path}, separators=(",", ":"))
+                openrouter_messages.append(
+                    {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "id": tc.id,
+                                "type": "function",
+                                "function": {"name": "read_file", "arguments": model_args_json},
+                            }
+                        ],
+                    }
+                )
+                openrouter_messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "content": tc.output_text or "",
+                    }
+                )
         openrouter_messages = apply_initial_information(
             openrouter_messages,
             project_path=project_path,
@@ -611,6 +959,7 @@ def _schedule_background_task(
     session_factory,
     event_bus: EventBus,
     task_manager: AgentTaskManager,
+    extra_messages: list[dict] | None = None,
 ) -> None:
     """Create and track a background asyncio task for a single agent turn."""
 
@@ -625,6 +974,7 @@ def _schedule_background_task(
                 event_bus=event_bus,
                 mode=mode,
                 active_plan_id=active_plan_id,
+                extra_messages=extra_messages,
             )
             if follow_up is not None:
                 # Verification issues found — schedule the fix turn
@@ -634,6 +984,7 @@ def _schedule_background_task(
                     content=follow_up.content,
                     mode="default",
                     active_plan_id=None,
+                    extra_messages=None,
                     session_factory=session_factory,
                     event_bus=event_bus,
                     task_manager=task_manager,

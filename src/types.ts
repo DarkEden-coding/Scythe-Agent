@@ -4,6 +4,7 @@ export interface Message {
   content: string;
   timestamp: Date;
   checkpointId?: string;
+  referencedFiles?: string[];
 }
 
 export interface SubAgentRun {

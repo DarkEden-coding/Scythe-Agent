@@ -21,6 +21,7 @@ export const toDate = (value: Date | string): Date =>
 export const normalizeMessage = (m: Message): Message => ({
   ...m,
   timestamp: toDate(m.timestamp),
+  referencedFiles: Array.isArray(m.referencedFiles) ? m.referencedFiles : [],
 });
 
 export const normalizeToolCall = (tc: ToolCall & { duration_ms?: number }): ToolCall => ({
