@@ -513,6 +513,7 @@ export function App() {
             onRetryPersistentError={handleRetryObservation}
             awaitingUserQuery={awaitingUserQuery}
             userQueriesByCheckpoint={userQueriesByCheckpoint}
+            visionPreprocessing={chat.visionPreprocessing}
           />
         }
         rightPanel={
@@ -560,6 +561,8 @@ export function App() {
         currentModelKey={settings.currentModelKey}
         subAgentModel={settings.subAgentModel}
         subAgentModelKey={settings.subAgentModelKey}
+        visionPreprocessorModel={settings.visionPreprocessorModel}
+        visionPreprocessorModelKey={settings.visionPreprocessorModelKey}
         reasoningLevel={settings.reasoningLevel}
         setReasoningLevel={settings.setReasoningLevel}
         modelsByProvider={settings.modelsByProvider}
@@ -567,6 +570,7 @@ export function App() {
         loading={settings.loading}
         changeModel={settings.changeModel}
         changeSubAgentModel={settings.changeSubAgentModel}
+        changeVisionPreprocessorModel={settings.changeVisionPreprocessorModel}
       />
       <SettingsModal
         visible={settingsTab != null}

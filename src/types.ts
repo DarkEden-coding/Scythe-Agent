@@ -12,6 +12,8 @@ export interface Message {
   checkpointId?: string;
   referencedFiles?: string[];
   attachments?: MessageAttachment[];
+  imageSummarization?: string | null;
+  imageSummarizationModel?: string | null;
 }
 
 export interface SubAgentRun {

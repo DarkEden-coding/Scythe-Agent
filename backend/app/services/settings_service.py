@@ -26,6 +26,7 @@ from app.schemas.settings import (
     SetReasoningLevelResponse,
     SetSystemPromptResponse,
 )
+from app.providers.vision import model_has_vision
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +75,7 @@ class SettingsService:
             else DEFAULT_SYSTEM_PROMPT
         )
         sub_settings = self.repo.get_sub_agent_settings()
+        vp_settings = self.repo.get_vision_preprocessor_settings()
         return GetSettingsResponse(
             model=settings_row.active_model,
             modelProvider=active_provider,
@@ -100,6 +102,9 @@ class SettingsService:
             subAgentModelKey=sub_settings.get("sub_agent_model_key"),
             maxParallelSubAgents=sub_settings.get("max_parallel_sub_agents") or 4,
             subAgentMaxIterations=sub_settings.get("sub_agent_max_iterations") or 25,
+            visionPreprocessorModel=vp_settings.get("vision_preprocessor_model"),
+            visionPreprocessorModelProvider=vp_settings.get("vision_preprocessor_model_provider"),
+            visionPreprocessorModelKey=vp_settings.get("vision_preprocessor_model_key"),
         )
 
     def _now(self) -> str:
@@ -187,8 +192,6 @@ class SettingsService:
             meta["defaultReasoningLevel"] = reasoning_caps.default_level
         except (json_module.JSONDecodeError, TypeError):
             pass
-        from app.providers.vision import model_has_vision
-
         raw_dict = raw if isinstance(raw, dict) else None
         meta["vision"] = model_has_vision(
             model.provider, model.label, self.repo, raw_model=raw_dict
@@ -710,6 +713,46 @@ class SettingsService:
             settings_row=settings_row,
         )
         self.repo.set_sub_agent_model(
+            target.label,
+            provider=target.provider,
+            model_key=self._to_model_key(target.provider, target.label),
+            updated_at=self._now(),
+        )
+        self.repo.commit()
+        return self.get_settings()
+
+    def set_vision_preprocessor_model(
+        self,
+        model: str | None,
+        provider: str | None = None,
+        model_key: str | None = None,
+    ) -> GetSettingsResponse:
+        """Set or clear vision preprocessor. Must be a vision-capable model."""
+        settings_row = self.repo.get_settings()
+        if settings_row is None:
+            raise ValueError("Settings record missing")
+        if model is None or not model.strip():
+            self.repo.set_vision_preprocessor_model(None, None, None, updated_at=self._now())
+            self.repo.commit()
+            return self.get_settings()
+        models = self.repo.list_models()
+        if not models:
+            raise ValueError("No models available")
+        target = self._resolve_model_selection(
+            model=model,
+            provider=provider,
+            model_key=model_key,
+            models=models,
+            settings_row=settings_row,
+        )
+        if not model_has_vision(
+            target.provider, target.label, self.repo
+        ):
+            raise ValueError(
+                f"Model {target.label} does not support vision. "
+                "Vision preprocessor must be a vision-capable model."
+            )
+        self.repo.set_vision_preprocessor_model(
             target.label,
             provider=target.provider,
             model_key=self._to_model_key(target.provider, target.label),

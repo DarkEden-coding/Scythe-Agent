@@ -21,6 +21,8 @@ class MessageOut(BaseModel):
     checkpointId: str | None = None
     referencedFiles: list[str] = Field(default_factory=list)
     attachments: list[MessageAttachmentOut] = Field(default_factory=list)
+    imageSummarization: str | None = None
+    imageSummarizationModel: str | None = None
 
 
 class SubAgentRunOut(BaseModel):

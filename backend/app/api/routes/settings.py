@@ -14,6 +14,7 @@ from app.schemas.settings import (
     SetModelRequest,
     SetSubAgentModelRequest,
     SetSubAgentSettingsRequest,
+    SetVisionPreprocessorModelRequest,
     SetApiKeyRequest,
     SetSystemPromptRequest,
     SetReasoningLevelRequest,
@@ -145,6 +146,28 @@ def set_sub_agent_model(
         return ok(data.model_dump())
     except ValueError as exc:
         return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500, content=err(full_error_message(exc)).model_dump()
+        )
+
+
+@router.put("/vision-preprocessor-model")
+def set_vision_preprocessor_model(
+    request: SetVisionPreprocessorModelRequest, db: Session = Depends(get_db)
+):
+    """Set or clear vision preprocessor model. Must be vision-capable. Used to summarize images for non-vision main models."""
+    try:
+        data = SettingsService(db).set_vision_preprocessor_model(
+            model=request.model,
+            provider=request.provider,
+            model_key=request.modelKey,
+        )
+        return ok(data.model_dump())
+    except ValueError as exc:
+        return JSONResponse(
+            status_code=400, content=err(str(exc)).model_dump()
+        )
     except Exception as exc:
         return JSONResponse(
             status_code=500, content=err(full_error_message(exc)).model_dump()

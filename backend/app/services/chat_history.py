@@ -89,6 +89,8 @@ class ChatHistoryAssembler:
                         else []
                     ),
                     attachments=atts,
+                    imageSummarization=getattr(m, "image_summarization", None),
+                    imageSummarizationModel=getattr(m, "image_summarization_model", None),
                 )
             )
 

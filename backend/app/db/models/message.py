@@ -21,6 +21,8 @@ class Message(Base):
     content: Mapped[str] = mapped_column(Text, nullable=False)
     timestamp: Mapped[str] = mapped_column(Text, nullable=False)
     checkpoint_id: Mapped[Optional[str]] = mapped_column(ForeignKey("checkpoints.id", ondelete="SET NULL"), nullable=True)
+    image_summarization: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    image_summarization_model: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     chat: Mapped["Chat"] = relationship(back_populates="messages")
     attachments: Mapped[list["MessageAttachment"]] = relationship(

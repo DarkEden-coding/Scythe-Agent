@@ -39,3 +39,6 @@ class Settings(Base):
     sub_agent_model_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     max_parallel_sub_agents: Mapped[int | None] = mapped_column(Integer, nullable=True, default=4)
     sub_agent_max_iterations: Mapped[int | None] = mapped_column(Integer, nullable=True, default=25)
+    vision_preprocessor_model: Mapped[str | None] = mapped_column(Text, nullable=True)
+    vision_preprocessor_model_provider: Mapped[str | None] = mapped_column(Text, nullable=True)
+    vision_preprocessor_model_key: Mapped[str | None] = mapped_column(Text, nullable=True)

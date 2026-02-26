@@ -35,6 +35,9 @@ class GetSettingsResponse(BaseModel):
     subAgentModelKey: str | None = None
     maxParallelSubAgents: int = 4
     subAgentMaxIterations: int = 25
+    visionPreprocessorModel: str | None = None
+    visionPreprocessorModelProvider: str | None = None
+    visionPreprocessorModelKey: str | None = None
 
 
 class AutoApproveRuleIn(BaseModel):
@@ -68,6 +71,12 @@ class SetModelRequest(BaseModel):
 
 
 class SetSubAgentModelRequest(BaseModel):
+    model: str | None = Field(default=None, max_length=500)
+    provider: str | None = Field(default=None, min_length=1, max_length=64)
+    modelKey: str | None = Field(default=None, min_length=3, max_length=600)
+
+
+class SetVisionPreprocessorModelRequest(BaseModel):
     model: str | None = Field(default=None, max_length=500)
     provider: str | None = Field(default=None, min_length=1, max_length=64)
     modelKey: str | None = Field(default=None, min_length=3, max_length=600)

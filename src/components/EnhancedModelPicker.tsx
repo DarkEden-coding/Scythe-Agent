@@ -3,7 +3,7 @@ import { Search, Check, Cpu, Star, ArrowUpDown, GripVertical, Eye } from 'lucide
 import { cn } from '../utils/cn';
 import { Modal } from './Modal';
 
-type SelectionTarget = 'main' | 'sub_agent';
+type SelectionTarget = 'main' | 'sub_agent' | 'vision_preprocessor';
 
 interface EnhancedModelPickerProps {
   visible: boolean;
@@ -31,6 +31,11 @@ interface EnhancedModelPickerProps {
     modelKey?: string;
   }) => Promise<{ ok: boolean }>;
   changeSubAgentModel?: (
+    selection: { model: string; provider?: string; modelKey?: string } | null
+  ) => Promise<{ ok: boolean }>;
+  visionPreprocessorModel?: string | null;
+  visionPreprocessorModelKey?: string | null;
+  changeVisionPreprocessorModel?: (
     selection: { model: string; provider?: string; modelKey?: string } | null
   ) => Promise<{ ok: boolean }>;
 }
@@ -104,6 +109,9 @@ export function EnhancedModelPicker({
   loading,
   changeModel,
   changeSubAgentModel,
+  visionPreprocessorModel = null,
+  visionPreprocessorModelKey = null,
+  changeVisionPreprocessorModel,
 }: EnhancedModelPickerProps) {
   const [selectionTarget, setSelectionTarget] = useState<SelectionTarget>('main');
   const [searchQuery, setSearchQuery] = useState('');
@@ -176,6 +184,20 @@ export function EnhancedModelPicker({
       }
       return null;
     }
+    if (selectionTarget === 'vision_preprocessor') {
+      if (visionPreprocessorModelKey && allModelsMap[visionPreprocessorModelKey])
+        return visionPreprocessorModelKey;
+      if (visionPreprocessorModel) {
+        const matches = modelKeysByLabel[visionPreprocessorModel] ?? [];
+        if (matches.length === 1) return matches[0];
+        for (const tab of PROVIDER_TABS) {
+          const m = matches.find((k) => parseProviderFromModelKey(k) === tab.id);
+          if (m) return m;
+        }
+        return matches[0] ?? null;
+      }
+      return null;
+    }
     if (currentModelKey && allModelsMap[currentModelKey]) return currentModelKey;
     const matches = modelKeysByLabel[currentModel] ?? [];
     if (matches.length === 0) return null;
@@ -198,6 +220,8 @@ export function EnhancedModelPicker({
     selectionTarget,
     subAgentModel,
     subAgentModelKey,
+    visionPreprocessorModel,
+    visionPreprocessorModelKey,
   ]);
 
   const currentModelMetadata = useMemo(() => {
@@ -356,7 +380,10 @@ export function EnhancedModelPicker({
 
   // Filter and sort models for the active tab
   const filteredModels = useMemo(() => {
-    const models = modelsByProviderWithInfo[activeTab] ?? [];
+    let models = modelsByProviderWithInfo[activeTab] ?? [];
+    if (selectionTarget === 'vision_preprocessor') {
+      models = models.filter((m) => m.vision === true);
+    }
     let filtered = models;
 
     if (searchQuery.trim()) {
@@ -394,6 +421,7 @@ export function EnhancedModelPicker({
     favorites,
     modelsByProviderWithInfo,
     searchQuery,
+    selectionTarget,
     sortBy,
   ]);
 
@@ -411,6 +439,12 @@ export function EnhancedModelPicker({
     try {
       if (selectionTarget === 'sub_agent' && changeSubAgentModel) {
         await changeSubAgentModel({
+          model: model.label,
+          provider: model.provider,
+          modelKey: model.key,
+        });
+      } else if (selectionTarget === 'vision_preprocessor' && changeVisionPreprocessorModel) {
+        await changeVisionPreprocessorModel({
           model: model.label,
           provider: model.provider,
           modelKey: model.key,
@@ -610,6 +644,24 @@ export function EnhancedModelPicker({
                   <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" title="Sub-agent model configured" />
                 )}
               </button>
+              <button
+                type="button"
+                onClick={() => setSelectionTarget('vision_preprocessor')}
+                className={cn(
+                  'px-3 py-1.5 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5',
+                  selectionTarget === 'vision_preprocessor'
+                    ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
+                    : 'text-gray-400 hover:text-gray-200',
+                )}
+              >
+                Vision Preprocessor
+                {visionPreprocessorModelKey && (
+                  <span
+                    className="w-1.5 h-1.5 rounded-full bg-cyan-400"
+                    title="Vision preprocessor configured"
+                  />
+                )}
+              </button>
             </div>
             {selectionTarget === 'sub_agent' && changeSubAgentModel && (
               <button
@@ -618,6 +670,15 @@ export function EnhancedModelPicker({
                 className="text-[10px] text-gray-500 hover:text-cyan-400"
               >
                 Use main model
+              </button>
+            )}
+            {selectionTarget === 'vision_preprocessor' && changeVisionPreprocessorModel && (
+              <button
+                type="button"
+                onClick={() => changeVisionPreprocessorModel(null)}
+                className="text-[10px] text-gray-500 hover:text-cyan-400"
+              >
+                Clear
               </button>
             )}
           </div>

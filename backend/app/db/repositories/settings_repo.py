@@ -246,6 +246,39 @@ class SettingsRepository(BaseRepository):
         s.sub_agent_model_key = model_key
         s.updated_at = updated_at or utc_now_iso()
 
+    def get_vision_preprocessor_settings(self) -> dict:
+        """Return vision preprocessor settings as a dict."""
+        s = self.get_settings()
+        if s is None:
+            return {
+                "vision_preprocessor_model": None,
+                "vision_preprocessor_model_provider": None,
+                "vision_preprocessor_model_key": None,
+            }
+        return {
+            "vision_preprocessor_model": s.vision_preprocessor_model,
+            "vision_preprocessor_model_provider": s.vision_preprocessor_model_provider,
+            "vision_preprocessor_model_key": s.vision_preprocessor_model_key,
+        }
+
+    def set_vision_preprocessor_model(
+        self,
+        model: str | None,
+        provider: str | None = None,
+        model_key: str | None = None,
+        updated_at: str | None = None,
+    ) -> None:
+        """Set or clear vision preprocessor model."""
+        from app.utils.time import utc_now_iso
+
+        s = self.get_settings()
+        if s is None:
+            raise ValueError("Settings record missing")
+        s.vision_preprocessor_model = model
+        s.vision_preprocessor_model_provider = provider
+        s.vision_preprocessor_model_key = model_key
+        s.updated_at = updated_at or utc_now_iso()
+
     def set_sub_agent_settings(
         self,
         *,

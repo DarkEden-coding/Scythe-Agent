@@ -350,6 +350,7 @@ export type AgentEventType =
   | 'plan_ready'
   | 'plan_conflict'
   | 'plan_approved'
+  | 'vision_preprocessing'
   | 'error';
 
 export interface AgentObservationStatusPayload {
@@ -520,6 +521,9 @@ export interface GetSettingsResponse {
   subAgentModelKey?: string | null;
   maxParallelSubAgents?: number;
   subAgentMaxIterations?: number;
+  visionPreprocessorModel?: string | null;
+  visionPreprocessorModelProvider?: string | null;
+  visionPreprocessorModelKey?: string | null;
   reasoningLevel: string;
   availableModels: string[];
   modelsByProvider: Record<string, string[]>;

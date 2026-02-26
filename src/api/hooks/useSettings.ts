@@ -51,6 +51,12 @@ export function useSettings(client: ApiClient = defaultApi) {
   const [subAgentModelKey, setSubAgentModelKey] = useState<string | null>(
     cached?.subAgentModelKey ?? null,
   );
+  const [visionPreprocessorModel, setVisionPreprocessorModel] = useState<string | null>(
+    cached?.visionPreprocessorModel ?? null,
+  );
+  const [visionPreprocessorModelKey, setVisionPreprocessorModelKey] = useState<string | null>(
+    cached?.visionPreprocessorModelKey ?? null,
+  );
   const [autoApproveRules, setAutoApproveRules] = useState<AutoApproveRule[]>(
     cached?.autoApproveRules ?? [],
   );
@@ -66,6 +72,8 @@ export function useSettings(client: ApiClient = defaultApi) {
       setSubAgentModel(res.data.subAgentModel ?? null);
       setSubAgentModelProvider(res.data.subAgentModelProvider ?? null);
       setSubAgentModelKey(res.data.subAgentModelKey ?? null);
+      setVisionPreprocessorModel(res.data.visionPreprocessorModel ?? null);
+      setVisionPreprocessorModelKey(res.data.visionPreprocessorModelKey ?? null);
       setAutoApproveRules(res.data.autoApproveRules);
     } else {
       setState((s) => ({
@@ -91,6 +99,8 @@ export function useSettings(client: ApiClient = defaultApi) {
         setSubAgentModel(res.data.subAgentModel ?? null);
         setSubAgentModelProvider(res.data.subAgentModelProvider ?? null);
         setSubAgentModelKey(res.data.subAgentModelKey ?? null);
+        setVisionPreprocessorModel(res.data.visionPreprocessorModel ?? null);
+        setVisionPreprocessorModelKey(res.data.visionPreprocessorModelKey ?? null);
         setAutoApproveRules(res.data.autoApproveRules);
       }
       return res;
@@ -159,6 +169,32 @@ export function useSettings(client: ApiClient = defaultApi) {
               subAgentModel: res.data.subAgentModel,
               subAgentModelProvider: res.data.subAgentModelProvider,
               subAgentModelKey: res.data.subAgentModelKey,
+            },
+          };
+        }
+      }
+      return res;
+    },
+    [client],
+  );
+
+  const changeVisionPreprocessorModel = useCallback(
+    async (selection: { model: string; provider?: string; modelKey?: string } | null) => {
+      const res = await client.changeVisionPreprocessorModel(
+        selection === null
+          ? { model: null, provider: null, modelKey: null }
+          : { model: selection.model, provider: selection.provider, modelKey: selection.modelKey },
+      );
+      if (res.ok) {
+        setVisionPreprocessorModel(res.data.visionPreprocessorModel ?? null);
+        setVisionPreprocessorModelKey(res.data.visionPreprocessorModelKey ?? null);
+        if (settingsCache) {
+          settingsCache = {
+            ...settingsCache,
+            data: {
+              ...settingsCache.data,
+              visionPreprocessorModel: res.data.visionPreprocessorModel,
+              visionPreprocessorModelKey: res.data.visionPreprocessorModelKey,
             },
           };
         }
@@ -259,9 +295,12 @@ export function useSettings(client: ApiClient = defaultApi) {
     autoApproveRules,
     changeModel,
     changeSubAgentModel,
+    changeVisionPreprocessorModel,
     subAgentModel,
     subAgentModelProvider,
     subAgentModelKey,
+    visionPreprocessorModel,
+    visionPreprocessorModelKey,
     maxParallelSubAgents: state.data?.maxParallelSubAgents ?? 4,
     subAgentMaxIterations: state.data?.subAgentMaxIterations ?? 25,
     setSubAgentSettings: useCallback(

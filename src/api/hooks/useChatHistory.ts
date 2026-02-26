@@ -408,6 +408,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
   const [observation, setObservation] = useState<ObservationData | null>(null);
   const [observations, setObservations] = useState<ObservationData[]>([]);
   const [persistentError, setPersistentError] = useState<ChatPersistentError | null>(null);
+  const [visionPreprocessing, setVisionPreprocessing] = useState(false);
 
   const pendingContentDeltas = useRef<Map<string, string>>(new Map());
   const pendingReasoningDeltas = useRef<Map<string, string>>(new Map());
@@ -476,6 +477,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
       setObservation(null);
       setObservations([]);
       setPersistentError(null);
+      setVisionPreprocessing(false);
       setError(null);
       pendingContentDeltas.current.clear();
       pendingReasoningDeltas.current.clear();
@@ -756,6 +758,34 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
     [chatId, client, commitContextItems],
   );
 
+  const refreshHistoryFromServer = useCallback(
+    async (targetChatId?: string | null) => {
+      const resolvedChatId = targetChatId ?? chatId;
+      if (!isValidChatId(resolvedChatId)) return;
+      const res = await client.getChatHistory(resolvedChatId);
+      if (!res.ok) return;
+      const d = res.data;
+      const normalizedToolCalls = uniqueById(d.toolCalls.map(normalizeToolCall));
+      setMessages(uniqueById(d.messages.map(normalizeMessage)));
+      setToolCalls(normalizedToolCalls);
+      toolCallsRef.current = normalizedToolCalls;
+      setSubAgentRuns(
+        reconcileSubAgentRunsWithToolCalls(
+          uniqueById((d.subAgentRuns ?? []).map(normalizeSubAgentRun)),
+          normalizedToolCalls,
+        ),
+      );
+      setFileEdits(uniqueById(d.fileEdits.map(normalizeFileEdit)));
+      setCheckpoints(uniqueById(d.checkpoints.map(normalizeCheckpoint)));
+      setReasoningBlocks(uniqueById(d.reasoningBlocks.map(normalizeReasoningBlock)));
+      setTodos((d.todos ?? []).map(normalizeTodo));
+      setMaxTokens(d.maxTokens);
+      setModel(d.model);
+      commitContextItems(d.contextItems);
+    },
+    [chatId, client, commitContextItems],
+  );
+
   const revertToCheckpoint = useCallback(
     async (checkpointId: string) => {
       if (!isValidChatId(chatId)) {
@@ -1012,7 +1042,12 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
       };
 
       switch (event.type) {
+        case 'vision_preprocessing': {
+          setVisionPreprocessing(true);
+          break;
+        }
         case 'message': {
+          setVisionPreprocessing(false);
           const payload = event.payload as { message: Message };
           pendingContentDeltas.current.delete(payload.message.id);
           const message = normalizeMessage({ ...payload.message, timestamp: asDate(payload.message.timestamp) });
@@ -1031,6 +1066,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
           break;
         }
         case 'content_delta': {
+          setVisionPreprocessing(false);
           const payload = event.payload as { messageId: string; delta: string };
           if (payload.delta) {
             const map = pendingContentDeltas.current;
@@ -1042,6 +1078,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
         }
         case 'tool_call_start':
         case 'tool_call_end': {
+          if (event.type === 'tool_call_start') setVisionPreprocessing(false);
           const payload = event.payload as {
             toolCall?: ToolCall & { checkpointId?: string; duration_ms?: number };
             toolCallId?: string;
@@ -1126,6 +1163,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
           break;
         }
         case 'reasoning_start': {
+          setVisionPreprocessing(false);
           const payload = event.payload as { reasoningBlock: ReasoningBlock };
           if (payload.reasoningBlock) {
             const block = {
@@ -1396,11 +1434,13 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
           break;
         }
         case 'agent_done': {
+          setVisionPreprocessing(false);
           setPersistentError(null);
-          scheduleContextRefresh(event.chatId, true);
+          void refreshHistoryFromServer(event.chatId);
           break;
         }
         case 'error': {
+          setVisionPreprocessing(false);
           const payload = event.payload as AgentErrorPayload;
           if (payload.toolCallId) {
             const nextToolCalls = toolCallsRef.current.map((toolCall) =>
@@ -1433,7 +1473,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
           break;
       }
     },
-    [asDate, scheduleContextRefresh, scheduleStreamFlush, refreshContextFromHistory, refreshMemoryState, resetTransientStreamState],
+    [asDate, scheduleContextRefresh, scheduleStreamFlush, refreshContextFromHistory, refreshHistoryFromServer, refreshMemoryState, resetTransientStreamState],
   );
 
   return {
@@ -1452,6 +1492,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
     observation,
     observations,
     persistentError,
+    visionPreprocessing,
     maxTokens,
     model,
     loading,

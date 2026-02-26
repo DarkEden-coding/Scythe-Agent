@@ -74,6 +74,7 @@ interface ChatPanelProps {
   readonly onRetryPersistentError?: () => void | Promise<void>;
   readonly awaitingUserQuery?: { query: string } | null;
   readonly userQueriesByCheckpoint?: Record<string, string>;
+  readonly visionPreprocessing?: boolean;
 }
 
 export function ChatPanel({
@@ -108,6 +109,7 @@ export function ChatPanel({
   onRetryPersistentError,
   awaitingUserQuery = null,
   userQueriesByCheckpoint = {},
+  visionPreprocessing = false,
 }: ChatPanelProps) {
   const [inputValue, setInputValue] = useState('');
   const [inputReferencedFiles, setInputReferencedFiles] = useState<string[]>([]);
@@ -290,6 +292,7 @@ export function ChatPanel({
               messages={messages}
               activeChatId={activeChatId}
               isProcessing={isProcessing ?? false}
+              visionPreprocessing={visionPreprocessing}
               onRevert={onRevert}
               onEditMessage={onEditMessage}
               getCheckpointForMessage={getCheckpointForMessage}

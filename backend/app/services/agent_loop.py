@@ -196,8 +196,22 @@ class AgentLoop:
         has_vision = model_has_vision(
             provider, settings.model, self._settings_repo
         )
-        conversation_messages = self._assemble_messages(
-            chat_id, content, model_has_vision=has_vision
+        vp_settings = self._settings_repo.get_vision_preprocessor_settings()
+        vision_preprocessor = None
+        if vp_settings.get("vision_preprocessor_model") and not has_vision:
+            vision_preprocessor = {
+                "model": vp_settings["vision_preprocessor_model"],
+                "provider": vp_settings.get("vision_preprocessor_model_provider")
+                or self._settings_repo.get_provider_for_model(
+                    vp_settings["vision_preprocessor_model"]
+                )
+                or "openrouter",
+            }
+        conversation_messages = await self._assemble_messages(
+            chat_id,
+            content,
+            model_has_vision=has_vision,
+            vision_preprocessor=vision_preprocessor,
         )
         if extra_messages:
             conversation_messages.extend(extra_messages)
@@ -536,8 +550,71 @@ class AgentLoop:
             return f"{self._default_system_prompt.rstrip()}\n\n{PLAN_EDIT_PROMPT_APPENDIX.strip()}"
         return self._default_system_prompt
 
-    def _assemble_messages(
-        self, chat_id: str, content: str, *, model_has_vision: bool = False
+    _VISION_PREPROCESSOR_TIMEOUT = 90.0
+
+    async def _summarize_images_with_vision_model(
+        self,
+        *,
+        attachments: list,
+        preprocessor_model: str,
+        preprocessor_provider: str,
+    ) -> str:
+        """Call vision preprocessor model to describe images. Returns summary text."""
+        if not attachments:
+            return ""
+        vp_client = self._api_key_resolver.create_client(preprocessor_provider)
+        if not vp_client or not self._api_key_resolver.resolve(preprocessor_provider):
+            return f"[{len(attachments)} image(s) - vision preprocessor API key not configured]"
+        prompt = (
+            "Describe these images concisely for a text-only model. "
+            "Include any visible text, diagrams, UI elements, or important visual details. "
+            "Provide one clear description per image."
+        )
+        parts: list[dict] = [{"type": "text", "text": prompt}]
+        for att in attachments:
+            data_url = f"data:{att.mime_type};base64,{att.content_base64}"
+            parts.append({"type": "image_url", "image_url": {"url": data_url}})
+        vp_messages = [{"role": "user", "content": parts}]
+        logger.info(
+            "Vision preprocessor: summarizing %d image(s) with model=%s (provider=%s)",
+            len(attachments),
+            preprocessor_model,
+            preprocessor_provider,
+        )
+        try:
+            text = await asyncio.wait_for(
+                vp_client.create_chat_completion(
+                    model=preprocessor_model,
+                    messages=vp_messages,
+                    max_tokens=1024,
+                    temperature=0.3,
+                ),
+                timeout=self._VISION_PREPROCESSOR_TIMEOUT,
+            )
+            return (text or "").strip()
+        except asyncio.TimeoutError:
+            logger.warning(
+                "Vision preprocessor timed out after %.0fs for model=%s",
+                self._VISION_PREPROCESSOR_TIMEOUT,
+                preprocessor_model,
+            )
+            return ""
+        except Exception as exc:
+            logger.warning(
+                "Vision preprocessor failed for model=%s: %s",
+                preprocessor_model,
+                exc,
+                exc_info=True,
+            )
+            return ""
+
+    async def _assemble_messages(
+        self,
+        chat_id: str,
+        content: str,
+        *,
+        model_has_vision: bool = False,
+        vision_preprocessor: dict | None = None,
     ) -> list[dict]:
         """Assemble messages without system prompt; SystemPromptPreprocessor adds it."""
         messages = self._chat_repo.list_messages(chat_id)
@@ -593,12 +670,51 @@ class AgentLoop:
                 if role == "user":
                     attachments = self._chat_repo.list_attachments_for_message(m.id)
                     if attachments and not model_has_vision:
-                        content_text = (
-                            f"{content_text}\n[{len(attachments)} image(s) attached - "
-                            "model does not support vision]"
-                            if content_text
-                            else f"[{len(attachments)} image(s) attached - model does not support vision]"
-                        )
+                        if vision_preprocessor:
+                            summary = getattr(m, "image_summarization", None) or ""
+                            summary_model = getattr(m, "image_summarization_model", None)
+                            if not summary or summary_model != vision_preprocessor["model"]:
+                                await self._event_bus.publish(
+                                    chat_id,
+                                    {
+                                        "type": "vision_preprocessing",
+                                        "payload": {
+                                            "imageCount": len(attachments),
+                                            "message": "Summarizing images...",
+                                        },
+                                    },
+                                )
+                                summary = await self._summarize_images_with_vision_model(
+                                    attachments=attachments,
+                                    preprocessor_model=vision_preprocessor["model"],
+                                    preprocessor_provider=vision_preprocessor["provider"],
+                                )
+                                if summary:
+                                    self._chat_repo.update_message_image_summarization(
+                                        m.id, summary, vision_preprocessor["model"]
+                                    )
+                                    self._chat_repo.commit()
+                                    logger.info(
+                                        "Vision preprocessor: persisted summarization for message=%s",
+                                        m.id,
+                                    )
+                            image_block = (
+                                f"\n\n--- Image descriptions ---\n{summary}\n\n"
+                                "[Do not use read_file to read the image(s) - refer to the "
+                                "descriptions above.]"
+                                if summary
+                                else f"\n\n[Vision preprocessor failed to describe {len(attachments)} image(s).]"
+                            )
+                            content_text = (
+                                f"{content_text}{image_block}" if content_text else image_block.lstrip()
+                            )
+                        else:
+                            content_text = (
+                                f"{content_text}\n[{len(attachments)} image(s) attached - "
+                                "model does not support vision]"
+                                if content_text
+                                else f"[{len(attachments)} image(s) attached - model does not support vision]"
+                            )
                 msg_content = content_text
             openrouter_messages.append({
                 "role": role,

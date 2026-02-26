@@ -16,6 +16,7 @@ interface MessageListProps {
   readonly observations?: ObservationData[];
   readonly showObservationsInChat?: boolean;
   readonly userQueriesByCheckpoint?: Record<string, string>;
+  readonly visionPreprocessing?: boolean;
 }
 
 function UserQueryBubble({ query }: { query: string }) {
@@ -72,6 +73,7 @@ export function MessageList({
   observations = [],
   showObservationsInChat = false,
   userQueriesByCheckpoint = {},
+  visionPreprocessing = false,
 }: MessageListProps) {
   if (!activeChatId) {
     return (
@@ -180,7 +182,9 @@ export function MessageList({
           </div>
           <div className="flex items-center gap-2.5 px-4 py-2.5 bg-gray-800 rounded-2xl rounded-bl-md border border-gray-700/40 shadow-md">
             <div className="w-4 h-4 rounded-full border-2 border-gray-600 border-t-gray-300 animate-spin" />
-            <span className="text-xs text-gray-400">Agent is thinking</span>
+            <span className="text-xs text-gray-400">
+              {visionPreprocessing ? 'Summarizing images...' : 'Agent is thinking'}
+            </span>
           </div>
         </div>
       )}

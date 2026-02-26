@@ -489,6 +489,19 @@ export class ApiClient {
     return this.request('PUT', '/settings/sub-agent-model', req);
   }
 
+  /** Set or clear vision preprocessor model. Must be vision-capable. Used to summarize images for non-vision main models. */
+  async changeVisionPreprocessorModel(req: {
+    model?: string | null;
+    provider?: string | null;
+    modelKey?: string | null;
+  }): Promise<ApiResponse<GetSettingsResponse>> {
+    return this.request('PUT', '/settings/vision-preprocessor-model', {
+      model: req.model ?? null,
+      provider: req.provider ?? null,
+      modelKey: req.modelKey ?? null,
+    });
+  }
+
   /** Update sub-agent numeric settings. */
   async setSubAgentSettings(req: {
     maxParallelSubAgents?: number;

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { User, Bot, Pencil, Check, X, RotateCw, Copy } from 'lucide-react';
+import { User, Bot, Pencil, Check, X, RotateCw, Copy, ChevronDown, ChevronUp } from 'lucide-react';
 import type { Message } from '@/types';
 import { Markdown } from '@/components/Markdown';
 import { formatTime } from '@/utils/formatTime';
@@ -19,6 +19,45 @@ function fileLabel(path: string): string {
 
 /** Matches {{FILE:i}} plus any trailing stray braces (e.g. typo {{FILE:0}}}) */
 const FILE_PLACEHOLDER = /\{\{FILE:(\d+)\}\}\}*/g;
+
+function SummarizationBubble({
+  summary,
+  model,
+}: {
+  summary: string;
+  model: string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div
+      className={cn(
+        'inline-block rounded-xl border border-violet-500/20 bg-violet-500/5 overflow-hidden max-w-[85%]',
+        'shadow-sm hover:bg-violet-500/10 transition-colors',
+      )}
+    >
+      <button
+        type="button"
+        onClick={() => setExpanded((p) => !p)}
+        className="w-full flex flex-nowrap items-center justify-between gap-2 pl-4 pr-8 py-2.5 text-left text-[12px] font-medium text-violet-300 whitespace-nowrap"
+      >
+        <span>Image Content</span>
+        {expanded ? (
+          <ChevronUp className="w-3.5 h-3.5 shrink-0 text-violet-500" />
+        ) : (
+          <ChevronDown className="w-3.5 h-3.5 shrink-0 text-violet-500" />
+        )}
+      </button>
+      {expanded && (
+        <div className="border-t border-violet-500/15 px-4 py-3 space-y-2">
+          <p className="text-[12px] text-gray-300 whitespace-pre-wrap break-words">
+            {summary}
+          </p>
+          <p className="text-[11px] text-violet-500/80">by {model}</p>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function renderUserContent(
   content: string,
@@ -242,28 +281,47 @@ export function MessageBubble({ message, onEdit, isProcessing }: MessageBubblePr
           </div>
         ) : (
           <>
-            <div className="relative group/bubble">
-              <div
-                className={cn(
-                  'inline-block px-4 py-2.5 rounded-2xl text-sm shadow-md',
-                  message.role === 'user'
-                    ? 'bg-linear-to-br from-aqua-500/90 to-aqua-600/90 text-gray-950 rounded-br-md'
-                    : 'bg-gray-800 text-gray-200 rounded-bl-md border border-gray-700/40',
-                )}
-              >
-                {message.role === 'agent' ? (
-                  <Markdown content={message.content} />
-                ) : (
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    {renderUserContent(
-                      message.content,
-                      message.referencedFiles ?? [],
-                      message.attachments,
-                    )}
-                  </div>
-                )}
+            <div
+              className={cn(
+                'flex flex-col gap-2',
+                message.role === 'user' ? 'items-end' : 'items-start',
+              )}
+            >
+              <div className="relative group/bubble">
+                <div
+                  className={cn(
+                    'inline-block px-4 py-2.5 rounded-2xl text-sm shadow-md',
+                    message.role === 'user'
+                      ? 'bg-linear-to-br from-aqua-500/90 to-aqua-600/90 text-gray-950 rounded-br-md'
+                      : 'bg-gray-800 text-gray-200 rounded-bl-md border border-gray-700/40',
+                  )}
+                >
+                  {message.role === 'agent' ? (
+                    <Markdown content={message.content} />
+                  ) : (
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {renderUserContent(
+                        message.content,
+                        message.referencedFiles ?? [],
+                        message.attachments,
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
+            {message.role === 'user' &&
+              message.imageSummarization &&
+              message.imageSummarizationModel && (
+                <div className="flex flex-row-reverse mt-2">
+                  <div className="max-w-[85%] flex justify-end">
+                    <SummarizationBubble
+                      summary={message.imageSummarization}
+                      model={message.imageSummarizationModel}
+                    />
+                  </div>
+                </div>
+              )}
             <div
               className={cn(
                 'mt-1 flex items-center gap-1',

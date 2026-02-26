@@ -397,6 +397,15 @@ class ChatRepository(BaseRepository):
         self.db.add(attachment)
         return attachment
 
+    def update_message_image_summarization(
+        self, message_id: str, summary: str, model: str
+    ) -> None:
+        """Store image summarization from vision preprocessor on a user message."""
+        msg = self.db.get(Message, message_id)
+        if msg:
+            msg.image_summarization = summary
+            msg.image_summarization_model = model
+
     def list_attachments_for_message(self, message_id: str) -> list[MessageAttachment]:
         stmt = (
             select(MessageAttachment)
