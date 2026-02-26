@@ -551,6 +551,7 @@ class AgentLoop:
         return self._default_system_prompt
 
     _VISION_PREPROCESSOR_TIMEOUT = 90.0
+    _VISION_PREPROCESSOR_CACHE_VERSION = "v2"
 
     async def _summarize_images_with_vision_model(
         self,
@@ -558,18 +559,29 @@ class AgentLoop:
         attachments: list,
         preprocessor_model: str,
         preprocessor_provider: str,
+        user_message: str = "",
     ) -> str:
-        """Call vision preprocessor model to describe images. Returns summary text."""
+        """Call vision preprocessor model to describe images. Returns detailed summary."""
         if not attachments:
             return ""
         vp_client = self._api_key_resolver.create_client(preprocessor_provider)
         if not vp_client or not self._api_key_resolver.resolve(preprocessor_provider):
             return f"[{len(attachments)} image(s) - vision preprocessor API key not configured]"
-        prompt = (
-            "Describe these images concisely for a text-only model. "
-            "Include any visible text, diagrams, UI elements, or important visual details. "
-            "Provide one clear description per image."
-        )
+        if user_message and user_message.strip():
+            prompt = (
+                "The user sent these images with the following message. Provide a detailed analysis:\n\n"
+                f"User message: {user_message.strip()}\n\n"
+                "For each image:\n"
+                "1. Give a thorough visual description (text, diagrams, UI elements, layout, colors, important details).\n"
+                "2. Emphasize and elaborate on anything directly relevant to what the user is asking about.\n"
+                "Be comprehensive so a text-only model can fully address the user's question."
+            )
+        else:
+            prompt = (
+                "Describe these images in detail for a text-only model. "
+                "Include any visible text, diagrams, UI elements, layout, colors, and important visual details. "
+                "Provide one thorough description per image."
+            )
         parts: list[dict] = [{"type": "text", "text": prompt}]
         for att in attachments:
             data_url = f"data:{att.mime_type};base64,{att.content_base64}"
@@ -586,7 +598,7 @@ class AgentLoop:
                 vp_client.create_chat_completion(
                     model=preprocessor_model,
                     messages=vp_messages,
-                    max_tokens=1024,
+                    max_tokens=2048,
                     temperature=0.3,
                 ),
                 timeout=self._VISION_PREPROCESSOR_TIMEOUT,
@@ -673,7 +685,10 @@ class AgentLoop:
                         if vision_preprocessor:
                             summary = getattr(m, "image_summarization", None) or ""
                             summary_model = getattr(m, "image_summarization_model", None)
-                            if not summary or summary_model != vision_preprocessor["model"]:
+                            expected_key = (
+                                f"{vision_preprocessor['model']}:{self._VISION_PREPROCESSOR_CACHE_VERSION}"
+                            )
+                            if not summary or summary_model != expected_key:
                                 await self._event_bus.publish(
                                     chat_id,
                                     {
@@ -688,10 +703,11 @@ class AgentLoop:
                                     attachments=attachments,
                                     preprocessor_model=vision_preprocessor["model"],
                                     preprocessor_provider=vision_preprocessor["provider"],
+                                    user_message=content_text,
                                 )
                                 if summary:
                                     self._chat_repo.update_message_image_summarization(
-                                        m.id, summary, vision_preprocessor["model"]
+                                        m.id, summary, expected_key
                                     )
                                     self._chat_repo.commit()
                                     logger.info(
