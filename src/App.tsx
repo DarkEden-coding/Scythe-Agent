@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { ChatPanel } from './components/chat/ChatPanel';
 import { ActionsPanel } from './components/ActionsPanel';
 import { AppHeader } from './components/header/AppHeader';
@@ -34,6 +34,29 @@ export function App() {
 
   // ── API hooks ──────────────────────────────────────────────────
   const chat = useChatHistory(activeChatId);
+
+  const awaitingUserQuery = useMemo(() => {
+    if (isProcessing) return null;
+    const last = chat.toolCalls.at(-1);
+    if (last?.name !== 'user_query' || last?.status !== 'completed') return null;
+    const q = last.input?.query;
+    const queryStr =
+      typeof q === 'string' ? q : q == null ? '' : typeof q === 'object' ? JSON.stringify(q) : String(q);
+    return { query: queryStr };
+  }, [isProcessing, chat.toolCalls]);
+
+  const userQueriesByCheckpoint = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const tc of chat.toolCalls) {
+      if (tc.name !== 'user_query' || tc.status !== 'completed') continue;
+      const q = tc.input?.query;
+      const queryStr =
+        typeof q === 'string' ? q : q == null ? '' : typeof q === 'object' ? JSON.stringify(q) : String(q);
+      const cp = chat.checkpoints.find((c) => c.toolCalls.includes(tc.id));
+      if (cp && queryStr) map[cp.id] = queryStr;
+    }
+    return map;
+  }, [chat.toolCalls, chat.checkpoints]);
   const projectsApi = useProjects();
   const { projects, loading: projectsLoading } = projectsApi;
   const settings = useSettings();
@@ -488,11 +511,14 @@ export function App() {
             showObservationsInChat={showObservationsInChat}
             persistentError={chat.persistentError}
             onRetryPersistentError={handleRetryObservation}
+            awaitingUserQuery={awaitingUserQuery}
+            userQueriesByCheckpoint={userQueriesByCheckpoint}
           />
         }
         rightPanel={
           <ActionsPanel
             toolCalls={chat.toolCalls}
+            isProcessing={isProcessing}
             subAgentRuns={chat.subAgentRuns}
             fileEdits={chat.fileEdits}
             checkpoints={chat.checkpoints}

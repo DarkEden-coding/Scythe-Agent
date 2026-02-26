@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { Layers, CheckSquare, ChevronDown } from 'lucide-react';
 import { SubAgentRun, ToolCall, FileEdit, Checkpoint, ReasoningBlock, TodoItem, ProjectPlan } from '../types';
 import { cn } from '@/utils/cn';
@@ -10,6 +10,7 @@ import type { AutoApproveRule } from '../api';
 
 interface ActionsPanelProps {
   readonly toolCalls: ToolCall[];
+  readonly isProcessing?: boolean;
   readonly subAgentRuns?: SubAgentRun[];
   readonly fileEdits: FileEdit[];
   readonly checkpoints: Checkpoint[];
@@ -37,6 +38,7 @@ interface ActionsPanelProps {
 
 export function ActionsPanel({
   toolCalls,
+  isProcessing = false,
   subAgentRuns = [],
   fileEdits,
   checkpoints,
@@ -82,6 +84,27 @@ export function ActionsPanel({
       setTodoDropdownOpen(false);
     }
   }, [todos.length]);
+
+  const awaitingUserQueryTool = useMemo(() => {
+    if (isProcessing) return null;
+    const last = toolCalls.at(-1);
+    if (last?.name !== 'user_query' || last?.status !== 'completed') return null;
+    return last;
+  }, [toolCalls, isProcessing]);
+
+  useEffect(() => {
+    if (!awaitingUserQueryTool) return;
+    setExpandedTools((prev) => new Set(prev).add(awaitingUserQueryTool.id));
+    const cp = checkpoints.find((c) => c.toolCalls.includes(awaitingUserQueryTool.id));
+    if (cp) {
+      setCollapsedCheckpoints((prev) => {
+        if (!prev.has(cp.id)) return prev;
+        const next = new Set(prev);
+        next.delete(cp.id);
+        return next;
+      });
+    }
+  }, [awaitingUserQueryTool, checkpoints]);
 
   useEffect(() => {
     const handleOutside = (event: MouseEvent) => {

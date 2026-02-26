@@ -72,6 +72,17 @@ function getActionPreview(
   if (toolName === 'list_files') {
     return { label: 'Directory', preview: <span className="font-mono text-amber-200/90">{safeStr(i.path) || '(project root)'}</span> };
   }
+  if (toolName === 'user_query') {
+    const query = safeStr(i.query);
+    return {
+      label: 'Question for user',
+      preview: (
+        <p className="text-[12px] text-amber-200/90 leading-relaxed whitespace-pre-wrap">
+          {query || '(no question provided)'}
+        </p>
+      ),
+    };
+  }
   return {
     label: 'Input',
     preview: (
@@ -215,7 +226,7 @@ export function ApprovalPrompt({
               {toolIcons[pendingApproval.name] ?? <FileCode className="w-3.5 h-3.5" />}
             </span>
             <span className="text-xs font-mono text-gray-300" title={pendingApproval.name}>
-            {formatToolDisplayName(pendingApproval.name)}
+            {pendingApproval.name === 'user_query' ? 'Ask user' : formatToolDisplayName(pendingApproval.name)}
           </span>
           </div>
 

@@ -8,6 +8,7 @@ import {
   Plus,
   AlertTriangle,
   RotateCcw,
+  MessageCircleQuestion,
 } from 'lucide-react';
 import type {
   Message,
@@ -70,6 +71,8 @@ interface ChatPanelProps {
     retryAction?: string;
   } | null;
   readonly onRetryPersistentError?: () => void | Promise<void>;
+  readonly awaitingUserQuery?: { query: string } | null;
+  readonly userQueriesByCheckpoint?: Record<string, string>;
 }
 
 export function ChatPanel({
@@ -102,6 +105,8 @@ export function ChatPanel({
   showObservationsInChat = false,
   persistentError = null,
   onRetryPersistentError,
+  awaitingUserQuery = null,
+  userQueriesByCheckpoint = {},
 }: ChatPanelProps) {
   const [inputValue, setInputValue] = useState('');
   const [inputReferencedFiles, setInputReferencedFiles] = useState<string[]>([]);
@@ -285,8 +290,24 @@ export function ChatPanel({
               observation={observation}
               observations={observations}
               showObservationsInChat={showObservationsInChat}
+              userQueriesByCheckpoint={userQueriesByCheckpoint}
             />
           </div>
+          {awaitingUserQuery && (
+            <div className="px-4 pb-2">
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 flex items-start gap-3">
+                <MessageCircleQuestion className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-[10px] uppercase tracking-wider text-amber-400/80 font-medium mb-1">
+                    Agent is waiting for your response
+                  </p>
+                  <p className="text-sm text-amber-100/90 leading-relaxed whitespace-pre-wrap">
+                    {awaitingUserQuery.query || 'No question provided.'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
           <div className="p-3 border-t border-gray-700/40 bg-gray-850">
             <MessageInput
               value={inputValue}

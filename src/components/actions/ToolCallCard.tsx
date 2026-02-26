@@ -14,6 +14,7 @@ import {
   CheckCircle2,
   XCircle,
   Loader2,
+  MessageCircleQuestion,
 } from 'lucide-react';
 import type { ToolCall } from '@/types';
 import { cn } from '@/utils/cn';
@@ -26,6 +27,7 @@ function safeStr(v: unknown): string {
 }
 
 export const toolIcons: Record<string, React.ReactNode> = {
+  user_query: <MessageCircleQuestion className="w-3.5 h-3.5" />,
   spawn_sub_agent: <Cpu className="w-3.5 h-3.5" />,
   read_file: <FileCode className="w-3.5 h-3.5" />,
   create_file: <Plus className="w-3.5 h-3.5" />,
@@ -60,7 +62,10 @@ export function ToolCallCard({
   onToggle,
 }: ToolCallCardProps) {
   let pathHint: string | null = null;
-  if (call.input?.path) pathHint = safeStr(call.input.path);
+  if (call.name === 'user_query' && call.input?.query) {
+    const q = safeStr(call.input.query);
+    pathHint = q.length > 50 ? `${q.slice(0, 47)}...` : q;
+  } else if (call.input?.path) pathHint = safeStr(call.input.path);
   else if (call.input?.command) pathHint = safeStr(call.input.command).slice(0, 40);
   else if (call.input?.packages) pathHint = `[${(call.input.packages as string[]).length} pkgs]`;
   if (pathHint === '0') pathHint = null;
@@ -87,7 +92,7 @@ export function ToolCallCard({
             {toolIcons[call.name] || <FileCode className="w-3.5 h-3.5" />}
           </span>
           <span className="text-[11px] text-gray-300 font-mono whitespace-nowrap" title={call.name}>
-            {formatToolDisplayName(call.name)}
+            {call.name === 'user_query' ? 'Ask user' : formatToolDisplayName(call.name)}
           </span>
           {pathHint && call.name !== 'build_project' && call.name !== 'list_files' && (
             <span className="text-[10px] text-gray-600 font-mono whitespace-nowrap">{pathHint}</span>
@@ -126,19 +131,32 @@ export function ToolCallCard({
       {isExpanded && (
         <div className="mt-1 w-full max-w-full rounded-lg border border-gray-700/20 bg-gray-900/50 overflow-hidden">
           <div className="px-2.5 py-2 space-y-2">
-            <div>
-              <span className="text-[10px] uppercase tracking-wider text-gray-600 font-medium">Input</span>
-              <pre className="mt-1 text-[11px] text-gray-400 bg-gray-950/50 p-2 rounded-md overflow-x-auto border border-gray-700/20 font-mono whitespace-pre-wrap break-all">
-                {JSON.stringify(call.input, null, 2)}
-              </pre>
-            </div>
-            {call.output && call.status !== 'error' && (
-              <div>
-                <span className="text-[10px] uppercase tracking-wider text-gray-600 font-medium">Output</span>
-                <pre className="mt-1 text-[11px] text-gray-400 bg-gray-950/50 p-2 rounded-md overflow-x-auto border border-gray-700/20 font-mono whitespace-pre-wrap break-all">
-                  {call.output}
-                </pre>
+            {call.name === 'user_query' && call.input?.query ? (
+              <div className="rounded-lg border border-amber-500/20 bg-amber-950/20 p-3">
+                <span className="text-[10px] uppercase tracking-wider text-amber-400/80 font-medium">
+                  Question for user
+                </span>
+                <p className="mt-2 text-[12px] text-gray-200 leading-relaxed whitespace-pre-wrap">
+                  {safeStr(call.input.query)}
+                </p>
               </div>
+            ) : (
+              <>
+                <div>
+                  <span className="text-[10px] uppercase tracking-wider text-gray-600 font-medium">Input</span>
+                  <pre className="mt-1 text-[11px] text-gray-400 bg-gray-950/50 p-2 rounded-md overflow-x-auto border border-gray-700/20 font-mono whitespace-pre-wrap break-all">
+                    {JSON.stringify(call.input, null, 2)}
+                  </pre>
+                </div>
+                {call.output && call.status !== 'error' && (
+                  <div>
+                    <span className="text-[10px] uppercase tracking-wider text-gray-600 font-medium">Output</span>
+                    <pre className="mt-1 text-[11px] text-gray-400 bg-gray-950/50 p-2 rounded-md overflow-x-auto border border-gray-700/20 font-mono whitespace-pre-wrap break-all">
+                      {call.output}
+                    </pre>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>

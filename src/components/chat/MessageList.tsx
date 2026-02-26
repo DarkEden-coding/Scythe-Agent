@@ -15,6 +15,22 @@ interface MessageListProps {
   readonly observation?: ObservationData | null;
   readonly observations?: ObservationData[];
   readonly showObservationsInChat?: boolean;
+  readonly userQueriesByCheckpoint?: Record<string, string>;
+}
+
+function UserQueryBubble({ query }: { query: string }) {
+  return (
+    <div className="flex gap-3 flex-row pt-2">
+      <div className="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center shadow-md bg-gray-750 border border-gray-600/50">
+        <Bot className="w-3.5 h-3.5 text-aqua-400" />
+      </div>
+      <div className="flex-1 max-w-[85%] text-left">
+        <div className="inline-block px-4 py-2.5 rounded-2xl rounded-bl-md text-sm shadow-md bg-gray-800 text-gray-200 border border-gray-700/40 border-l-amber-500/50 border-l-2">
+          <p className="whitespace-pre-wrap break-words">{query}</p>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function ObservationSwitchMessage({
@@ -55,6 +71,7 @@ export function MessageList({
   observation = null,
   observations = [],
   showObservationsInChat = false,
+  userQueriesByCheckpoint = {},
 }: MessageListProps) {
   if (!activeChatId) {
     return (
@@ -127,6 +144,9 @@ export function MessageList({
                 </div>
               )}
               <MessageBubble message={message} onEdit={onEditMessage} isProcessing={isProcessing} />
+              {checkpoint && userQueriesByCheckpoint[checkpoint.id] && (
+                <UserQueryBubble query={userQueriesByCheckpoint[checkpoint.id] ?? ''} />
+              )}
             </div>
             {(observationsByMessageId.get(message.id) ?? []).map((item, itemIndex) => (
               <div key={`${item.id ?? item.timestamp ?? 'obs'}-${itemIndex}`}>

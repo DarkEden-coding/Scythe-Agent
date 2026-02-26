@@ -17,10 +17,18 @@ TOOL_PLUGIN = ToolPlugin(
     description=(
         "Pause the agent loop to request more information from the user. Use this when you "
         "need clarification, additional context, or decisions from the user before proceeding. "
-        "Include your questions in your message text, then call this tool to end the turn until "
-        "the user responds. The user's next message will resume the agent loop. No input required."
+        "Pass your question or request in the 'query' parameter. The user's next message will "
+        "resume the agent loop."
     ),
-    input_schema={"type": "object", "properties": {}},
+    input_schema={
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "The question or request to show the user while awaiting their response.",
+            },
+        },
+    },
     approval_policy="always",
     handler=_handler,
 )
