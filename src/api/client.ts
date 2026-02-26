@@ -24,6 +24,9 @@ import type {
   SetAutoApproveRequest,
   SetAutoApproveResponse,
   GetAutoApproveResponse,
+  AddAutoApproveRequest,
+  AddAutoApproveResponse,
+  DeleteAutoApproveResponse,
   ChangeModelRequest,
   ChangeModelResponse,
   SummarizeContextRequest,
@@ -455,6 +458,20 @@ export class ApiClient {
   /** Retrieve current auto-approve rules. */
   async getAutoApproveRules(): Promise<ApiResponse<GetAutoApproveResponse>> {
     return this.request('GET', '/settings/auto-approve');
+  }
+
+  /** Add a single auto-approve rule. */
+  async addAutoApproveRule(
+    req: AddAutoApproveRequest,
+  ): Promise<ApiResponse<AddAutoApproveResponse>> {
+    return this.request('POST', '/settings/auto-approve', req);
+  }
+
+  /** Remove an auto-approve rule by id. */
+  async removeAutoApproveRule(
+    ruleId: string,
+  ): Promise<ApiResponse<DeleteAutoApproveResponse>> {
+    return this.request('DELETE', `/settings/auto-approve/${ruleId}`);
   }
 
   /** Change the active model. */

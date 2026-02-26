@@ -310,3 +310,16 @@ class SettingsRepository(BaseRepository):
         for rule in rules:
             self.db.add(rule)
         return rules
+
+    def add_auto_approve_rule(self, rule: AutoApproveRule) -> AutoApproveRule:
+        """Add a single auto-approve rule."""
+        self.db.add(rule)
+        return rule
+
+    def delete_auto_approve_rule(self, rule_id: str) -> AutoApproveRule | None:
+        """Remove an auto-approve rule by id. Returns the deleted rule or None if not found."""
+        rule = self.db.get(AutoApproveRule, rule_id)
+        if rule is None:
+            return None
+        self.db.delete(rule)
+        return rule

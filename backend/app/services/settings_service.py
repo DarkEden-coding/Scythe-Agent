@@ -21,8 +21,8 @@ from app.schemas.settings import (
     GetAutoApproveResponse,
     GetSettingsResponse,
     ModelMetadata,
-    SetModelResponse,
     SetAutoApproveResponse,
+    SetModelResponse,
     SetReasoningLevelResponse,
     SetSystemPromptResponse,
 )
@@ -377,6 +377,35 @@ class SettingsService:
                 for r in rows
             ]
         )
+
+    def add_auto_approve_rule(
+        self, *, field: str, value: str, enabled: bool = True
+    ) -> AutoApproveRuleOut:
+        """Add a single auto-approve rule."""
+        now = utc_now_iso()
+        rule = AutoApproveRule(
+            id=generate_id("aar"),
+            field=field.strip(),
+            value=value.strip(),
+            enabled=1 if enabled else 0,
+            created_at=now,
+        )
+        self.repo.add_auto_approve_rule(rule)
+        self.repo.commit()
+        return AutoApproveRuleOut(
+            id=rule.id,
+            field=rule.field,
+            value=rule.value,
+            enabled=bool(rule.enabled),
+            createdAt=rule.created_at,
+        )
+
+    def remove_auto_approve_rule(self, rule_id: str) -> bool:
+        """Remove an auto-approve rule by id. Returns True if deleted, False if not found."""
+        deleted = self.repo.delete_auto_approve_rule(rule_id)
+        if deleted:
+            self.repo.commit()
+        return deleted is not None
 
     def get_groq_config(self) -> dict:
         """Get Groq configuration including masked API key and connection status."""

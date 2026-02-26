@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Settings, Key, Bot, ChevronRight, ChevronDown, FolderOpen, Plug, Zap, Sparkles, Server, Brain, Layers } from 'lucide-react';
+import { Settings, Key, Bot, ChevronRight, ChevronDown, FolderOpen, Plug, Zap, Sparkles, Server, Brain, Layers, ShieldCheck } from 'lucide-react';
 import { cn } from '@/utils/cn';
 import { Modal } from './Modal';
 import { OpenRouterSettingsPanel } from './settings/OpenRouterSettingsPanel';
@@ -10,6 +10,7 @@ import { AgentSettingsPanel } from './settings/AgentSettingsPanel';
 import { MCPSettingsPanel } from './settings/MCPSettingsPanel';
 import { MemorySettingsPanel } from './settings/MemorySettingsPanel';
 import { ContextSettingsPanel } from './settings/ContextSettingsPanel';
+import { AutoApproveSettingsPanel } from './settings/AutoApproveSettingsPanel';
 import type { ProviderId, SettingsTabId } from './ProviderSettingsDropdown';
 
 const PROVIDER_TABS: { id: ProviderId; label: string; icon: React.ReactNode }[] = [
@@ -40,7 +41,7 @@ export function SettingsModal({
     if (visible) {
       const tab = initialTab ?? 'openrouter';
       setActiveTab(tab);
-      if (tab === 'memory' || tab === 'context' || tab === 'api-keys') {
+      if (tab === 'memory' || tab === 'context' || tab === 'api-keys' || tab === 'auto-approve') {
         setBackendExpanded(true);
       }
     }
@@ -128,6 +129,9 @@ export function SettingsModal({
           }
         />
       );
+    }
+    if (activeTab === 'auto-approve') {
+      return <AutoApproveSettingsPanel />;
     }
     return null;
   };
@@ -270,6 +274,18 @@ export function SettingsModal({
                   >
                     <Key className="w-4 h-4 shrink-0" />
                     API Keys
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('auto-approve')}
+                    className={cn(
+                      'w-full flex items-center gap-3 pl-6 pr-3 py-2 text-sm transition-colors',
+                      activeTab === 'auto-approve'
+                        ? 'bg-violet-500/20 text-violet-300 border-l-2 border-l-violet-500/50'
+                        : 'text-gray-400 hover:bg-gray-800/50 hover:text-gray-200 border-l-2 border-l-transparent',
+                    )}
+                  >
+                    <ShieldCheck className="w-4 h-4 shrink-0" />
+                    Auto-approve
                   </button>
                 </div>
               )}

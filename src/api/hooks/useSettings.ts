@@ -216,6 +216,32 @@ export function useSettings(client: ApiClient = defaultApi) {
     return res;
   }, [client]);
 
+  const addAutoApproveRule = useCallback(
+    async (rule: { field: AutoApproveRule['field']; value: string; enabled?: boolean }) => {
+      const res = await client.addAutoApproveRule({
+        field: rule.field,
+        value: rule.value,
+        enabled: rule.enabled ?? true,
+      });
+      if (res.ok) {
+        setAutoApproveRules((prev) => [...prev, res.data.rule]);
+      }
+      return res;
+    },
+    [client],
+  );
+
+  const removeAutoApproveRule = useCallback(
+    async (ruleId: string) => {
+      const res = await client.removeAutoApproveRule(ruleId);
+      if (res.ok && res.data.deleted) {
+        setAutoApproveRules((prev) => prev.filter((r) => r.id !== ruleId));
+      }
+      return res;
+    },
+    [client],
+  );
+
   return {
     settings: state.data,
     loading: state.loading,
@@ -261,6 +287,8 @@ export function useSettings(client: ApiClient = defaultApi) {
     ),
     updateAutoApproveRules,
     getAutoApproveRules,
+    addAutoApproveRule,
+    removeAutoApproveRule,
     setSystemPrompt,
     setReasoningLevel,
     prefetchSettings,

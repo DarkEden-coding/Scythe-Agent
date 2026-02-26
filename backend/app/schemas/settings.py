@@ -54,6 +54,12 @@ class GetAutoApproveResponse(BaseModel):
     rules: list[AutoApproveRuleOut]
 
 
+class AddAutoApproveRequest(BaseModel):
+    field: str = Field(min_length=1)
+    value: str = Field(min_length=1)
+    enabled: bool = True
+
+
 class SetModelRequest(BaseModel):
     model: str = Field(min_length=1, max_length=500)
     provider: str | None = Field(default=None, min_length=1, max_length=64)

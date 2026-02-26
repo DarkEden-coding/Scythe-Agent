@@ -94,6 +94,20 @@ export interface GetAutoApproveResponse {
   rules: AutoApproveRule[];
 }
 
+export interface AddAutoApproveRequest {
+  field: AutoApproveRule['field'];
+  value: string;
+  enabled?: boolean;
+}
+
+export interface AddAutoApproveResponse {
+  rule: AutoApproveRule;
+}
+
+export interface DeleteAutoApproveResponse {
+  deleted: boolean;
+}
+
 // 4. Change model
 export interface ChangeModelRequest {
   model: string;

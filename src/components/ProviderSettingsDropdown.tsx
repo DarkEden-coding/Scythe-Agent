@@ -4,7 +4,7 @@ import { cn } from '../utils/cn';
 
 export type ProviderId = 'openrouter' | 'groq' | 'openai-sub';
 
-export type SettingsTabId = ProviderId | 'agent' | 'mcp' | 'memory' | 'context' | 'api-keys';
+export type SettingsTabId = ProviderId | 'agent' | 'mcp' | 'memory' | 'context' | 'api-keys' | 'auto-approve';
 
 interface DropdownOption {
   id: SettingsTabId;

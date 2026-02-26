@@ -9,6 +9,7 @@ from app.middleware.error_handler import full_error_message
 
 from app.config.settings import get_settings
 from app.schemas.settings import (
+    AddAutoApproveRequest,
     SetAutoApproveRequest,
     SetModelRequest,
     SetSubAgentModelRequest,
@@ -64,6 +65,36 @@ def set_auto_approve(request: SetAutoApproveRequest, db: Session = Depends(get_d
         return ok(data.model_dump())
     except ValueError as exc:
         return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500, content=err(full_error_message(exc)).model_dump()
+        )
+
+
+@router.post("/auto-approve")
+def add_auto_approve(request: AddAutoApproveRequest, db: Session = Depends(get_db)):
+    """Add a single auto-approve rule."""
+    try:
+        rule = SettingsService(db).add_auto_approve_rule(
+            field=request.field,
+            value=request.value,
+            enabled=request.enabled,
+        )
+        return ok({"rule": rule.model_dump()})
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500, content=err(full_error_message(exc)).model_dump()
+        )
+
+
+@router.delete("/auto-approve/{rule_id}")
+def delete_auto_approve(rule_id: str, db: Session = Depends(get_db)):
+    """Remove an auto-approve rule by id."""
+    try:
+        deleted = SettingsService(db).remove_auto_approve_rule(rule_id)
+        return ok({"deleted": deleted})
     except Exception as exc:
         return JSONResponse(
             status_code=500, content=err(full_error_message(exc)).model_dump()
