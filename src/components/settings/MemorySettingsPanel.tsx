@@ -276,6 +276,13 @@ export function MemorySettingsPanel({ activeChatId = null }: MemorySettingsPanel
       setSettings(normalized);
       setOriginal(normalized);
       setThresholdInputValues(buildThresholdInputState(normalized));
+      window.dispatchEvent(
+        new CustomEvent('memory-settings-updated', {
+          detail: {
+            showObservationsInChat: normalized.show_observations_in_chat,
+          },
+        }),
+      );
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
     } else {

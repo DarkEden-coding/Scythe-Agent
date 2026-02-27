@@ -7,7 +7,9 @@ import logging
 from typing import Any
 
 from app.core.container import get_container
-from app.initial_information.project_overview import build_project_overview_system_message
+from app.initial_information.project_overview import (
+    build_project_overview_system_message,
+)
 from app.services.memory.observational.service import (
     BufferedObservationChunk,
     ObservationError,
@@ -139,7 +141,9 @@ class OMBackgroundRunner:
         if activated is None:
             return latest_observation, state
 
-        new_state = svc.update_state_from_observation(state=state, observation=activated)
+        new_state = svc.update_state_from_observation(
+            state=state, observation=activated
+        )
         new_state["buffer"]["chunks"] = []
         new_state["buffer"]["lastBoundary"] = 0
         new_state["buffer"]["upToMessageId"] = activated.observed_up_to_message_id
@@ -156,7 +160,9 @@ class OMBackgroundRunner:
         buffer = state.get("buffer") or {}
         raw_chunks = buffer.get("chunks") or []
         # Take the last max_chunks entries
-        recent = raw_chunks[-max_chunks:] if len(raw_chunks) > max_chunks else raw_chunks
+        recent = (
+            raw_chunks[-max_chunks:] if len(raw_chunks) > max_chunks else raw_chunks
+        )
         contents: list[str] = []
         for raw in recent:
             if isinstance(raw, dict):
@@ -239,14 +245,18 @@ class OMBackgroundRunner:
                 # On first run, seed passive-buffer waterline from active observation.
                 if latest_obs is not None:
                     if state["buffer"].get("upToMessageId") is None:
-                        state["buffer"]["upToMessageId"] = latest_obs.observed_up_to_message_id
+                        state["buffer"]["upToMessageId"] = (
+                            latest_obs.observed_up_to_message_id
+                        )
                     if state["buffer"].get("upToTimestamp") is None:
                         state["buffer"]["upToTimestamp"] = latest_obs.timestamp
 
                 supplemental = self._build_supplemental_activity(
                     chat_id=chat_id,
                     repo=repo,
-                    latest_observation_timestamp=(latest_obs.timestamp if latest_obs else None),
+                    latest_observation_timestamp=(
+                        latest_obs.timestamp if latest_obs else None
+                    ),
                     project_path=project_path,
                     model=model,
                 )
@@ -256,14 +266,18 @@ class OMBackgroundRunner:
                     observation_messages,
                     latest_obs,
                 )
-                unobserved_tokens_active = count_messages_tokens(unobserved_active, model=model)
+                unobserved_tokens_active = count_messages_tokens(
+                    unobserved_active, model=model
+                )
 
                 _obs_buffer, unobserved_buffer = svc.split_messages_by_waterline(
                     observation_messages,
                     waterline_message_id=state["buffer"].get("upToMessageId"),
                     waterline_timestamp=state["buffer"].get("upToTimestamp"),
                 )
-                unobserved_tokens_buffer = count_messages_tokens(unobserved_buffer, model=model)
+                unobserved_tokens_buffer = count_messages_tokens(
+                    unobserved_buffer, model=model
+                )
 
                 should_buffer, boundary = self.should_trigger_async_observation(
                     unobserved_tokens=unobserved_tokens_buffer,
@@ -282,7 +296,9 @@ class OMBackgroundRunner:
                     observing_emitted = True
 
                     # Pass up to the last 2 buffered chunk contents for dedup
-                    prior_chunk_contents = self._get_prior_chunk_contents(state, max_chunks=2)
+                    prior_chunk_contents = self._get_prior_chunk_contents(
+                        state, max_chunks=2
+                    )
 
                     try:
                         chunk = await svc.run_observer_for_chunk(
@@ -311,10 +327,16 @@ class OMBackgroundRunner:
                     if chunk is not None:
                         state["buffer"]["chunks"].append(chunk.to_dict())
                         if chunk.observed_up_to_message_id:
-                            state["buffer"]["upToMessageId"] = chunk.observed_up_to_message_id
+                            state["buffer"]["upToMessageId"] = (
+                                chunk.observed_up_to_message_id
+                            )
                         if chunk.observed_up_to_timestamp:
-                            state["buffer"]["upToTimestamp"] = chunk.observed_up_to_timestamp
-                        tokens_saved = max(0, unobserved_tokens_buffer - chunk.token_count)
+                            state["buffer"]["upToTimestamp"] = (
+                                chunk.observed_up_to_timestamp
+                            )
+                        tokens_saved = max(
+                            0, unobserved_tokens_buffer - chunk.token_count
+                        )
                     else:
                         tokens_saved = 0
 
@@ -334,9 +356,16 @@ class OMBackgroundRunner:
                     )
                     terminal_status_emitted = True
 
-                if not self.meets_observation_threshold(
-                    unobserved_tokens=unobserved_tokens_active,
-                    message_tokens=observer_threshold,
+                bootstrap_activation = latest_obs is None and bool(
+                    state["buffer"].get("chunks")
+                )
+
+                if (
+                    not self.meets_observation_threshold(
+                        unobserved_tokens=unobserved_tokens_active,
+                        message_tokens=observer_threshold,
+                    )
+                    and not bootstrap_activation
                 ):
                     if not terminal_status_emitted:
                         await event_bus.publish(
@@ -405,19 +434,22 @@ class OMBackgroundRunner:
                     terminal_status_emitted = True
                     return
 
-                tokens_saved = max(0, unobserved_tokens_active - latest_obs.token_count)
-                await event_bus.publish(
-                    chat_id,
-                    {
-                        "type": "observation_status",
-                        "payload": {
-                            "status": "observed",
-                            "chatId": chat_id,
-                            "tokensSaved": tokens_saved,
+                if not terminal_status_emitted:
+                    tokens_saved = max(
+                        0, unobserved_tokens_active - latest_obs.token_count
+                    )
+                    await event_bus.publish(
+                        chat_id,
+                        {
+                            "type": "observation_status",
+                            "payload": {
+                                "status": "observed",
+                                "chatId": chat_id,
+                                "tokensSaved": tokens_saved,
+                            },
                         },
-                    },
-                )
-                terminal_status_emitted = True
+                    )
+                    terminal_status_emitted = True
 
                 if latest_obs.token_count >= reflector_threshold:
                     await event_bus.publish(
@@ -460,7 +492,9 @@ class OMBackgroundRunner:
                         state=state,
                         observation=latest_obs,
                     )
-                    state["buffer"]["upToMessageId"] = latest_obs.observed_up_to_message_id
+                    state["buffer"]["upToMessageId"] = (
+                        latest_obs.observed_up_to_message_id
+                    )
                     state["buffer"]["upToTimestamp"] = latest_obs.timestamp
                     svc.save_observational_state(chat_id, state)
 

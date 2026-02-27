@@ -405,6 +405,110 @@ def test_initial_information_counts_toward_observer_threshold(monkeypatch, tmp_p
     assert called["observer"] == 1
 
 
+def test_bootstrap_activation_promotes_buffered_chunk_below_threshold(monkeypatch) -> None:
+    called = {"buffer_observer": 0, "activate": 0}
+
+    class FakeRepo:
+        def __init__(self, _session) -> None:
+            pass
+
+        def list_messages(self, _chat_id: str):
+            return [
+                SimpleNamespace(
+                    role="user",
+                    content="hello",
+                    id="msg-1",
+                    timestamp="2026-02-20T00:00:00+00:00",
+                )
+            ]
+
+        def get_latest_observation(self, _chat_id: str):
+            return None
+
+        def list_tool_calls(self, _chat_id: str):
+            return []
+
+        def list_reasoning_blocks(self, _chat_id: str):
+            return []
+
+    class FakeSvc:
+        def __init__(self, _repo) -> None:
+            pass
+
+        def get_unobserved_messages(self, _messages, _latest_obs):
+            return [], list(_messages)
+
+        def get_observational_state(self, _chat_id: str, *, default_buffer_tokens: int):
+            return {
+                "buffer": {
+                    "tokens": default_buffer_tokens,
+                    "lastBoundary": 0,
+                    "upToMessageId": None,
+                    "upToTimestamp": None,
+                    "chunks": [],
+                }
+            }
+
+        def split_messages_by_waterline(self, _messages, **_kwargs):
+            return [], list(_messages)
+
+        def save_observational_state(self, *_args, **_kwargs):
+            return None
+
+        def update_state_from_observation(self, *, state, observation):
+            return state
+
+        async def run_observer_for_chunk(self, **_kwargs):
+            called["buffer_observer"] += 1
+            return BufferedObservationChunk(
+                content="buffered summary",
+                token_count=20,
+                observed_up_to_message_id="msg-1",
+                observed_up_to_timestamp="2026-02-20T00:01:00+00:00",
+            )
+
+        def activate_buffered_observations(self, **_kwargs):
+            called["activate"] += 1
+            return SimpleNamespace(
+                token_count=20,
+                observed_up_to_message_id="msg-1",
+                timestamp="2026-02-20T00:01:00+00:00",
+            )
+
+        async def run_reflector(self, **_kwargs):
+            return None
+
+    import app.db.repositories.chat_repo as chat_repo_module
+    import app.services.memory.observational.background as bg_module
+
+    monkeypatch.setattr(chat_repo_module, "ChatRepository", FakeRepo)
+    monkeypatch.setattr(bg_module, "ObservationMemoryService", FakeSvc)
+    monkeypatch.setattr(bg_module, "count_messages_tokens", lambda _messages, **_kwargs: 600)
+
+    runner = OMBackgroundRunner()
+    bus = _EventCollector()
+
+    asyncio.run(
+        runner._run_observation_cycle(
+            chat_id="chat-1",
+            model="model",
+            observer_model=None,
+            reflector_model=None,
+            observer_threshold=1000,
+            buffer_tokens=500,
+            reflector_threshold=8000,
+            client=object(),
+            session_factory=_session_factory,
+            event_bus=bus,
+        )
+    )
+
+    statuses = [e["payload"]["status"] for e in bus.events if e.get("type") == "observation_status"]
+    assert statuses == ["observing", "observed"]
+    assert called["buffer_observer"] == 1
+    assert called["activate"] == 1
+
+
 def test_schedule_coalesces_and_reruns_latest(monkeypatch) -> None:
     calls: list[str] = []
 

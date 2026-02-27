@@ -92,6 +92,20 @@ export function App() {
     });
   }, []);
 
+  useEffect(() => {
+    const onMemorySettingsUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<{ showObservationsInChat?: boolean }>).detail;
+      if (typeof detail?.showObservationsInChat === 'boolean') {
+        setShowObservationsInChat(detail.showObservationsInChat);
+      }
+    };
+
+    window.addEventListener('memory-settings-updated', onMemorySettingsUpdated as EventListener);
+    return () => {
+      window.removeEventListener('memory-settings-updated', onMemorySettingsUpdated as EventListener);
+    };
+  }, []);
+
   // Persist active chat so it restores on refresh (never clear — bootstrap may run before projects load)
   useEffect(() => {
     if (activeChatId) localStorage.setItem('activeChatId', activeChatId);
