@@ -25,6 +25,7 @@ interface SettingsModalProps {
   /** Initial tab when opening. Defaults to first provider or agent. */
   readonly initialTab?: SettingsTabId | null;
   readonly activeChatId?: string | null;
+  readonly onProviderModelsChanged?: () => void;
 }
 
 export function SettingsModal({
@@ -32,6 +33,7 @@ export function SettingsModal({
   onClose,
   initialTab = 'openrouter',
   activeChatId = null,
+  onProviderModelsChanged,
 }: SettingsModalProps) {
   const [activeTab, setActiveTab] = useState<SettingsTabId>(initialTab ?? 'openrouter');
   const [providersExpanded, setProvidersExpanded] = useState(true);
@@ -51,6 +53,7 @@ export function SettingsModal({
     if (activeTab === 'openrouter') {
       return (
         <OpenRouterSettingsPanel
+          onModelsSynced={onProviderModelsChanged}
           footer={
             <p className="text-xs text-gray-400">
               Need help?{' '}
@@ -70,6 +73,7 @@ export function SettingsModal({
     if (activeTab === 'groq') {
       return (
         <GroqSettingsPanel
+          onModelsSynced={onProviderModelsChanged}
           footer={
             <p className="text-xs text-gray-400">
               Need help?{' '}
@@ -89,6 +93,7 @@ export function SettingsModal({
     if (activeTab === 'openai-sub') {
       return (
         <OpenAISubSettingsPanel
+          onModelsSynced={onProviderModelsChanged}
           footer={
             <p className="text-xs text-gray-400">
               Uses your ChatGPT Plus/Pro/Team subscription via OAuth. No API key needed.

@@ -5,9 +5,13 @@ import { cn } from '@/utils/cn';
 
 interface OpenRouterSettingsPanelProps {
   readonly footer?: React.ReactNode;
+  readonly onModelsSynced?: () => void;
 }
 
-export function OpenRouterSettingsPanel({ footer }: OpenRouterSettingsPanelProps) {
+export function OpenRouterSettingsPanel({
+  footer,
+  onModelsSynced,
+}: OpenRouterSettingsPanelProps) {
   const {
     config,
     loading,
@@ -39,10 +43,16 @@ export function OpenRouterSettingsPanel({ footer }: OpenRouterSettingsPanelProps
     if (res.ok) {
       setSaveSuccess(true);
       setApiKeyInput('');
+      onModelsSynced?.();
       setTimeout(() => setSaveSuccess(false), 3000);
     } else {
       setSaveError(res.error ?? 'Failed to save API key');
     }
+  };
+
+  const handleSync = async () => {
+    const res = await syncModels();
+    if (res.ok) onModelsSynced?.();
   };
 
   const handleTest = async () => {
@@ -226,7 +236,7 @@ export function OpenRouterSettingsPanel({ footer }: OpenRouterSettingsPanelProps
           </button>
 
           <button
-            onClick={() => syncModels()}
+            onClick={() => void handleSync()}
             disabled={syncing || !hasApiKey}
             className={cn(
               'p-2.5 rounded-lg transition-colors border',

@@ -5,9 +5,13 @@ import type { ApiResponse, GetSettingsResponse, AutoApproveRule } from '@/api/ty
 const SETTINGS_CACHE_TTL_MS = 5 * 60 * 1000;
 let settingsCache: { data: GetSettingsResponse; fetchedAt: number } | null = null;
 
-async function getSettingsCached(client: ApiClient): Promise<ApiResponse<GetSettingsResponse>> {
+async function getSettingsCached(
+  client: ApiClient,
+  opts?: { force?: boolean },
+): Promise<ApiResponse<GetSettingsResponse>> {
+  const force = Boolean(opts?.force);
   const now = Date.now();
-  if (settingsCache && now - settingsCache.fetchedAt < SETTINGS_CACHE_TTL_MS) {
+  if (!force && settingsCache && now - settingsCache.fetchedAt < SETTINGS_CACHE_TTL_MS) {
     return { ok: true, data: settingsCache.data, timestamp: new Date().toISOString() };
   }
   const res = await client.getSettings();
@@ -90,7 +94,25 @@ export function useSettings(client: ApiClient = defaultApi) {
   }, [fetchSettings]);
 
   const prefetchSettings = useCallback(() => {
-    return getSettingsCached(client).then((res) => {
+    return getSettingsCached(client, { force: false }).then((res) => {
+      if (res.ok) {
+        setState({ data: res.data, loading: false, error: null });
+        setCurrentModel(res.data.model);
+        setCurrentModelProvider(res.data.modelProvider ?? null);
+        setCurrentModelKey(res.data.modelKey ?? null);
+        setSubAgentModel(res.data.subAgentModel ?? null);
+        setSubAgentModelProvider(res.data.subAgentModelProvider ?? null);
+        setSubAgentModelKey(res.data.subAgentModelKey ?? null);
+        setVisionPreprocessorModel(res.data.visionPreprocessorModel ?? null);
+        setVisionPreprocessorModelKey(res.data.visionPreprocessorModelKey ?? null);
+        setAutoApproveRules(res.data.autoApproveRules);
+      }
+      return res;
+    });
+  }, [client]);
+
+  const refreshSettings = useCallback(() => {
+    return getSettingsCached(client, { force: true }).then((res) => {
       if (res.ok) {
         setState({ data: res.data, loading: false, error: null });
         setCurrentModel(res.data.model);
@@ -331,5 +353,6 @@ export function useSettings(client: ApiClient = defaultApi) {
     setSystemPrompt,
     setReasoningLevel,
     prefetchSettings,
+    refreshSettings,
   };
 }

@@ -77,13 +77,13 @@ export function App() {
       if (e.origin !== window.location.origin) return;
       const data = e.data;
       if (data?.type === 'openai-sub-auth-done') {
-        settings.prefetchSettings();
+        settings.refreshSettings();
         window.dispatchEvent(new CustomEvent('openai-sub-auth-done', { detail: { status: data.status } }));
       }
     };
     window.addEventListener('message', handler);
     return () => window.removeEventListener('message', handler);
-  }, [settings.prefetchSettings]);
+  }, [settings.refreshSettings]);
 
   // Fetch memory settings to know whether to show observations in chat
   useEffect(() => {
@@ -577,6 +577,9 @@ export function App() {
         onClose={() => setSettingsTab(null)}
         initialTab={settingsTab}
         activeChatId={activeChatId}
+        onProviderModelsChanged={() => {
+          void settings.refreshSettings();
+        }}
       />
       <Modal
         visible={iterationLimitPause != null}

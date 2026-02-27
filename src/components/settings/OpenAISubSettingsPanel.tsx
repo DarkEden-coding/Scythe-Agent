@@ -5,9 +5,13 @@ import { cn } from '@/utils/cn';
 
 interface OpenAISubSettingsPanelProps {
   readonly footer?: React.ReactNode;
+  readonly onModelsSynced?: () => void;
 }
 
-export function OpenAISubSettingsPanel({ footer }: OpenAISubSettingsPanelProps) {
+export function OpenAISubSettingsPanel({
+  footer,
+  onModelsSynced,
+}: OpenAISubSettingsPanelProps) {
   const {
     config,
     loading,
@@ -27,9 +31,10 @@ export function OpenAISubSettingsPanel({ footer }: OpenAISubSettingsPanelProps) 
     const status = params.get('openai-sub');
     if (status) {
       refreshConfig();
+      onModelsSynced?.();
       window.history.replaceState({}, '', window.location.pathname);
     }
-  }, [refreshConfig]);
+  }, [onModelsSynced, refreshConfig]);
 
   const handleTest = async () => {
     setTestResult(null);
@@ -50,6 +55,11 @@ export function OpenAISubSettingsPanel({ footer }: OpenAISubSettingsPanelProps) 
     }
 
     setTimeout(() => setTestResult(null), 5000);
+  };
+
+  const handleSync = async () => {
+    const res = await syncModels();
+    if (res.ok) onModelsSynced?.();
   };
 
   const isConnected = config?.connected ?? false;
@@ -160,7 +170,7 @@ export function OpenAISubSettingsPanel({ footer }: OpenAISubSettingsPanelProps) 
               )}
             </button>
             <button
-              onClick={() => syncModels()}
+              onClick={() => void handleSync()}
               disabled={syncing}
               className={cn(
                 'p-2.5 rounded-lg transition-colors border',

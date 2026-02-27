@@ -17,8 +17,8 @@ interface EnhancedModelPickerProps {
   setReasoningLevel: (reasoningLevel: string) => Promise<{ ok: boolean; error?: string }>;
   modelsByProvider: Record<string, string[]>;
   modelMetadataByKey: Record<string, {
-    contextLimit?: number;
-    pricePerMillion?: number;
+    contextLimit?: number | null;
+    pricePerMillion?: number | null;
     reasoningSupported?: boolean;
     reasoningLevels?: string[];
     defaultReasoningLevel?: string | null;
@@ -253,9 +253,20 @@ export function EnhancedModelPicker({
     currentModelMetadata?.reasoningSupported || reasoningLevels.length > 0,
   );
   const reasoningOptions = reasoningSupported ? ['off', ...reasoningLevels] : ['off'];
+  const normalizedDefaultReasoningLevel = useMemo(() => {
+    if (!reasoningSupported || reasoningLevels.length === 0) return null;
+    const rawDefault = currentModelMetadata?.defaultReasoningLevel;
+    const normalizedDefault =
+      typeof rawDefault === 'string' ? rawDefault.trim().toLowerCase() : null;
+    if (normalizedDefault && reasoningLevels.includes(normalizedDefault)) {
+      return normalizedDefault;
+    }
+    if (reasoningLevels.includes('medium')) return 'medium';
+    return reasoningLevels[0] ?? null;
+  }, [currentModelMetadata, reasoningLevels, reasoningSupported]);
   const normalizedReasoningLevel = reasoningOptions.includes(reasoningLevel)
     ? reasoningLevel
-    : 'off';
+    : normalizedDefaultReasoningLevel ?? 'off';
 
   useEffect(() => {
     setReasoningValue(normalizedReasoningLevel);

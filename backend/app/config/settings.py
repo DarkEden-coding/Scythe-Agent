@@ -28,7 +28,7 @@ class AppSettings(BaseSettings):
         "http://localhost:4173",
         "http://127.0.0.1:4173",
     ]
-    oauth_redirect_base: str = "http://localhost:3001"
+    oauth_redirect_base: str = "http://localhost:8000"
     oauth_redirect_uri: str = "http://localhost:1455/auth/callback"  # Codex OAuth app allows this; proxy on 1455 forwards to main app
     frontend_base: str = "http://localhost:5173"
     fs_allowed_roots: list[str] = []

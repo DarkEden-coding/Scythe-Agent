@@ -5,9 +5,11 @@ import os
 import logging
 
 from sqlalchemy import select, inspect, text
+from sqlalchemy.exc import NoSuchTableError
 from sqlalchemy.orm import Session
 
 from app.config.settings import get_settings
+from app.db.base import Base
 from app.db.models.mcp_server import MCPServer
 from app.utils.time import utc_now_iso
 from app.utils.encryption import encrypt
@@ -23,7 +25,16 @@ def _ensure_settings_schema(db: Session) -> None:
     """Apply lightweight startup-safe schema guards for settings table."""
     bind = db.get_bind()
     inspector = inspect(bind)
-    columns = {c["name"] for c in inspector.get_columns("settings")}
+    try:
+        columns = {c["name"] for c in inspector.get_columns("settings")}
+    except NoSuchTableError:
+        # Fresh DB bootstraps (no Alembic run yet) need a minimal schema to start.
+        # Importing models ensures all declarative mappings are registered.
+        import app.db.models  # noqa: F401
+
+        Base.metadata.create_all(bind=bind, checkfirst=True)
+        columns = {c["name"] for c in inspect(bind).get_columns("settings")}
+        logger.info("Created missing database tables during startup seed")
     if "active_model_provider" not in columns:
         db.execute(text("ALTER TABLE settings ADD COLUMN active_model_provider TEXT"))
         logger.info("Added missing settings.active_model_provider column during startup seed")
