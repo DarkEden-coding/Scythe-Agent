@@ -26,10 +26,11 @@ from app.utils.time import utc_now_iso
 logger = logging.getLogger(__name__)
 REPETITIVE_TOOL_CALL_STREAK_LIMIT = 5
 _MENTION_INPUT_FLAG = "__mention_reference__"
-GUARDED_REPEAT_TOOLS = {"read_file", "list_files", "grep"}
+GUARDED_REPEAT_TOOLS = {"read_file", "get_file_structure", "list_files", "grep"}
 PLANNING_ALLOWED_TOOLS = {
     "list_files",
     "read_file",
+    "get_file_structure",
     "grep",
     "spawn_sub_agent",
     "update_todo_list",
@@ -784,7 +785,7 @@ class AgentLoop:
         if tool_name not in GUARDED_REPEAT_TOOLS:
             return None
         args = self._parse_tool_args(fn.get("arguments", "{}"))
-        if tool_name == "read_file":
+        if tool_name in ("read_file", "get_file_structure"):
             path = str(args.get("path", "")).strip()
             if not path:
                 return None

@@ -49,7 +49,7 @@ def spill_tool_output(
     instruction = (
         f"The preceding tool output was truncated ({tokens} tokens). "
         f"Full output saved to: {abs_path}. "
-        f"Use read_file to read sections as needed."
+        f"Use grep to find specific sections by pattern, then read_file with start and end (line numbers) to read those spans."
     )
     return f"{preview_content}\n\n{instruction}", abs_path, tokens
 

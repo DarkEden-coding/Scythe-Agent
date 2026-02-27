@@ -24,7 +24,7 @@ alembic upgrade head
 uv run uvicorn app.main:app --reload --port 3001
 ```
 
-**Important:** Use `uv run uvicorn` so the process uses the project venv. Running `uvicorn` directly (e.g. from conda or system Python) will miss `tree-sitter-language-pack`, and `read_file` will return "No tree-sitter support" instead of file structure.
+**Important:** Use `uv run uvicorn` so the process uses the project venv. Running `uvicorn` directly (e.g. from conda or system Python) will miss `tree-sitter-language-pack`, and `get_file_structure` will return "No tree-sitter support" for structure extraction.
 
 To run from the repository root:
 

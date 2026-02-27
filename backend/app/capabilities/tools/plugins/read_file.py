@@ -9,7 +9,6 @@ from pathlib import Path
 from app.capabilities.tools.interfaces import ToolExecutionContext, ToolPlugin
 from app.capabilities.tools.types import ToolExecutionResult
 from app.tools.path_utils import resolve_path
-from app.utils.file_structure import get_file_structure
 
 IMAGE_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".gif", ".webp"})
 EXT_TO_MIME: dict[str, str] = {
@@ -35,12 +34,6 @@ def _read_span_streaming(path: Path, start_idx: int, end_idx: int) -> str:
                 span_lines.append(line.rstrip("\n"))
     total_str = f"lines {start_idx}-{end_idx}" if total > end_idx else f"{total} lines"
     return f"File: {path} ({total_str})\n\n" + "\n".join(span_lines)
-
-
-def _read_structure(path: Path) -> str:
-    """Read file and return structure; runs in thread."""
-    content = path.read_text(encoding="utf-8")
-    return get_file_structure(content, str(path))
 
 
 async def _handler(payload: dict, context: ToolExecutionContext) -> ToolExecutionResult:
@@ -87,49 +80,53 @@ async def _handler(payload: dict, context: ToolExecutionContext) -> ToolExecutio
             output = await asyncio.to_thread(_read_span_streaming, path, 1, total)
             return ToolExecutionResult(output=output, file_edits=[])
 
-    if has_span and start_val is not None and end_val is not None:
-        try:
-            start_idx = int(start_val)
-            end_idx = int(end_val)
-        except (TypeError, ValueError):
-            return ToolExecutionResult(
-                output="start and end must be integers (1-based line numbers).",
-                file_edits=[],
-                ok=False,
-            )
-        if start_idx < 1 or end_idx < 1:
-            return ToolExecutionResult(
-                output="start and end must be >= 1 (1-based line numbers).",
-                file_edits=[],
-                ok=False,
-            )
-        if start_idx > end_idx:
-            start_idx, end_idx = end_idx, start_idx
-        output = await asyncio.to_thread(_read_span_streaming, path, start_idx, end_idx)
-        return ToolExecutionResult(output=output, file_edits=[])
+    if not has_span:
+        return ToolExecutionResult(
+            output=(
+                "read_file requires start and end (1-based line numbers). "
+                "Use get_file_structure to get the file outline and line ranges, then call read_file with start and end for specific sections."
+            ),
+            file_edits=[],
+            ok=False,
+        )
 
-    output = await asyncio.to_thread(_read_structure, path)
+    assert start_val is not None and end_val is not None  # has_span guarantees this
+    try:
+        start_idx = int(start_val)
+        end_idx = int(end_val)
+    except (TypeError, ValueError):
+        return ToolExecutionResult(
+            output="start and end must be integers (1-based line numbers).",
+            file_edits=[],
+            ok=False,
+        )
+    if start_idx < 1 or end_idx < 1:
+        return ToolExecutionResult(
+            output="start and end must be >= 1 (1-based line numbers).",
+            file_edits=[],
+            ok=False,
+        )
+    if start_idx > end_idx:
+        start_idx, end_idx = end_idx, start_idx
+    output = await asyncio.to_thread(_read_span_streaming, path, start_idx, end_idx)
     return ToolExecutionResult(output=output, file_edits=[])
 
 
 TOOL_PLUGIN = ToolPlugin(
     name="read_file",
     description=(
-        "Read a file or image. path must be absolute. Can read project files, tool output files "
-        "(spilled outputs under tool_outputs/), and other external paths (those require approval). "
-        "Supports text files (.py, .ts, .js, etc.) and images (.png, .jpg, .gif, .webp)—images are returned "
-        "as base64 when the model supports vision. "
-        "Without start/end: returns file structure (declarations with line ranges) and total line count; use that to decide which spans to read. "
-        "With start and end (1-based): returns that line span. "
-        "For files without structure support (unknown extensions), use start/end to read sections. Always prefer targeted spans over reading entire large files."
+        "Read a file or image. path must be absolute. Requires start and end (1-based line numbers) for text files—call get_file_structure first to get the outline and line ranges, then read specific spans. "
+        "Can read project files, tool output files (spilled outputs under tool_outputs/), and other external paths (those require approval). "
+        "Supports text files (.py, .ts, .js, etc.) and images (.png, .jpg, .gif, .webp)—images are returned as base64 when the model supports vision (start/end not required for images). "
+        "Always prefer targeted spans over reading entire large files."
     ),
     input_schema={
         "type": "object",
         "required": ["path"],
         "properties": {
             "path": {"type": "string"},
-            "start": {"type": "integer", "description": "Start line (1-based). Omit with end to get structure."},
-            "end": {"type": "integer", "description": "End line (1-based). Omit with start to get structure."},
+            "start": {"type": "integer", "description": "Start line (1-based). Required for text files."},
+            "end": {"type": "integer", "description": "End line (1-based). Required for text files."},
         },
     },
     approval_policy="rules",
