@@ -10,6 +10,16 @@ def test_sanitize_raw_path_trims_trailing_json_delimiter_cluster() -> None:
     assert sanitize_raw_path(raw) == "/tmp/work/Shooter.java"
 
 
+def test_sanitize_raw_path_strips_quote_brace_from_agent_noise() -> None:
+    """Agent may emit path'}, path`} from markdown/code block formatting."""
+    assert (
+        sanitize_raw_path(
+            r"E:\Ceph-Mirror\Vs-Code-Projects\Files\src\Files.App\Utils\Storage\Operations\FileOperationsHelpers.cs'}"
+        )
+        == r"E:\Ceph-Mirror\Vs-Code-Projects\Files\src\Files.App\Utils\Storage\Operations\FileOperationsHelpers.cs"
+    )
+
+
 def test_resolve_path_recovers_from_trailing_delimiter_cluster(tmp_path: Path) -> None:
     target = tmp_path / "Shooter.java"
     target.write_text("class Shooter {}", encoding="utf-8")

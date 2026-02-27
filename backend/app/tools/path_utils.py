@@ -41,6 +41,12 @@ _BLOCKED_PREFIXES = [
 # delimiters (e.g. `/path/File.java}},`). Strip only clearly synthetic suffixes.
 _TRAILING_DELIMITER_CLUSTER = re.compile(r"^(?P<core>.+?)(?P<noise>[{}\[\],]+)$")
 
+# Agent/LLM output often appends quote+brace (e.g. path'}, path`} from markdown/code).
+# Only strip when a quote char is present so we preserve legitimate names like "data}".
+_TRAILING_QUOTE_DELIMITER = re.compile(
+    r"^(?P<path>.+?)(?P<noise>['\"`][}\[\],]*|[}\[\],]*['\"`][}\[\],]*)$"
+)
+
 
 def sanitize_raw_path(raw_path: str) -> str:
     """Normalize path text from tool payloads before security checks."""
@@ -52,20 +58,24 @@ def sanitize_raw_path(raw_path: str) -> str:
     if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'", "`"}:
         value = value[1:-1].strip()
     else:
+        # Strip trailing quote+delimiter (e.g. path'}, path`}) before rstrip.
+        match = _TRAILING_QUOTE_DELIMITER.match(value)
+        if match:
+            core = match.group("path").rstrip()
+            if core:
+                value = core
         value = value.rstrip(' \t\r\n,;"\'`')
         if value and value[0] in {'"', "'", "`"}:
             value = value[1:].lstrip()
 
     match = _TRAILING_DELIMITER_CLUSTER.match(value)
-    if not match:
-        return value
-
-    noise = match.group("noise")
-    # Keep single trailing braces (valid on POSIX). Trim only multi-char clusters.
-    if len(noise) >= 2:
-        core = match.group("core").rstrip()
-        if core:
-            return core
+    if match:
+        noise = match.group("noise")
+        # Keep single trailing braces (valid on POSIX). Trim only multi-char clusters.
+        if len(noise) >= 2:
+            core = match.group("core").rstrip()
+            if core:
+                value = core
     return value
 
 

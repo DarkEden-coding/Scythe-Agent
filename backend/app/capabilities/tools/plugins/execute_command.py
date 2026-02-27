@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from pathlib import Path
 
 from app.capabilities.tools.interfaces import ToolExecutionContext, ToolPlugin
@@ -52,10 +53,12 @@ async def _handler(payload: dict, context: ToolExecutionContext) -> ToolExecutio
                 ok=False,
             )
 
+    env = {**os.environ, "PYTHONUNBUFFERED": "1"}
     try:
         proc = await asyncio.create_subprocess_shell(
             command,
             cwd=cwd,
+            env=env,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
