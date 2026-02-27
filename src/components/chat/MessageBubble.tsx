@@ -329,7 +329,7 @@ export function MessageBubble({ message, onEdit, isProcessing }: MessageBubblePr
               )}
             >
               <span className="text-[10px] text-gray-600">{formatTime(message.timestamp)}</span>
-              {message.role === 'user' && isHovered && (
+              {(message.role === 'user' || message.role === 'agent') && isHovered && (
                 <div className="flex items-center gap-0.5">
                   <button
                     onClick={handleCopy}
@@ -338,7 +338,7 @@ export function MessageBubble({ message, onEdit, isProcessing }: MessageBubblePr
                   >
                     <Copy className="w-3 h-3" />
                   </button>
-                  {onEdit && !isProcessing && (
+                  {message.role === 'user' && onEdit && !isProcessing && (
                     <>
                       <button
                         onClick={handleEditStart}
