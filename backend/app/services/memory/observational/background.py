@@ -356,16 +356,9 @@ class OMBackgroundRunner:
                     )
                     terminal_status_emitted = True
 
-                bootstrap_activation = latest_obs is None and bool(
-                    state["buffer"].get("chunks")
-                )
-
-                if (
-                    not self.meets_observation_threshold(
-                        unobserved_tokens=unobserved_tokens_active,
-                        message_tokens=observer_threshold,
-                    )
-                    and not bootstrap_activation
+                if not self.meets_observation_threshold(
+                    unobserved_tokens=unobserved_tokens_active,
+                    message_tokens=observer_threshold,
                 ):
                     if not terminal_status_emitted:
                         await event_bus.publish(

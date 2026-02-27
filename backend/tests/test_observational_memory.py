@@ -405,7 +405,8 @@ def test_initial_information_counts_toward_observer_threshold(monkeypatch, tmp_p
     assert called["observer"] == 1
 
 
-def test_bootstrap_activation_promotes_buffered_chunk_below_threshold(monkeypatch) -> None:
+def test_activation_waits_for_threshold_even_with_buffered_chunks(monkeypatch) -> None:
+    """Activation threshold is always enforced; buffered chunks are not activated early."""
     called = {"buffer_observer": 0, "activate": 0}
 
     class FakeRepo:
@@ -506,7 +507,7 @@ def test_bootstrap_activation_promotes_buffered_chunk_below_threshold(monkeypatc
     statuses = [e["payload"]["status"] for e in bus.events if e.get("type") == "observation_status"]
     assert statuses == ["observing", "observed"]
     assert called["buffer_observer"] == 1
-    assert called["activate"] == 1
+    assert called["activate"] == 0  # Below threshold: buffer runs but activation is deferred
 
 
 def test_schedule_coalesces_and_reruns_latest(monkeypatch) -> None:
