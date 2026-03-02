@@ -63,6 +63,7 @@ import type {
   AgentEvent,
   OpenRouterConfig,
   GroqConfig,
+  ZAiConfig,
   BraveConfig,
   OpenAISubConfig,
   OpenAISubAuthStartResponse,
@@ -661,6 +662,28 @@ export class ApiClient {
   /** Manually trigger Groq model sync. */
   async syncGroqModels(): Promise<ApiResponse<SyncModelsResponse>> {
     return this.request('POST', '/settings/groq/sync');
+  }
+
+  /* ── Z.ai configuration ────────────────────────────────────────── */
+
+  /** Get Z.ai configuration (masked API key, connection status, model count). */
+  async getZAiConfig(): Promise<ApiResponse<ZAiConfig>> {
+    return this.request('GET', '/settings/zai');
+  }
+
+  /** Set Z.ai API key and trigger model sync. */
+  async setZAiApiKey(req: SetApiKeyRequest): Promise<ApiResponse<SetApiKeyResponse>> {
+    return this.request('PUT', '/settings/zai/api-key', req);
+  }
+
+  /** Test connection to Z.ai API using stored API key. */
+  async testZAiConnection(): Promise<ApiResponse<TestConnectionResponse>> {
+    return this.request('POST', '/settings/zai/test');
+  }
+
+  /** Manually trigger Z.ai model sync. */
+  async syncZAiModels(): Promise<ApiResponse<SyncModelsResponse>> {
+    return this.request('POST', '/settings/zai/sync');
   }
 
   /* ── Brave Search configuration ───────────────────────────────── */

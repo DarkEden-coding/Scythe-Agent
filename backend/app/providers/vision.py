@@ -19,17 +19,6 @@ GROQ_VISION_MODELS: frozenset[str] = frozenset({
     "llava-13b",
 })
 
-# Fallback list for OpenAI Sub / Codex models with vision
-OPENAI_SUB_VISION_MODELS: frozenset[str] = frozenset({
-    "gpt-4o",
-    "gpt-4o-mini",
-    "gpt-4-turbo",
-    "gpt-4-vision-preview",
-    "gpt-4o-2024",
-    "gpt-4o-2024-05-13",
-})
-
-
 def model_has_vision(
     provider: str,
     model_label: str,
@@ -82,10 +71,13 @@ def model_has_vision(
         return _vision_from_fallback(provider, model_label)
 
     if provider == "openai-sub":
-        capabilities = raw.get("capabilities") or raw.get("modalities")
+        capabilities = raw.get("capabilities") or raw.get("modalities") or raw.get("input_modalities")
         if isinstance(capabilities, list):
-            return "vision" in capabilities or "image" in capabilities
-        return _vision_from_fallback(provider, model_label)
+            normalized = {str(cap).lower() for cap in capabilities}
+            if "vision" in normalized or "image" in normalized:
+                return True
+        # OpenAI Subscription models should be treated as vision-capable by default.
+        return True
 
     return False
 
@@ -96,7 +88,7 @@ def _vision_from_fallback(provider: str, model_label: str) -> bool:
     if provider == "groq":
         return model_label in GROQ_VISION_MODELS or "vision" in label_lower or "llava" in label_lower
     if provider == "openai-sub":
-        return model_label in OPENAI_SUB_VISION_MODELS or "gpt-4o" in label_lower or "vision" in label_lower
+        return True
     if provider == "openrouter":
         return (
             "vision" in label_lower

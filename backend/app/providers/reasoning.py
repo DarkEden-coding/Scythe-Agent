@@ -265,7 +265,7 @@ def _provider_default_levels(provider: str, model_label: str) -> tuple[str, ...]
     if re.search(r"(gpt[-_]?5)|(^|[^a-z0-9])o[13]([^a-z0-9]|$)", label):
         return ("minimal", "low", "medium", "high")
 
-    if provider_id in {"openrouter", "groq", "openai-sub"}:
+    if provider_id in {"openrouter", "groq", "zai", "openai-sub"}:
         return ("low", "medium", "high")
 
     return ()

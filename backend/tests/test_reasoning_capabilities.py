@@ -25,6 +25,18 @@ def test_groq_reasoning_effort_signal_uses_groq_defaults() -> None:
     assert caps.default_level == "medium"
 
 
+def test_zai_reasoning_effort_signal_uses_defaults() -> None:
+    caps = extract_reasoning_capabilities(
+        provider="zai",
+        model_label="glm-4.7",
+        raw_model={"supported_parameters": ["reasoning_effort", "tools"]},
+    )
+
+    assert caps.supported is True
+    assert caps.levels == ("low", "medium", "high")
+    assert caps.default_level == "medium"
+
+
 def test_openai_sub_gpt5_heuristic_defaults() -> None:
     caps = extract_reasoning_capabilities(
         provider="openai-sub",
