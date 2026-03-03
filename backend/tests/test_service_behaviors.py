@@ -17,6 +17,15 @@ def _assert_envelope(payload: dict) -> None:
     assert "timestamp" in payload
 
 
+def test_list_tools_includes_static_file_checker(client) -> None:
+    response = client.get("/api/tools")
+    assert response.status_code == 200
+    body = response.json()
+    _assert_envelope(body)
+    tool_names = {t.get("name") for t in body["data"].get("tools", [])}
+    assert "static_file_checker" in tool_names
+
+
 def test_send_message_checkpoint_persistence(client) -> None:
     response = client.post("/api/chat/chat-1/messages", json={"content": "phase3 send message"})
     assert response.status_code == 200

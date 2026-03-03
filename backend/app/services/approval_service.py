@@ -105,7 +105,7 @@ class ApprovalService:
                 "tool_call_id": tool_call.id,
             }
             checkpoint_id = tool_call.checkpoint_id
-            if tool_call.name == "update_todo_list" and checkpoint_id is not None:
+            if tool_call.name in {"update_todo_list", "static_file_checker"} and checkpoint_id is not None:
                 run_kwargs["checkpoint_id"] = checkpoint_id
             settings_row = self.settings_repo.get_settings()
             if settings_row:
