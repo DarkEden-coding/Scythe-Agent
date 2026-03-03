@@ -1,6 +1,5 @@
 from sqlalchemy import Integer, Text
 from typing import Optional
-from typing import Optional
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -17,6 +16,7 @@ class Settings(Base):
     openrouter_api_key: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     openrouter_base_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     groq_api_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    zai_api_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     brave_api_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     openai_sub_access_token: Mapped[str | None] = mapped_column(Text, nullable=True)
     openai_sub_refresh_token: Mapped[str | None] = mapped_column(Text, nullable=True)

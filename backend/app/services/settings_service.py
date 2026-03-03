@@ -262,13 +262,13 @@ class SettingsService:
         default_label = self.app_settings.default_active_model
         default_candidates = [row for row in models if row.label == default_label]
         if default_candidates:
-            for preferred_provider in ("openrouter", "groq", "openai-sub"):
+            for preferred_provider in ("openrouter", "groq", "zai", "openai-sub"):
                 for row in default_candidates:
                     if row.provider == preferred_provider:
                         return row
             return sorted(default_candidates, key=lambda row: (row.provider, row.id))[0]
 
-        for preferred_provider in ("openrouter", "groq", "openai-sub"):
+        for preferred_provider in ("openrouter", "groq", "zai", "openai-sub"):
             provider_rows = [row for row in models if row.provider == preferred_provider]
             if provider_rows:
                 return sorted(provider_rows, key=lambda row: row.label)[0]
@@ -311,7 +311,7 @@ class SettingsService:
                 if row.provider == active_provider:
                     return row
 
-        for preferred_provider in ("openrouter", "groq", "openai-sub"):
+        for preferred_provider in ("openrouter", "groq", "zai", "openai-sub"):
             for row in candidates:
                 if row.provider == preferred_provider:
                     return row
@@ -487,6 +487,71 @@ class SettingsService:
             logger.error(f"Groq connection test failed: {e}")
             return False, str(e)
 
+    def get_zai_config(self) -> dict:
+        """Get Z.ai configuration including masked API key and connection status."""
+        from app.services.api_key_resolver import APIKeyResolver
+
+        resolver = APIKeyResolver(self.repo)
+        has_key, api_key_masked = resolver.resolve_masked("zai")
+        models = self.repo.list_models()
+        model_count = len([m for m in models if m.provider == "zai"])
+
+        return {
+            "apiKeyMasked": api_key_masked,
+            "connected": has_key,
+            "modelCount": model_count,
+        }
+
+    def set_zai_api_key(self, api_key: str) -> dict:
+        """
+        Validate, encrypt, and save Z.ai API key.
+        Returns success status and model count.
+        """
+        if not api_key or not api_key.strip():
+            raise ValueError("API key cannot be empty")
+
+        api_key = api_key.strip()
+
+        try:
+            encrypted = encrypt(api_key)
+        except Exception as e:
+            logger.error(f"Failed to encrypt Z.ai API key: {e}")
+            raise ValueError(f"Failed to encrypt API key: {e}") from e
+
+        self.repo.set_zai_api_key(encrypted, updated_at=self._now())
+        self.repo.commit()
+
+        logger.info("Z.ai API key saved successfully")
+        return {"success": True, "modelCount": 0}
+
+    async def test_zai_connection(
+        self, api_key: str | None = None
+    ) -> tuple[bool, str | None]:
+        """
+        Test connection to Z.ai API.
+        Uses provided API key or falls back to stored/env key.
+        Returns (success, error_message).
+        """
+        from app.providers.zai.client import ZAiClient
+        from app.services.api_key_resolver import APIKeyResolver
+
+        if api_key:
+            client = ZAiClient(api_key=api_key)
+        else:
+            resolver = APIKeyResolver(self.repo)
+            client = resolver.create_client("zai")
+            if not client:
+                return False, "No API key configured"
+
+        try:
+            models = await client.get_models()
+            if models:
+                return True, None
+            return False, "No models returned from API"
+        except Exception as e:
+            logger.error(f"Z.ai connection test failed: {e}")
+            return False, str(e)
+
     def get_openai_sub_config(self) -> dict:
         """Get OpenAI Subscription config (OAuth status, model count)."""
         from app.services.api_key_resolver import APIKeyResolver
@@ -568,6 +633,25 @@ class SettingsService:
         assert isinstance(client, GroqClient)
 
         catalog_service = GroqModelCatalogService(self.repo.db, client=client)
+        labels = await catalog_service.sync_models_on_startup(force_refresh=True)
+        return labels
+
+    async def sync_zai_models(self) -> list[str]:
+        """
+        Manually trigger Z.ai model sync.
+        Returns list of model labels.
+        """
+        from app.providers.zai.client import ZAiClient
+        from app.providers.zai.model_catalog import ZAiModelCatalogService
+        from app.services.api_key_resolver import APIKeyResolver
+
+        resolver = APIKeyResolver(self.repo)
+        client = resolver.create_client("zai")
+        if not client:
+            raise ValueError("No Z.ai API key configured")
+        assert isinstance(client, ZAiClient)
+
+        catalog_service = ZAiModelCatalogService(self.repo.db, client=client)
         labels = await catalog_service.sync_models_on_startup(force_refresh=True)
         return labels
 

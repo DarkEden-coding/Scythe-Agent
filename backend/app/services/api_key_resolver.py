@@ -10,18 +10,19 @@ from app.db.repositories.settings_repo import SettingsRepository
 from app.providers.groq.client import GroqClient
 from app.providers.openai_sub.client import OpenAISubClient
 from app.providers.openrouter.client import OpenRouterClient
+from app.providers.zai.client import ZAiClient
 from app.utils.encryption import decrypt, mask_api_key
 
 if TYPE_CHECKING:
     from typing import Literal, Union
 
-    LLMClient = Union[OpenRouterClient, GroqClient, OpenAISubClient]
+    LLMClient = Union[OpenRouterClient, GroqClient, OpenAISubClient, ZAiClient]
 
 logger = logging.getLogger(__name__)
 
 
 class APIKeyResolver:
-    """Resolves API keys for OpenRouter and Groq from DB or environment."""
+    """Resolves provider API keys from DB or environment."""
 
     def __init__(self, settings_repo: SettingsRepository) -> None:
         self._repo = settings_repo
@@ -34,6 +35,9 @@ class APIKeyResolver:
         elif provider == "groq":
             encrypted_key = self._repo.get_groq_api_key()
             env_key = os.getenv("GROQ_API_KEY")
+        elif provider == "zai":
+            encrypted_key = self._repo.get_zai_api_key()
+            env_key = os.getenv("ZAI_API_KEY")
         elif provider == "openai-sub":
             encrypted_key = self._repo.get_openai_sub_access_token()
             env_key = os.getenv("OPENAI_SUB_ACCESS_TOKEN")
@@ -70,6 +74,9 @@ class APIKeyResolver:
     def create_client(self, provider: Literal["groq"]) -> GroqClient | None: ...
 
     @overload
+    def create_client(self, provider: Literal["zai"]) -> ZAiClient | None: ...
+
+    @overload
     def create_client(self, provider: Literal["openai-sub"]) -> OpenAISubClient | None: ...
 
     @overload
@@ -88,6 +95,11 @@ class APIKeyResolver:
             if not key:
                 return None
             return GroqClient(api_key=key)
+        if provider == "zai":
+            key = self.resolve("zai")
+            if not key:
+                return None
+            return ZAiClient(api_key=key)
         if provider == "openai-sub":
             token = self.resolve("openai-sub")
             if not token:

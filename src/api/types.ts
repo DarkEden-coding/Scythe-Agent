@@ -565,7 +565,14 @@ export interface GroqConfig {
   modelCount: number;
 }
 
-// 5b2. Brave Search configuration
+// 5b2. Z.ai configuration
+export interface ZAiConfig {
+  apiKeyMasked: string;
+  connected: boolean;
+  modelCount: number;
+}
+
+// 5b3. Brave Search configuration
 export interface BraveConfig {
   apiKeyMasked: string;
   connected: boolean;

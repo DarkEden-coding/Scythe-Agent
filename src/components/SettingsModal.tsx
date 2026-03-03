@@ -4,6 +4,7 @@ import { cn } from '@/utils/cn';
 import { Modal } from './Modal';
 import { OpenRouterSettingsPanel } from './settings/OpenRouterSettingsPanel';
 import { GroqSettingsPanel } from './settings/GroqSettingsPanel';
+import { ZAiSettingsPanel } from './settings/ZAiSettingsPanel';
 import { OpenAISubSettingsPanel } from './settings/OpenAISubSettingsPanel';
 import { ApiKeysSettingsPanel } from './settings/ApiKeysSettingsPanel';
 import { AgentSettingsPanel } from './settings/AgentSettingsPanel';
@@ -16,6 +17,7 @@ import type { ProviderId, SettingsTabId } from './ProviderSettingsDropdown';
 const PROVIDER_TABS: { id: ProviderId; label: string; icon: React.ReactNode }[] = [
   { id: 'openrouter', label: 'OpenRouter', icon: <Key className="w-4 h-4 text-cyan-400" /> },
   { id: 'groq', label: 'Groq', icon: <Zap className="w-4 h-4 text-amber-400" /> },
+  { id: 'zai', label: 'Z.ai', icon: <Server className="w-4 h-4 text-blue-400" /> },
   { id: 'openai-sub', label: 'OpenAI Sub', icon: <Sparkles className="w-4 h-4 text-emerald-400" /> },
 ];
 
@@ -102,6 +104,26 @@ export function SettingsModal({
         />
       );
     }
+    if (activeTab === 'zai') {
+      return (
+        <ZAiSettingsPanel
+          onModelsSynced={onProviderModelsChanged}
+          footer={
+            <p className="text-xs text-gray-400">
+              Need help?{' '}
+              <a
+                href="https://platform.z.ai/docs"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-400 hover:text-blue-300 inline-flex items-center gap-1"
+              >
+                Read the Z.ai docs
+              </a>
+            </p>
+          }
+        />
+      );
+    }
     if (activeTab === 'mcp') {
       return (
         <MCPSettingsPanel
@@ -128,7 +150,8 @@ export function SettingsModal({
         <ApiKeysSettingsPanel
           footer={
             <p className="text-xs text-gray-400">
-              API keys for non-LLM services (e.g. Brave Search). LLM providers (OpenRouter, Groq)
+              API keys for non-LLM services (e.g. Brave Search). LLM providers (OpenRouter, Groq,
+              Z.ai)
               are configured under Providers.
             </p>
           }

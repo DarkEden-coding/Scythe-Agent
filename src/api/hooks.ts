@@ -9,6 +9,7 @@ export { useFilesystemBrowser } from './hooks/useFilesystemBrowser';
 export { useSettings } from './hooks/useSettings';
 export { useOpenRouter } from './hooks/useOpenRouter';
 export { useGroq } from './hooks/useGroq';
+export { useZAi } from './hooks/useZAi';
 export { useBrave } from './hooks/useBrave';
 export { useOpenAISub } from './hooks/useOpenAISub';
 export { useMcp } from './hooks/useMcp';

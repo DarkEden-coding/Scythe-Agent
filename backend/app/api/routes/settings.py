@@ -21,6 +21,7 @@ from app.schemas.settings import (
     SetMemorySettingsRequest,
     OpenRouterConfigResponse,
     GroqConfigResponse,
+    ZAiConfigResponse,
     BraveConfigResponse,
     OpenAISubConfigResponse,
     SetApiKeyResponse,
@@ -328,6 +329,70 @@ async def test_groq_connection(db: Session = Depends(get_db)):
     except Exception as exc:
         return JSONResponse(
             status_code=500, content=err(f"Test failed: {exc}").model_dump()
+        )
+
+
+@router.get("/zai")
+def get_zai_config(db: Session = Depends(get_db)):
+    """Get Z.ai configuration including masked API key and connection status."""
+    try:
+        config = SettingsService(db).get_zai_config()
+        response = ZAiConfigResponse(**config)
+        return ok(response.model_dump())
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500, content=err(f"Failed to get config: {exc}").model_dump()
+        )
+
+
+@router.put("/zai/api-key")
+async def set_zai_api_key(request: SetApiKeyRequest, db: Session = Depends(get_db)):
+    """Set Z.ai API key and trigger model sync."""
+    try:
+        service = SettingsService(db)
+        result = service.set_zai_api_key(request.apiKey)
+        try:
+            models = await service.sync_zai_models()
+            result["modelCount"] = len(models)
+        except Exception as sync_error:
+            result["error"] = f"API key saved but model sync failed: {sync_error}"
+        response = SetApiKeyResponse(**result)
+        return ok(response.model_dump())
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500, content=err(f"Failed to set API key: {exc}").model_dump()
+        )
+
+
+@router.post("/zai/test")
+async def test_zai_connection(db: Session = Depends(get_db)):
+    """Test connection to Z.ai API using stored API key."""
+    try:
+        service = SettingsService(db)
+        success, error = await service.test_zai_connection()
+        response = TestConnectionResponse(success=success, error=error)
+        return ok(response.model_dump())
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500, content=err(f"Test failed: {exc}").model_dump()
+        )
+
+
+@router.post("/zai/sync")
+async def sync_zai_models(db: Session = Depends(get_db)):
+    """Manually trigger Z.ai model sync."""
+    try:
+        service = SettingsService(db)
+        models = await service.sync_zai_models()
+        response = SyncModelsResponse(success=True, models=models, count=len(models))
+        return ok(response.model_dump())
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500, content=err(f"Sync failed: {exc}").model_dump()
         )
 
 

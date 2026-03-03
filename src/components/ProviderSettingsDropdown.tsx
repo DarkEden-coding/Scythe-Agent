@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { Settings, ChevronDown, Key, Bot, Plug, Server } from 'lucide-react';
 import { cn } from '../utils/cn';
 
-export type ProviderId = 'openrouter' | 'groq' | 'openai-sub';
+export type ProviderId = 'openrouter' | 'groq' | 'zai' | 'openai-sub';
 
 export type SettingsTabId = ProviderId | 'agent' | 'mcp' | 'memory' | 'context' | 'api-keys' | 'auto-approve';
 

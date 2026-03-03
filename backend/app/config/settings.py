@@ -19,6 +19,7 @@ class AppSettings(BaseSettings):
     database_url: str = "sqlite:///./agentic.db"
     openrouter_api_key: str = ""
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    zai_api_key: str = ""
     fallback_models: list[str] = FALLBACK_MODELS
     default_active_model: str = DEFAULT_ACTIVE_MODEL
     default_context_limit: int = DEFAULT_CONTEXT_LIMIT

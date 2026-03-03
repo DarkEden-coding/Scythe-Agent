@@ -43,6 +43,9 @@ def _ensure_settings_schema(db: Session) -> None:
             text("ALTER TABLE settings ADD COLUMN reasoning_level TEXT DEFAULT 'medium'")
         )
         logger.info("Added missing settings.reasoning_level column during startup seed")
+    if "zai_api_key" not in columns:
+        db.execute(text("ALTER TABLE settings ADD COLUMN zai_api_key TEXT"))
+        logger.info("Added missing settings.zai_api_key column during startup seed")
 
 
 def seed_app_data(db: Session) -> None:
@@ -76,6 +79,17 @@ def seed_app_data(db: Session) -> None:
                 )
             except Exception as e:
                 logger.error(f"Failed to migrate OpenRouter API key: {e}")
+
+        env_zai_key = os.getenv("ZAI_API_KEY")
+        if env_zai_key and not settings_row.zai_api_key:
+            try:
+                encrypted_key = encrypt(env_zai_key)
+                settings_row.zai_api_key = encrypted_key
+                logger.info(
+                    "Migrated Z.ai API key from environment variable to database"
+                )
+            except Exception as e:
+                logger.error(f"Failed to migrate Z.ai API key: {e}")
 
     existing_models = {m.id for m in db.scalars(select(ProviderModelCache)).all()}
     for idx, model in enumerate(settings.fallback_models):

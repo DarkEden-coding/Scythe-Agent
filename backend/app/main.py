@@ -86,6 +86,7 @@ async def lifespan(app: FastAPI):
     with session_factory() as session:
         from app.db.repositories.settings_repo import SettingsRepository
         from app.providers.groq.model_catalog import GroqModelCatalogService
+        from app.providers.zai.model_catalog import ZAiModelCatalogService
         from app.services.api_key_resolver import APIKeyResolver
 
         repo = SettingsRepository(session)
@@ -102,6 +103,12 @@ async def lifespan(app: FastAPI):
             await GroqModelCatalogService(session, client=groq_client).sync_models_on_startup()
         else:
             logger.info("No Groq API key configured - skipping model sync")
+
+        zai_client = resolver.create_client("zai")
+        if zai_client is not None:
+            await ZAiModelCatalogService(session, client=zai_client).sync_models_on_startup()
+        else:
+            logger.info("No Z.ai API key configured - skipping model sync")
 
         from app.providers.openai_sub.model_catalog import OpenAISubModelCatalogService
 
