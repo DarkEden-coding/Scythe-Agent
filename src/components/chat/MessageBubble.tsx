@@ -17,6 +17,28 @@ function fileLabel(path: string): string {
   return idx >= 0 ? normalized.slice(idx + 1) : normalized;
 }
 
+function escapeMarkdownLinkLabel(text: string): string {
+  return text.replace(/([\\\[\]\(\)])/g, '\\$1');
+}
+
+function buildUserMarkdownContent(content: string, referencedFiles: string[]): string {
+  if (referencedFiles.length === 0) return content;
+  if (/\{\{FILE:\d+\}\}/.test(content)) {
+    return content.replace(FILE_PLACEHOLDER, (_, rawIndex: string) => {
+      const idx = parseInt(rawIndex, 10);
+      const path = referencedFiles[idx];
+      if (!path) return '';
+      return `[${escapeMarkdownLinkLabel(fileLabel(path))}](file-ref:${idx})`;
+    });
+  }
+
+  const refsPrefix = referencedFiles
+    .map((path, idx) => `[${escapeMarkdownLinkLabel(fileLabel(path))}](file-ref:${idx})`)
+    .join(' ');
+
+  return content.trim() ? `${refsPrefix}\n\n${content}` : refsPrefix;
+}
+
 /** Matches {{FILE:i}} plus any trailing stray braces (e.g. typo {{FILE:0}}}) */
 const FILE_PLACEHOLDER = /\{\{FILE:(\d+)\}\}\}*/g;
 
@@ -64,11 +86,27 @@ function renderUserContent(
   referencedFiles: string[],
   attachments?: { data: string; mimeType: string; name?: string }[],
 ): React.ReactNode {
-  const textPart = referencedFiles.length === 0 ? (
-    <span className="whitespace-pre-wrap break-words">{content}</span>
-  ) : (
-    renderUserTextWithRefs(content, referencedFiles)
+  const markdownContent = buildUserMarkdownContent(content, referencedFiles);
+  const textPart = (
+    <Markdown
+      content={markdownContent}
+      renderSpecialLink={(href, children) => {
+        if (!href.startsWith('file-ref:')) return null;
+        const idx = parseInt(href.slice('file-ref:'.length), 10);
+        const path = referencedFiles[idx];
+        if (!path) return null;
+        return (
+          <span
+            title={path}
+            className="inline-flex items-center px-2 py-0.5 rounded-md border border-aqua-500/25 bg-aqua-500/10 text-[10px] text-aqua-200 no-underline align-middle"
+          >
+            {children}
+          </span>
+        );
+      }}
+    />
   );
+
   if (!attachments?.length) return textPart;
   return (
     <div className="flex flex-col gap-2">
@@ -83,59 +121,6 @@ function renderUserContent(
       {content.trim() ? <div>{textPart}</div> : null}
     </div>
   );
-}
-
-function renderUserTextWithRefs(content: string, referencedFiles: string[]): React.ReactNode {
-  if (referencedFiles.length === 0) return <span className="whitespace-pre-wrap break-words">{content}</span>;
-  if (!/\{\{FILE:\d+\}\}/.test(content)) {
-    return (
-      <>
-        {referencedFiles.map((path) => (
-          <span
-            key={path}
-            title={path}
-            className="inline-flex items-center px-2 py-0.5 rounded-md border border-aqua-500/25 bg-aqua-500/10 text-[10px] text-aqua-200"
-          >
-            {fileLabel(path)}
-          </span>
-        ))}
-        <span className="whitespace-pre-wrap break-words">{content}</span>
-      </>
-    );
-  }
-  const parts: React.ReactNode[] = [];
-  let lastIndex = 0;
-  let m: RegExpExecArray | null;
-  const pattern = new RegExp(FILE_PLACEHOLDER.source, 'g');
-  while ((m = pattern.exec(content)) !== null) {
-    if (m.index > lastIndex)
-      parts.push(
-        <span key={`t-${lastIndex}`} className="whitespace-pre-wrap break-words">
-          {content.slice(lastIndex, m.index)}
-        </span>
-      );
-    const idx = parseInt(m[1] ?? '0', 10);
-    if (idx >= 0 && idx < referencedFiles.length) {
-      const path = referencedFiles[idx]!;
-      parts.push(
-        <span
-          key={path}
-          title={path}
-          className="inline-flex items-center px-2 py-0.5 rounded-md border border-aqua-500/25 bg-aqua-500/10 text-[10px] text-aqua-200"
-        >
-          {fileLabel(path)}
-        </span>
-      );
-    }
-    lastIndex = m.index + (m[0]?.length ?? 0);
-  }
-  if (lastIndex < content.length)
-    parts.push(
-      <span key={`t-${lastIndex}`} className="whitespace-pre-wrap break-words">
-        {content.slice(lastIndex)}
-      </span>
-    );
-  return <>{parts}</>;
 }
 
 export function MessageBubble({ message, onEdit, isProcessing }: MessageBubbleProps) {
@@ -299,7 +284,7 @@ export function MessageBubble({ message, onEdit, isProcessing }: MessageBubblePr
                   {message.role === 'agent' ? (
                     <Markdown content={message.content} />
                   ) : (
-                    <div className="flex flex-wrap items-center gap-1.5">
+                    <div className="min-w-0 max-w-full">
                       {renderUserContent(
                         message.content,
                         message.referencedFiles ?? [],

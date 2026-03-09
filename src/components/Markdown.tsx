@@ -1,15 +1,19 @@
+import type { ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
+import type { Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { cn } from '../utils/cn';
 
 interface MarkdownProps {
   readonly content: string;
   readonly className?: string;
+  readonly renderSpecialLink?: (href: string, children: ReactNode) => ReactNode | null;
 }
 
 const baseClass = 'markdown-content max-w-none min-w-0 leading-relaxed text-inherit break-words [&_*]:max-w-full';
 
-const components = {
+function createComponents(renderSpecialLink?: MarkdownProps['renderSpecialLink']): Components {
+  return {
   p: ({ children }) => <p className="my-1.5 last:my-0 break-words [overflow-wrap:anywhere]">{children}</p>,
   ul: ({ children }) => <ul className="my-1.5 list-disc pl-5 space-y-0.5">{children}</ul>,
   ol: ({ children }) => <ol className="my-1.5 list-decimal pl-5 space-y-0.5">{children}</ol>,
@@ -32,11 +36,17 @@ const components = {
     );
   },
   pre: ({ children }) => <>{children}</>,
-  a: ({ href, children }) => (
-    <a href={href} target="_blank" rel="noopener noreferrer" className="text-aqua-400 hover:text-aqua-300 underline">
-      {children}
-    </a>
-  ),
+  a: ({ href, children }) => {
+    if (href && renderSpecialLink) {
+      const rendered = renderSpecialLink(href, children);
+      if (rendered) return rendered;
+    }
+    return (
+      <a href={href} target="_blank" rel="noopener noreferrer" className="text-aqua-400 hover:text-aqua-300 underline">
+        {children}
+      </a>
+    );
+  },
   strong: ({ children }) => <strong className="font-semibold text-gray-100">{children}</strong>,
   h1: ({ children }) => <h1 className="text-base font-semibold mt-2 mb-1 first:mt-0">{children}</h1>,
   h2: ({ children }) => <h2 className="text-sm font-semibold mt-2 mb-1 first:mt-0">{children}</h2>,
@@ -54,12 +64,13 @@ const components = {
   ),
   td: ({ children }) => <td className="border border-gray-600/50 px-2 py-1 break-words [overflow-wrap:anywhere]">{children}</td>,
   tr: ({ children }) => <tr>{children}</tr>,
-};
+  };
+}
 
-export function Markdown({ content, className }: MarkdownProps) {
+export function Markdown({ content, className, renderSpecialLink }: MarkdownProps) {
   return (
     <div className={cn(baseClass, className)}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={createComponents(renderSpecialLink)}>
         {content}
       </ReactMarkdown>
     </div>
