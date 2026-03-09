@@ -209,7 +209,7 @@ export function MessageBubble({ message, onEdit, isProcessing }: MessageBubblePr
 
   return (
     <div
-      className={cn('flex gap-3', message.role === 'user' ? 'flex-row-reverse' : 'flex-row')}
+      className={cn('flex min-w-0 gap-3', message.role === 'user' ? 'flex-row-reverse' : 'flex-row')}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
@@ -227,7 +227,7 @@ export function MessageBubble({ message, onEdit, isProcessing }: MessageBubblePr
           <Bot className="w-3.5 h-3.5 text-aqua-400" />
         )}
       </div>
-      <div className={cn('flex-1 max-w-[85%]', message.role === 'user' ? 'text-right' : 'text-left')}>
+      <div className={cn('flex-1 min-w-0 max-w-[85%]', message.role === 'user' ? 'text-right' : 'text-left')}>
         {isEditing ? (
           <div className="flex flex-col gap-1.5">
             <div className="w-full bg-gray-800 border border-aqua-500/40 rounded-xl text-sm transition-colors focus-within:border-aqua-500/50">
@@ -290,7 +290,7 @@ export function MessageBubble({ message, onEdit, isProcessing }: MessageBubblePr
               <div className="relative group/bubble">
                 <div
                   className={cn(
-                    'inline-block px-4 py-2.5 rounded-2xl text-sm shadow-md',
+                    'inline-block max-w-full min-w-0 px-4 py-2.5 rounded-2xl text-sm shadow-md',
                     message.role === 'user'
                       ? 'bg-linear-to-br from-aqua-500/90 to-aqua-600/90 text-gray-950 rounded-br-md'
                       : 'bg-gray-800 text-gray-200 rounded-bl-md border border-gray-700/40',

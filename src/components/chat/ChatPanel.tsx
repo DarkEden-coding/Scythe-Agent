@@ -290,7 +290,7 @@ export function ChatPanel({
           <div
             ref={chatScroll.ref}
             onScroll={chatScroll.onScroll}
-            className="flex-1 overflow-y-auto p-4 space-y-4 relative"
+            className="flex-1 overflow-y-auto overflow-x-hidden min-w-0 p-4 space-y-4 relative"
           >
             {chatLoading && (
               <div className="absolute inset-0 flex items-center justify-center bg-gray-900/50 z-10">
