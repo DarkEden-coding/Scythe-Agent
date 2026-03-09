@@ -136,6 +136,15 @@ export interface ProjectChat {
   isActive?: boolean;
 }
 
+export interface ProjectMemory {
+  id: string;
+  projectId: string;
+  title: string;
+  contentMarkdown: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export interface Project {
   id: string;
   name: string;

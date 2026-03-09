@@ -9,6 +9,7 @@ from app.services.output_spillover import (
     TOOL_OUTPUT_TOKEN_THRESHOLD,
     preview_tool_output_if_over_threshold,
 )
+from app.initial_information.project_memory_titles import build_project_memory_titles_text
 from app.initial_information.project_overview import add_project_overview_3_levels
 from app.schemas.chat import ContextItemOut
 from app.services.token_counter import TokenCounter
@@ -58,6 +59,8 @@ def build_context_items(
         if project:
             project_path = project.path
 
+    project_id = chat.project_id if chat else None
+
     if project_path:
         base_messages = [{"role": "user", "content": ""}]
         enhanced = add_project_overview_3_levels(base_messages, project_path=project_path)
@@ -76,6 +79,19 @@ def build_context_items(
                         )
                     )
                 break
+
+    if project_id:
+        memory_titles_text = build_project_memory_titles_text(project_id, db=chat_repo.db)
+        if memory_titles_text:
+            items.append(
+                ContextItemOut(
+                    id=f"ctx-memory-{chat_id[:8]}",
+                    type="tool_output",
+                    name="Project memory titles",
+                    tokens=token_counter.count(memory_titles_text),
+                    full_name=memory_titles_text,
+                )
+            )
 
     messages = chat_repo.list_messages(chat_id)
     for i, m in enumerate(messages):

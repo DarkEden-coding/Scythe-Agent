@@ -58,7 +58,7 @@ export function App() {
     return map;
   }, [chat.toolCalls, chat.checkpoints]);
   const projectsApi = useProjects();
-  const { projects, loading: projectsLoading } = projectsApi;
+  const { projects, loading: projectsLoading, projectMemoriesByProject } = projectsApi;
   const settings = useSettings();
 
   // OAuth popup: when we load with ?openai-sub in a popup, notify opener and close
@@ -326,12 +326,20 @@ export function App() {
       });
       if (!res.ok) {
         showToast(`Error: ${res.error}`);
-      } else if (res.data.conflict) {
+        return { ok: false as const, error: res.error };
+      }
+      if (res.data.conflict) {
         showToast('Plan conflict detected. Refresh and retry.');
       } else {
         showToast('Plan updated');
       }
-      return res;
+      return {
+        ok: true as const,
+        data: {
+          conflict: res.data.conflict,
+          plan: res.data.plan,
+        },
+      };
     },
     [chat, showToast],
   );
@@ -341,7 +349,7 @@ export function App() {
       const res = await chat.approvePlan(planId, action);
       if (!res.ok) {
         showToast(`Error: ${res.error}`);
-        return res;
+        return { ok: false as const, error: res.error };
       }
       const implementationChatId = res.data.implementationChatId;
       if (action === 'keep_context' && activeChatId) {
@@ -355,7 +363,13 @@ export function App() {
           ? 'Approved plan and started implementation in current chat'
           : 'Approved plan and started implementation in a new chat',
       );
-      return res;
+      return {
+        ok: true as const,
+        data: {
+          plan: res.data.plan,
+          implementationChatId,
+        },
+      };
     },
     [activeChatId, chat, handleOpenImplementationChat, showToast],
   );
@@ -442,6 +456,35 @@ export function App() {
     }
   };
 
+  const handleLoadProjectMemories = async (projectId: string, options?: { force?: boolean }) => {
+    const res = await projectsApi.getProjectMemories(projectId, options);
+    if (!res.ok) showToast(`Error: ${res.error}`);
+    return res;
+  };
+
+  const handleUpsertProjectMemory = async (
+    projectId: string,
+    payload: { title: string; contentMarkdown: string },
+  ) => {
+    const res = await projectsApi.upsertProjectMemory(projectId, payload);
+    if (res.ok) {
+      showToast('Project memory saved');
+    } else {
+      showToast(`Error: ${res.error}`);
+    }
+    return res;
+  };
+
+  const handleDeleteProjectMemory = async (projectId: string, title: string) => {
+    const res = await projectsApi.deleteProjectMemory(projectId, title);
+    if (res.ok) {
+      showToast('Project memory deleted');
+    } else {
+      showToast(`Error: ${res.error}`);
+    }
+    return res;
+  };
+
   const handleUpdateAutoApproveRules = async (rules: Omit<AutoApproveRule, 'id' | 'createdAt'>[]) => {
     const res = await settings.updateAutoApproveRules(rules);
     if (!res.ok) {
@@ -505,6 +548,7 @@ export function App() {
             onSendMessage={handleSendMessage}
             onCancel={handleCancelMessage}
             projects={projects}
+            projectMemoriesByProject={projectMemoriesByProject}
             activeChatId={activeChatId}
             activePlanId={activePlanId}
             onSwitchChat={handleSwitchChat}
@@ -517,6 +561,9 @@ export function App() {
             onReorderProjects={handleReorderProjects}
             onReorderChats={handleReorderChats}
             onDeleteProject={handleDeleteProject}
+            onLoadProjectMemories={handleLoadProjectMemories}
+            onUpsertProjectMemory={handleUpsertProjectMemory}
+            onDeleteProjectMemory={handleDeleteProjectMemory}
             onEditMessage={activeChatId != null ? handleEditMessage : undefined}
             verificationIssues={chat.verificationIssues}
             observationStatus={chat.observationStatus}

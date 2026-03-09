@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Search, Folder, MessageSquare, GripVertical, Check } from 'lucide-react';
-import type { Project } from '@/types';
+import type { Project, ProjectMemory } from '@/types';
 import { ProjectRow } from './ProjectRow';
 import { ReorderPanel } from './ReorderPanel';
 
 interface ProjectsTabProps {
   readonly projects: Project[];
   readonly activeChatId: string | null;
+  readonly projectMemoriesByProject?: Record<string, ProjectMemory[]>;
   readonly onSelectChat: (chatId: string) => void;
   readonly onCreateChat?: (projectId: string, title?: string) => Promise<void> | void;
   readonly onRenameChat?: (chatId: string, title: string) => Promise<void> | void;
@@ -16,11 +17,15 @@ interface ProjectsTabProps {
   readonly onReorderProjects?: (projectIds: string[]) => Promise<void> | void;
   readonly onReorderChats?: (projectId: string, chatIds: string[]) => Promise<void> | void;
   readonly onDeleteProject?: (projectId: string) => Promise<void> | void;
+  readonly onLoadProjectMemories?: (projectId: string, options?: { force?: boolean }) => Promise<unknown> | void;
+  readonly onUpsertProjectMemory?: (projectId: string, payload: { title: string; contentMarkdown: string }) => Promise<{ ok?: boolean; error?: string } | void> | void;
+  readonly onDeleteProjectMemory?: (projectId: string, title: string) => Promise<{ ok?: boolean; error?: string } | void> | void;
 }
 
 export function ProjectsTab({
   projects,
   activeChatId,
+  projectMemoriesByProject = {},
   onSelectChat,
   onCreateChat,
   onRenameChat,
@@ -30,6 +35,9 @@ export function ProjectsTab({
   onReorderProjects,
   onReorderChats,
   onDeleteProject,
+  onLoadProjectMemories,
+  onUpsertProjectMemory,
+  onDeleteProjectMemory,
 }: ProjectsTabProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
@@ -275,6 +283,7 @@ export function ProjectsTab({
                   hoveredChatId={hoveredChatId}
                   selectedChatId={selectedChatId}
                   editMenuChatId={editMenuChatId}
+                  projectMemories={projectMemoriesByProject[project.id] ?? []}
                   onToggle={toggleProject}
                   onSelectChat={onSelectChat}
                   onMouseEnterChat={handleMouseEnterChat}
@@ -286,6 +295,9 @@ export function ProjectsTab({
                   onDeleteChat={onDeleteChat}
                   onRequestDeleteChat={onRequestDeleteChat}
                   onDeleteProject={onDeleteProject}
+                  onLoadProjectMemories={onLoadProjectMemories}
+                  onUpsertProjectMemory={onUpsertProjectMemory}
+                  onDeleteProjectMemory={onDeleteProjectMemory}
                 />
               );
             })}

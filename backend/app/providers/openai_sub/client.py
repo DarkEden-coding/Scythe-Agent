@@ -10,35 +10,23 @@ import asyncio
 import json
 import logging
 import platform
-import re
 import ssl
 import uuid
 from typing import Any, TypedDict, cast
 
 import httpx
 
+from app.providers.openai_sub.models import get_openai_sub_models_payload
+
 logger = logging.getLogger(__name__)
 
 CODEX_API_BASE = "https://chatgpt.com/backend-api/codex"
 RETRY_DELAYS = (5, 10, 15, 20)
 
-_OPENAI_SUB_MODEL_IDS = [
-    "gpt-5.1-codex-mini",
-    "gpt-5.3-codex",
-]
-
 
 def _should_retry(status_code: int) -> bool:
     """Retry on server errors (5xx) or rate limit (429)."""
     return status_code >= 500 or status_code == 429
-
-
-def _infer_reasoning_levels(model_id: str) -> list[str]:
-    """Best-effort reasoning levels for subscription models when API lacks metadata."""
-    low = model_id.lower()
-    if re.search(r"(gpt[-_]?5)|(^|[^a-z0-9])o[13]([^a-z0-9]|$)", low):
-        return ["minimal", "low", "medium", "high"]
-    return ["low", "medium", "high"]
 
 
 class StreamContentEvent(TypedDict):
@@ -550,17 +538,7 @@ class OpenAISubClient:
 
     async def get_models(self) -> list[dict]:
         """Return subscription models. /v1/models returns 403 for OAuth tokens."""
-        return [
-            {
-                "id": model_id,
-                "reasoning": {
-                    "supported": True,
-                    "efforts": _infer_reasoning_levels(model_id),
-                    "default": "medium",
-                },
-            }
-            for model_id in _OPENAI_SUB_MODEL_IDS
-        ]
+        return get_openai_sub_models_payload()
 
     async def create_chat_completion(
         self,

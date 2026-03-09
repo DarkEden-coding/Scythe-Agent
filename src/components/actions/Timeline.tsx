@@ -1,7 +1,8 @@
-import { ChevronDown, ChevronRight, GitBranch, RotateCcw } from 'lucide-react';
+import { ChevronDown, ChevronRight, GitBranch, RotateCcw, Wand2, Activity, MousePointerClick } from 'lucide-react';
 import type { SubAgentRun, ToolCall, FileEdit, Checkpoint, ReasoningBlock } from '@/types';
 import { useAutoScroll } from '@/hooks/useAutoScroll';
 import { buildTimeline, type TimelineItem } from './buildTimeline';
+import { MemoryActionCard } from './MemoryActionCard';
 import { ToolCallCard, statusIcons } from './ToolCallCard';
 import { SubAgentCard } from './SubAgentCard';
 import { FileEditCard } from './FileEditCard';
@@ -10,6 +11,7 @@ import { cn } from '@/utils/cn';
 
 function getTimelineItemKey(item: TimelineItem, idx: number): string {
   if (item.type === 'tool') return item.call.id;
+  if (item.type === 'memory') return item.call.id;
   if (item.type === 'file') return item.edit.id;
   if (item.type === 'reasoning') return item.block.id;
   if (item.type === 'sub_agent') return item.run.id;
@@ -130,6 +132,41 @@ export function Timeline({
   const scrollTrigger = { toolCalls, subAgentRuns, fileEdits, reasoningBlocks };
   const scroll = useAutoScroll(scrollTrigger);
 
+  if (timeline.length === 0) {
+    return (
+      <div className="flex-1 overflow-y-auto p-3">
+        <div className="flex items-center justify-center min-h-full rounded-3xl border border-dashed border-gray-700/50 bg-gray-850/40 px-6 py-8">
+          <div className="max-w-md text-center">
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-purple-500/20 bg-purple-500/10">
+              <Wand2 className="w-5 h-5 text-purple-300" />
+            </div>
+            <h3 className="text-sm font-semibold text-gray-100">Agent actions will appear here</h3>
+            <p className="mt-2 text-xs leading-6 text-gray-400">
+              Tool calls, reasoning, file edits, and checkpoints show up after the agent starts working on your request.
+            </p>
+            <div className="mt-5 grid gap-2 text-left sm:grid-cols-3">
+              <div className="rounded-2xl border border-gray-700/40 bg-gray-800/70 p-3">
+                <Activity className="w-4 h-4 text-aqua-400 mb-2" />
+                <p className="text-[11px] font-medium text-gray-200">Live activity</p>
+                <p className="mt-1 text-[11px] text-gray-400">See the agent think and call tools.</p>
+              </div>
+              <div className="rounded-2xl border border-gray-700/40 bg-gray-800/70 p-3">
+                <GitBranch className="w-4 h-4 text-aqua-400 mb-2" />
+                <p className="text-[11px] font-medium text-gray-200">Checkpoints</p>
+                <p className="mt-1 text-[11px] text-gray-400">Track steps and revert changes when needed.</p>
+              </div>
+              <div className="rounded-2xl border border-gray-700/40 bg-gray-800/70 p-3">
+                <MousePointerClick className="w-4 h-4 text-aqua-400 mb-2" />
+                <p className="text-[11px] font-medium text-gray-200">Starts automatically</p>
+                <p className="mt-1 text-[11px] text-gray-400">This placeholder disappears on the first action.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       ref={scroll.ref}
@@ -212,6 +249,11 @@ export function Timeline({
                             isExpanded={expandedTools.has(item.call.id)}
                             onToggle={() => onToggleTool(item.call.id)}
                           />
+                        </div>
+                      )}
+                      {item.type === 'memory' && (
+                        <div className="flex justify-center">
+                          <MemoryActionCard call={item.call} />
                         </div>
                       )}
                       {item.type === 'sub_agent' && (

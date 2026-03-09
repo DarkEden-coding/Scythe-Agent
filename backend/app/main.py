@@ -11,6 +11,7 @@ from app.api.routes.events import router as events_router
 from app.api.routes.filesystem import router as filesystem_router
 from app.api.routes.mcp import router as mcp_router
 from app.api.routes.observations import router as observations_router
+from app.api.routes.project_memories import router as project_memories_router
 from app.api.routes.projects import router as projects_router
 from app.api.routes.settings import router as settings_router
 from app.api.routes.tools import router as tools_router
@@ -112,12 +113,7 @@ async def lifespan(app: FastAPI):
 
         from app.providers.openai_sub.model_catalog import OpenAISubModelCatalogService
 
-        openai_sub_client = resolver.create_client("openai-sub")
-        if openai_sub_client:
-            catalog = OpenAISubModelCatalogService(session, client=openai_sub_client)
-            await catalog.sync_models_on_startup()
-        else:
-            logger.info("No OpenAI Subscription configured - skipping model sync")
+        await OpenAISubModelCatalogService(session).sync_models_on_startup()
 
     with session_factory() as session:
         try:
@@ -179,6 +175,7 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(projects_router)
+    app.include_router(project_memories_router)
     app.include_router(filesystem_router)
     app.include_router(settings_router)
     app.include_router(mcp_router)

@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
+from app.providers.openai_sub.models import get_openai_sub_model
+
 if TYPE_CHECKING:
     from app.db.repositories.settings_repo import SettingsRepository
 
@@ -71,12 +73,21 @@ def model_has_vision(
         return _vision_from_fallback(provider, model_label)
 
     if provider == "openai-sub":
+        supports_images = raw.get("supportsImages")
+        if isinstance(supports_images, bool):
+            return supports_images
         capabilities = raw.get("capabilities") or raw.get("modalities") or raw.get("input_modalities")
         if isinstance(capabilities, list):
             normalized = {str(cap).lower() for cap in capabilities}
             if "vision" in normalized or "image" in normalized:
                 return True
-        # OpenAI Subscription models should be treated as vision-capable by default.
+            if normalized:
+                return False
+        known_model = get_openai_sub_model(model_label)
+        if known_model is not None:
+            supports_images = known_model.get("supportsImages")
+            if isinstance(supports_images, bool):
+                return supports_images
         return True
 
     return False
@@ -88,6 +99,11 @@ def _vision_from_fallback(provider: str, model_label: str) -> bool:
     if provider == "groq":
         return model_label in GROQ_VISION_MODELS or "vision" in label_lower or "llava" in label_lower
     if provider == "openai-sub":
+        known_model = get_openai_sub_model(model_label)
+        if known_model is not None:
+            supports_images = known_model.get("supportsImages")
+            if isinstance(supports_images, bool):
+                return supports_images
         return True
     if provider == "openrouter":
         return (

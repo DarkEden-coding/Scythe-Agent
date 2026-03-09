@@ -16,6 +16,7 @@ import type {
   ContextItem,
   Project,
   ProjectChat,
+  ProjectMemory,
   VerificationIssues,
   ObservationData,
 } from '@/types';
@@ -47,6 +48,7 @@ interface ChatPanelProps {
   ) => void;
   readonly onCancel?: () => void;
   readonly projects: Project[];
+  readonly projectMemoriesByProject?: Record<string, ProjectMemory[]>;
   readonly activeChatId?: string | null;
   readonly activePlanId?: string | null;
   readonly onSwitchChat?: (chatId: string) => void;
@@ -59,6 +61,9 @@ interface ChatPanelProps {
   readonly onReorderProjects?: (projectIds: string[]) => Promise<void> | void;
   readonly onReorderChats?: (projectId: string, chatIds: string[]) => Promise<void> | void;
   readonly onDeleteProject?: (projectId: string) => Promise<void> | void;
+  readonly onLoadProjectMemories?: (projectId: string, options?: { force?: boolean }) => Promise<unknown> | void;
+  readonly onUpsertProjectMemory?: (projectId: string, payload: { title: string; contentMarkdown: string }) => Promise<{ ok?: boolean; error?: string } | void> | void;
+  readonly onDeleteProjectMemory?: (projectId: string, title: string) => Promise<{ ok?: boolean; error?: string } | void> | void;
   readonly onEditMessage?: (messageId: string, newContent: string, referencedFiles?: string[]) => void;
   readonly verificationIssues?: Record<string, VerificationIssues>;
   readonly observationStatus?: ObservationStatus;
@@ -87,6 +92,7 @@ export function ChatPanel({
   onSendMessage,
   onCancel,
   projects,
+  projectMemoriesByProject = {},
   activeChatId: externalActiveChatId,
   activePlanId = null,
   onSwitchChat,
@@ -99,6 +105,9 @@ export function ChatPanel({
   onReorderProjects,
   onReorderChats,
   onDeleteProject,
+  onLoadProjectMemories,
+  onUpsertProjectMemory,
+  onDeleteProjectMemory,
   onEditMessage,
   verificationIssues = {},
   observationStatus = 'idle',
@@ -341,6 +350,7 @@ export function ChatPanel({
       {activeTab === 'projects' && (
         <ProjectsTab
           projects={projects}
+          projectMemoriesByProject={projectMemoriesByProject}
           activeChatId={activeChatId}
           onSelectChat={handleSelectChat}
           onCreateChat={handleCreateChatAndSwitch}
@@ -351,6 +361,9 @@ export function ChatPanel({
           onReorderProjects={onReorderProjects}
           onReorderChats={onReorderChats}
           onDeleteProject={onDeleteProject}
+          onLoadProjectMemories={onLoadProjectMemories}
+          onUpsertProjectMemory={onUpsertProjectMemory}
+          onDeleteProjectMemory={onDeleteProjectMemory}
         />
       )}
 

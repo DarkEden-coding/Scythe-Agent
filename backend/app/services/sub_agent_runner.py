@@ -7,7 +7,7 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from app.initial_information.project_overview import add_project_overview_3_levels
+from app.initial_information import apply_initial_information
 from app.services.llm_streamer import LLMStreamer
 from app.tools.openrouter_format import get_openrouter_tools
 from app.tools.registry import get_tool_registry
@@ -96,9 +96,12 @@ class SubAgentRunner:
             },
             {"role": "user", "content": user_content},
         ]
-        messages = add_project_overview_3_levels(
+        chat = self._chat_repo.get_chat(chat_id)
+        messages = apply_initial_information(
             messages,
             project_path=project_path,
+            project_id=chat.project_id if chat else None,
+            db=self._chat_repo.db,
             model=model,
         )
 
@@ -107,7 +110,6 @@ class SubAgentRunner:
         tool_calls_collected: list[dict] = []
         sub_agent_todos: list[dict] = []
         last_assistant_text = ""
-        last_iteration_text = ""
         settings = self._settings_service.get_settings()
         reasoning_param = self._reasoning_param_for_settings(settings)
 
@@ -149,7 +151,6 @@ class SubAgentRunner:
                     final_text = (response_text or result.finish_content or "").strip()
                     response_text = final_text
                     last_assistant_text = final_text
-                last_iteration_text = response_text or ""
 
                 if result.finish_reason == "stop" or not result.tool_calls:
                     remaining_iterations = max(0, max_iterations - iteration)

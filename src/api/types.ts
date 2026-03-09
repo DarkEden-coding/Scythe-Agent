@@ -17,6 +17,7 @@ import {
   TodoItem,
   ProjectPlan,
   Project,
+  ProjectMemory,
 } from '../types';
 
 /* ── Generic envelope ──────────────────────────────────────────── */
@@ -277,6 +278,23 @@ export interface DeleteChatResponse {
 export interface ReorderChatsRequest {
   projectId: string;
   chatIds: string[];
+}
+
+export interface GetProjectMemoriesResponse {
+  memories: ProjectMemory[];
+}
+
+export interface UpsertProjectMemoryRequest {
+  title: string;
+  contentMarkdown: string;
+}
+
+export interface UpsertProjectMemoryResponse {
+  memory: ProjectMemory;
+}
+
+export interface DeleteProjectMemoryResponse {
+  deletedTitle: string;
 }
 
 /* ── Data fetching (backend → frontend) ────────────────────────── */

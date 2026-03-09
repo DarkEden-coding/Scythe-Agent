@@ -1,6 +1,15 @@
 from pydantic import BaseModel, Field
 
 
+class ProjectMemoryOut(BaseModel):
+    id: str
+    projectId: str
+    title: str
+    contentMarkdown: str
+    createdAt: str
+    updatedAt: str
+
+
 class ProjectChatOut(BaseModel):
     id: str
     title: str
@@ -73,3 +82,20 @@ class DeleteChatResponse(BaseModel):
 
 class ReorderChatsRequest(BaseModel):
     chatIds: list[str]
+
+
+class GetProjectMemoriesResponse(BaseModel):
+    memories: list[ProjectMemoryOut]
+
+
+class UpsertProjectMemoryRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=120)
+    contentMarkdown: str = Field(min_length=1, max_length=2000)
+
+
+class UpsertProjectMemoryResponse(BaseModel):
+    memory: ProjectMemoryOut
+
+
+class DeleteProjectMemoryResponse(BaseModel):
+    deletedTitle: str

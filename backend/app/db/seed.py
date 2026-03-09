@@ -22,17 +22,20 @@ logger = logging.getLogger(__name__)
 
 
 def _ensure_settings_schema(db: Session) -> None:
-    """Apply lightweight startup-safe schema guards for settings table."""
+    """Apply lightweight startup-safe schema guards for the SQLite schema."""
     bind = db.get_bind()
     inspector = inspect(bind)
+    # Importing models ensures all declarative mappings are registered before
+    # attempting lightweight startup reconciliation for older local SQLite DBs.
+    import app.db.models  # noqa: F401
+
+    Base.metadata.create_all(bind=bind, checkfirst=True)
+
     try:
         columns = {c["name"] for c in inspector.get_columns("settings")}
     except NoSuchTableError:
         # Fresh DB bootstraps (no Alembic run yet) need a minimal schema to start.
-        # Importing models ensures all declarative mappings are registered.
-        import app.db.models  # noqa: F401
-
-        Base.metadata.create_all(bind=bind, checkfirst=True)
+        inspector = inspect(bind)
         columns = {c["name"] for c in inspect(bind).get_columns("settings")}
         logger.info("Created missing database tables during startup seed")
     if "active_model_provider" not in columns:

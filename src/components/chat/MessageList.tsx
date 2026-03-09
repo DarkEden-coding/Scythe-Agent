@@ -1,4 +1,4 @@
-import { RotateCcw, Bot, MessageSquare, Database } from 'lucide-react';
+import { RotateCcw, Bot, MessageSquare, Database, Sparkles } from 'lucide-react';
 import type { Message, Checkpoint, VerificationIssues, ObservationData } from '@/types';
 import { MessageBubble } from './MessageBubble';
 import { VerificationIssuesBanner } from './VerificationIssuesBanner';
@@ -61,6 +61,28 @@ function ObservationSwitchMessage({
   );
 }
 
+function ChatPlaceholder() {
+  return (
+    <div className="flex items-center justify-center min-h-full py-10">
+      <div className="max-w-xl w-full rounded-3xl border border-gray-700/40 bg-gray-850/70 shadow-xl shadow-black/20 p-6 text-left">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-aqua-500/20 bg-aqua-500/10">
+            <Sparkles className="w-5 h-5 text-aqua-400" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-gray-100">Start the conversation</p>
+            <p className="text-xs text-gray-400">This space will fill with your chat once you send a message.</p>
+          </div>
+        </div>
+
+        <div className="space-y-3 text-sm text-gray-300">
+          <p>Try asking the agent to inspect code, explain a bug, or make a frontend change.</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function MessageList({
   messages,
   activeChatId,
@@ -83,6 +105,10 @@ export function MessageList({
         <p className="text-xs text-gray-500">Create a project or chat to get started.</p>
       </div>
     );
+  }
+
+  if (messages.length === 0 && !isProcessing) {
+    return <ChatPlaceholder />;
   }
 
   const timelineSource = observations.length > 0

@@ -174,13 +174,16 @@ class SettingsService:
         except (json_module.JSONDecodeError, TypeError):
             raw = {}
         try:
-            pricing = raw.get("pricing") if isinstance(raw, dict) else {}
-            if isinstance(pricing, dict):
-                prompt = _parse_price(pricing.get("prompt"))
-                completion = _parse_price(pricing.get("completion"))
-                if prompt is not None or completion is not None:
-                    avg_per_token = ((prompt or 0) + (completion or 0)) / 2
-                    meta["pricePerMillion"] = round(avg_per_token * 1_000_000, 4)
+            prompt = _parse_price(raw.get("inputPrice")) if isinstance(raw, dict) else None
+            completion = _parse_price(raw.get("outputPrice")) if isinstance(raw, dict) else None
+            if prompt is None and completion is None:
+                pricing = raw.get("pricing") if isinstance(raw, dict) else {}
+                if isinstance(pricing, dict):
+                    prompt = _parse_price(pricing.get("prompt"))
+                    completion = _parse_price(pricing.get("completion"))
+            if prompt is not None or completion is not None:
+                avg_per_token = ((prompt or 0) + (completion or 0)) / 2
+                meta["pricePerMillion"] = round(avg_per_token * 1_000_000, 4)
             raw_model = raw if isinstance(raw, dict) else None
             reasoning_caps = extract_reasoning_capabilities(
                 provider=model.provider,
@@ -591,13 +594,10 @@ class SettingsService:
         return {"success": True}
 
     async def sync_openai_sub_models(self) -> list[str]:
-        """Sync OpenAI Subscription models from API."""
+        """Refresh OpenAI Subscription models from the bundled schema."""
         from app.providers.openai_sub.model_catalog import OpenAISubModelCatalogService
-        from app.services.api_key_resolver import APIKeyResolver
 
-        resolver = APIKeyResolver(self.repo)
-        client = resolver.create_client("openai-sub")
-        catalog = OpenAISubModelCatalogService(self.repo.db, client=client)
+        catalog = OpenAISubModelCatalogService(self.repo.db)
         return await catalog.sync_models_on_startup(force_refresh=True)
 
     async def test_openai_sub_connection(self) -> tuple[bool, str | None]:

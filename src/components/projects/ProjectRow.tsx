@@ -1,6 +1,8 @@
-import { ChevronRight, Folder, Plus, Trash2 } from 'lucide-react';
-import type { Project } from '@/types';
+import { useState } from 'react';
+import { Brain, ChevronRight, Folder, Plus, Trash2 } from 'lucide-react';
+import type { Project, ProjectMemory } from '@/types';
 import { ChatListItem } from './ChatListItem';
+import { ProjectMemoriesPanel } from './ProjectMemoriesPanel';
 import { formatRelativeTime } from '@/utils/formatTime';
 import { cn } from '@/utils/cn';
 
@@ -11,6 +13,7 @@ interface ProjectRowProps {
   readonly hoveredChatId: string | null;
   readonly selectedChatId: string | null;
   readonly editMenuChatId: string | null;
+  readonly projectMemories: ProjectMemory[];
   readonly onToggle: (projectId: string) => void;
   readonly onSelectChat: (chatId: string) => void;
   readonly onMouseEnterChat: (chatId: string) => void;
@@ -22,6 +25,9 @@ interface ProjectRowProps {
   readonly onDeleteChat?: (chatId: string) => Promise<void> | void;
   readonly onRequestDeleteChat?: (chat: import('@/types').ProjectChat) => void;
   readonly onDeleteProject?: (projectId: string) => Promise<void> | void;
+  readonly onLoadProjectMemories?: (projectId: string, options?: { force?: boolean }) => Promise<unknown> | void;
+  readonly onUpsertProjectMemory?: (projectId: string, payload: { title: string; contentMarkdown: string }) => Promise<{ ok?: boolean; error?: string } | void> | void;
+  readonly onDeleteProjectMemory?: (projectId: string, title: string) => Promise<{ ok?: boolean; error?: string } | void> | void;
 }
 
 export function ProjectRow({
@@ -31,6 +37,7 @@ export function ProjectRow({
   hoveredChatId,
   selectedChatId,
   editMenuChatId,
+  projectMemories,
   onToggle,
   onSelectChat,
   onMouseEnterChat,
@@ -42,7 +49,12 @@ export function ProjectRow({
   onDeleteChat,
   onRequestDeleteChat,
   onDeleteProject,
+  onLoadProjectMemories,
+  onUpsertProjectMemory,
+  onDeleteProjectMemory,
 }: ProjectRowProps) {
+  const [showMemories, setShowMemories] = useState(false);
+
   return (
     <div key={project.id} className="rounded-xl overflow-visible">
       <div
@@ -68,6 +80,21 @@ export function ProjectRow({
           <div className="text-[10px] text-gray-500 font-mono truncate">{project.path}</div>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
+          {onLoadProjectMemories && onUpsertProjectMemory && onDeleteProjectMemory && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                void onLoadProjectMemories(project.id, { force: true });
+                setShowMemories(true);
+              }}
+              className="inline-flex items-center gap-1 rounded-md border border-aqua-500/20 bg-aqua-500/10 px-2 py-1 text-[10px] text-aqua-300 transition-colors hover:bg-aqua-500/20"
+              title="Open project memories"
+            >
+              <Brain className="h-3 w-3" />
+              <span>{projectMemories.length}</span>
+            </button>
+          )}
           <span className="text-[10px] text-gray-500 bg-gray-800/80 px-1.5 py-0.5 rounded-md">
             {project.chats.length}
           </span>
@@ -120,6 +147,18 @@ export function ProjectRow({
             <span className="text-xs">New chat</span>
           </button>
         </div>
+      )}
+      {onLoadProjectMemories && onUpsertProjectMemory && onDeleteProjectMemory && (
+        <ProjectMemoriesPanel
+          projectId={project.id}
+          projectName={project.name}
+          memories={projectMemories}
+          visible={showMemories}
+          onClose={() => setShowMemories(false)}
+          onLoad={onLoadProjectMemories}
+          onSave={onUpsertProjectMemory}
+          onDelete={onDeleteProjectMemory}
+        />
       )}
     </div>
   );

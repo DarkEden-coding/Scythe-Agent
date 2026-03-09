@@ -49,6 +49,21 @@ def test_openai_sub_gpt5_heuristic_defaults() -> None:
     assert caps.default_level == "medium"
 
 
+def test_openai_sub_explicit_reasoning_levels_preserve_xhigh() -> None:
+    caps = extract_reasoning_capabilities(
+        provider="openai-sub",
+        model_label="gpt-5.2",
+        raw_model={
+            "supportsReasoningEffort": ["none", "low", "medium", "high", "xhigh"],
+            "reasoningEffort": "medium",
+        },
+    )
+
+    assert caps.supported is True
+    assert caps.levels == ("low", "medium", "high", "xhigh")
+    assert caps.default_level == "medium"
+
+
 def test_explicit_reasoning_levels_and_default_are_respected() -> None:
     caps = extract_reasoning_capabilities(
         provider="openrouter",

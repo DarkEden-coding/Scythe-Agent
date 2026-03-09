@@ -1,4 +1,5 @@
 import {
+  Brain,
   FileCode,
   FolderOpen,
   Package,
@@ -29,6 +30,8 @@ function safeStr(v: unknown): string {
 export const toolIcons: Record<string, React.ReactNode> = {
   user_query: <MessageCircleQuestion className="w-3.5 h-3.5" />,
   spawn_sub_agent: <Cpu className="w-3.5 h-3.5" />,
+  read_memory: <Brain className="w-3.5 h-3.5" />,
+  write_memory: <Brain className="w-3.5 h-3.5" />,
   read_file: <FileCode className="w-3.5 h-3.5" />,
   create_file: <Plus className="w-3.5 h-3.5" />,
   edit_file: <Pencil className="w-3.5 h-3.5" />,
@@ -48,6 +51,24 @@ const statusIcons: Record<string, React.ReactNode> = {
 
 export { statusIcons };
 
+function isMemoryTool(call: ToolCall): boolean {
+  return call.name === 'read_memory' || call.name === 'write_memory';
+}
+
+function getMemorySummary(call: ToolCall): string | null {
+  if (call.name === 'write_memory' && typeof call.input?.title === 'string') {
+    return call.input.title;
+  }
+  const titles = call.input?.titles;
+  if (call.name === 'read_memory' && Array.isArray(titles)) {
+    const namedTitles = titles.filter((title): title is string => typeof title === 'string' && title.length > 0);
+    if (namedTitles.length === 0) return 'List available memories';
+    if (namedTitles.length === 1) return namedTitles[0];
+    return `${namedTitles[0]} +${namedTitles.length - 1}`;
+  }
+  return null;
+}
+
 interface ToolCallCardProps {
   readonly call: ToolCall;
   readonly isInParallel?: boolean;
@@ -65,12 +86,16 @@ export function ToolCallCard({
   if (call.name === 'user_query' && call.input?.query) {
     const q = safeStr(call.input.query);
     pathHint = q.length > 50 ? `${q.slice(0, 47)}...` : q;
+  } else if (isMemoryTool(call)) {
+    pathHint = getMemorySummary(call);
   } else if (call.input?.path) pathHint = safeStr(call.input.path);
   else if (call.input?.command) pathHint = safeStr(call.input.command).slice(0, 40);
   else if (call.input?.packages) pathHint = `[${(call.input.packages as string[]).length} pkgs]`;
   if (pathHint === '0') pathHint = null;
 
   const outputLines = (call.output ?? '').split('\n').length;
+  const isMemoryAction = isMemoryTool(call);
+  const memoryActionLabel = call.name === 'write_memory' ? 'Saved project memory' : 'Read project memory';
 
   return (
     <div className="flex flex-col items-center animate-fade-in-subtle">
@@ -92,7 +117,11 @@ export function ToolCallCard({
             {toolIcons[call.name] || <FileCode className="w-3.5 h-3.5" />}
           </span>
           <span className="text-[11px] text-gray-300 font-mono whitespace-nowrap" title={call.name}>
-            {call.name === 'user_query' ? 'Ask user' : formatToolDisplayName(call.name)}
+            {call.name === 'user_query'
+              ? 'Ask user'
+              : isMemoryAction
+                ? memoryActionLabel
+                : formatToolDisplayName(call.name)}
           </span>
           {pathHint && call.name !== 'build_project' && call.name !== 'list_files' && (
             <span className="text-[10px] text-gray-600 font-mono whitespace-nowrap">{pathHint}</span>
@@ -139,6 +168,22 @@ export function ToolCallCard({
                 <p className="mt-2 text-[12px] text-gray-200 leading-relaxed whitespace-pre-wrap">
                   {safeStr(call.input.query)}
                 </p>
+              </div>
+            ) : isMemoryAction ? (
+              <div className="rounded-lg border border-aqua-500/20 bg-aqua-950/10 p-3">
+                <span className="text-[10px] uppercase tracking-wider text-aqua-300/80 font-medium">
+                  {memoryActionLabel}
+                </span>
+                {pathHint && (
+                  <p className="mt-2 text-[12px] font-medium text-gray-100 whitespace-pre-wrap break-words">
+                    {pathHint}
+                  </p>
+                )}
+                {call.output && call.status !== 'error' && (
+                  <pre className="mt-2 text-[11px] text-gray-300 bg-gray-950/40 p-2 rounded-md overflow-x-auto border border-aqua-500/10 font-mono whitespace-pre-wrap break-all">
+                    {call.output}
+                  </pre>
+                )}
               </div>
             ) : (
               <>

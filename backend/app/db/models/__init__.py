@@ -11,6 +11,7 @@ from app.db.models.mcp_tool_cache import MCPToolCache as MCPToolCache
 from app.db.models.message import Message as Message
 from app.db.models.message_attachment import MessageAttachment as MessageAttachment
 from app.db.models.project import Project as Project
+from app.db.models.project_memory import ProjectMemory as ProjectMemory
 from app.db.models.project_plan import ProjectPlan as ProjectPlan
 from app.db.models.project_plan_revision import (
     ProjectPlanRevision as ProjectPlanRevision,

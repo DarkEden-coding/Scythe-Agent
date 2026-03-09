@@ -8,6 +8,7 @@ import type { SubAgentRun, ToolCall, FileEdit, Checkpoint, ReasoningBlock } from
 
 export type TimelineItem =
   | { type: 'tool'; call: ToolCall }
+  | { type: 'memory'; call: ToolCall }
   | { type: 'parallel'; calls: ToolCall[] }
   | { type: 'sub_agent'; run: SubAgentRun }
   | { type: 'file'; edit: FileEdit }
@@ -15,11 +16,16 @@ export type TimelineItem =
 
 const TYPE_ORDER: Record<TimelineItem['type'], number> = {
   reasoning: 0,
+  memory: 1,
   tool: 1,
   parallel: 2,
   sub_agent: 2,
   file: 3,
 };
+
+function isMemoryTool(call: ToolCall): boolean {
+  return call.name === 'read_memory' || call.name === 'write_memory';
+}
 
 export interface TimelineSegment {
   checkpoint: Checkpoint;
@@ -52,9 +58,12 @@ export function buildTimeline(
 
     const parallelGroups = new Map<string, ToolCall[]>();
     const soloTools: ToolCall[] = [];
+    const memoryTools: ToolCall[] = [];
 
     cpToolCalls.forEach((tc) => {
-      if (tc.isParallel && tc.parallelGroupId) {
+      if (isMemoryTool(tc)) {
+        memoryTools.push(tc);
+      } else if (tc.isParallel && tc.parallelGroupId) {
         const group = parallelGroups.get(tc.parallelGroupId) || [];
         group.push(tc);
         parallelGroups.set(tc.parallelGroupId, group);
@@ -65,6 +74,10 @@ export function buildTimeline(
 
     soloTools.forEach((tc) => {
       allItems.push({ timestamp: tc.timestamp.getTime(), item: { type: 'tool', call: tc } });
+    });
+
+    memoryTools.forEach((tc) => {
+      allItems.push({ timestamp: tc.timestamp.getTime(), item: { type: 'memory', call: tc } });
     });
 
     parallelGroups.forEach((calls) => {

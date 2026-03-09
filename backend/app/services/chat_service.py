@@ -20,6 +20,7 @@ from app.schemas.chat import (
     CheckpointOut,
     EditMessageResponse,
     GetChatHistoryResponse,
+    MessageAttachmentOut,
     MessageOut,
     ProjectPlanOut,
     SendMessageResponse,
@@ -587,7 +588,7 @@ class ChatService:
         self.repo.commit()
 
         attachments_out = [
-            {"data": a.content_base64, "mimeType": a.mime_type, "name": None}
+            MessageAttachmentOut(data=a.content_base64, mimeType=a.mime_type, name=None)
             for a in self.repo.list_attachments_for_message(message.id)
         ]
         message_out = MessageOut(
@@ -965,6 +966,8 @@ class ChatService:
                 continue
             mentioned_tool_calls = mentioned_by_checkpoint.get(m.checkpoint_id, [])
             for tc, path in mentioned_tool_calls:
+                tc_id = str(getattr(tc, "id", ""))
+                tc_output = str(getattr(tc, "output_text", "") or "")
                 model_args_json = json.dumps({"path": path}, separators=(",", ":"))
                 openrouter_messages.append(
                     {
@@ -972,7 +975,7 @@ class ChatService:
                         "content": "",
                         "tool_calls": [
                             {
-                                "id": tc.id,
+                                "id": tc_id,
                                 "type": "function",
                                 "function": {"name": "read_file", "arguments": model_args_json},
                             }
@@ -982,13 +985,15 @@ class ChatService:
                 openrouter_messages.append(
                     {
                         "role": "tool",
-                        "tool_call_id": tc.id,
-                        "content": tc.output_text or "",
+                        "tool_call_id": tc_id,
+                        "content": tc_output,
                     }
                 )
         openrouter_messages = apply_initial_information(
             openrouter_messages,
             project_path=project_path,
+            project_id=chat.project_id if chat else None,
+            db=self.repo.db,
             model=history.model,
         )
         system_prompt = self.settings_service.get_system_prompt()

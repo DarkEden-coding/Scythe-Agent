@@ -3,19 +3,22 @@
 import inspect
 from collections.abc import Callable
 
+from app.initial_information.project_memory_titles import add_project_memory_titles
 from app.initial_information.project_overview import (
     PROJECT_OVERVIEW_MAX_DEPTH,
     PROJECT_OVERVIEW_TOKEN_TARGET,
     add_project_overview_3_levels,
 )
 
-_ENHANCERS: list[Callable[..., list[dict]]] = [add_project_overview_3_levels]
+_ENHANCERS: list[Callable[..., list[dict]]] = [add_project_overview_3_levels, add_project_memory_titles]
 
 
 def apply_initial_information(
     messages: list[dict],
     *,
     project_path: str | None = None,
+    project_id: str | None = None,
+    db=None,
     model: str | None = None,
     max_depth: int = PROJECT_OVERVIEW_MAX_DEPTH,
     token_target: int = PROJECT_OVERVIEW_TOKEN_TARGET,
@@ -40,6 +43,10 @@ def apply_initial_information(
             kwargs: dict[str, object] = {}
             if "project_path" in params:
                 kwargs["project_path"] = project_path
+            if "project_id" in params:
+                kwargs["project_id"] = project_id
+            if "db" in params:
+                kwargs["db"] = db
             if "model" in params:
                 kwargs["model"] = model
             if "max_depth" in params:

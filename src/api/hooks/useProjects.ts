@@ -1,11 +1,16 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api as defaultApi, ApiClient } from '@/api/client';
 import { useAsyncState, toDate } from '@/api/normalizers';
-import type { GetProjectsResponse } from '@/api/types';
+import type {
+  GetProjectsResponse,
+  GetProjectMemoriesResponse,
+  UpsertProjectMemoryRequest,
+} from '@/api/types';
 
 export function useProjects(client: ApiClient = defaultApi) {
   const [state, run] = useAsyncState<GetProjectsResponse>({ projects: [] });
   const [projects, setProjects] = useState<GetProjectsResponse['projects']>([]);
+  const [memoriesByProject, setMemoriesByProject] = useState<Record<string, GetProjectMemoriesResponse['memories']>>({});
 
   useEffect(() => {
     run(client.getProjects()).then((res) => {
@@ -31,6 +36,23 @@ export function useProjects(client: ApiClient = defaultApi) {
     }
     return res;
   }, [client, run]);
+
+  const getProjectMemories = useCallback(
+    async (projectId: string, options?: { force?: boolean }) => {
+      if (!options?.force && memoriesByProject[projectId]) {
+        return { ok: true as const, data: { memories: memoriesByProject[projectId] }, timestamp: new Date().toISOString() };
+      }
+      const res = await client.getProjectMemories(projectId);
+      if (res.ok) {
+        setMemoriesByProject((prev) => ({
+          ...prev,
+          [projectId]: res.data.memories,
+        }));
+      }
+      return res;
+    },
+    [client, memoriesByProject],
+  );
 
   const createProject = useCallback(
     async (name: string, path: string) => {
@@ -133,6 +155,45 @@ export function useProjects(client: ApiClient = defaultApi) {
     [client],
   );
 
+  const upsertProjectMemory = useCallback(
+    async (projectId: string, payload: UpsertProjectMemoryRequest) => {
+      const res = await client.upsertProjectMemory(projectId, payload);
+      if (res.ok) {
+        const refreshRes = await client.getProjectMemories(projectId);
+        if (refreshRes.ok) {
+          setMemoriesByProject((prev) => ({ ...prev, [projectId]: refreshRes.data.memories }));
+        }
+      }
+      return res;
+    },
+    [client],
+  );
+
+  const deleteProjectMemory = useCallback(
+    async (projectId: string, title: string) => {
+      const res = await client.deleteProjectMemory(projectId, title);
+      if (res.ok) {
+        setMemoriesByProject((prev) => ({
+          ...prev,
+          [projectId]: (prev[projectId] ?? []).filter((memory) => memory.title !== title),
+        }));
+      }
+      return res;
+    },
+    [client],
+  );
+
+  const normalizedMemoriesByProject = Object.fromEntries(
+    Object.entries(memoriesByProject).map(([projectId, memories]) => [
+      projectId,
+      (memories ?? []).map((memory) => ({
+        ...memory,
+        createdAt: toDate(memory.createdAt),
+        updatedAt: toDate(memory.updatedAt),
+      })),
+    ]),
+  );
+
   return {
     projects: normalizedProjects,
     loading: state.loading,
@@ -147,5 +208,9 @@ export function useProjects(client: ApiClient = defaultApi) {
     deleteChat,
     reorderProjects,
     reorderChats,
+    projectMemoriesByProject: normalizedMemoriesByProject,
+    getProjectMemories,
+    upsertProjectMemory,
+    deleteProjectMemory,
   };
 }

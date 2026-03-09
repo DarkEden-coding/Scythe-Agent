@@ -6,6 +6,7 @@ import pytest
 
 from app.providers.openai_sub.client import _messages_to_codex_input
 from app.providers.openai_sub.client import OpenAISubClient
+from app.providers.openai_sub.model_catalog import OPENAI_SUB_FALLBACK_MODELS
 
 
 def test_messages_to_codex_input_keeps_matched_tool_output() -> None:
@@ -49,6 +50,22 @@ def test_messages_to_codex_input_drops_orphan_tool_output() -> None:
     input_items, _ = _messages_to_codex_input(messages)
 
     assert input_items == []
+
+
+def test_openai_sub_client_exposes_shared_model_catalog() -> None:
+    client = OpenAISubClient("token")
+
+    models = asyncio.run(client.get_models())
+    model_ids = [model["id"] for model in models]
+
+    assert model_ids == [model_id for model_id, _ in OPENAI_SUB_FALLBACK_MODELS]
+
+    spark = next(model for model in models if model["id"] == "gpt-5.3-codex-spark")
+    assert spark["maxTokens"] == 8_192
+    assert spark["contextWindow"] == 128_000
+    assert spark["supportsImages"] is False
+    assert spark["supportsReasoningEffort"] == ["low", "medium", "high", "xhigh"]
+    assert spark["reasoningEffort"] == "medium"
 
 
 class _RaiseOnEnterStream:

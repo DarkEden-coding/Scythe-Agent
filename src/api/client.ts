@@ -56,6 +56,10 @@ import type {
   DeleteChatRequest,
   DeleteChatResponse,
   ReorderChatsRequest,
+  GetProjectMemoriesResponse,
+  UpsertProjectMemoryRequest,
+  UpsertProjectMemoryResponse,
+  DeleteProjectMemoryResponse,
   GetFsChildrenResponse,
   GetChatHistoryResponse,
   GetProjectsResponse,
@@ -394,7 +398,7 @@ export class ApiClient {
     if (!content) {
       return {
         ok: false,
-        data: null,
+        data: null as unknown as SendMessageResponse,
         error: 'Message content is required and cannot be empty',
         timestamp: new Date().toISOString(),
       };
@@ -608,6 +612,21 @@ export class ApiClient {
 
   async reorderChats(req: ReorderChatsRequest): Promise<ApiResponse<GetProjectsResponse>> {
     return this.request('PATCH', `/projects/${req.projectId}/chats/reorder`, { chatIds: req.chatIds });
+  }
+
+  async getProjectMemories(projectId: string): Promise<ApiResponse<GetProjectMemoriesResponse>> {
+    return this.request('GET', `/projects/${projectId}/memories`, undefined, `project-memories-${projectId}`);
+  }
+
+  async upsertProjectMemory(
+    projectId: string,
+    req: UpsertProjectMemoryRequest,
+  ): Promise<ApiResponse<UpsertProjectMemoryResponse>> {
+    return this.request('POST', `/projects/${projectId}/memories`, req);
+  }
+
+  async deleteProjectMemory(projectId: string, title: string): Promise<ApiResponse<DeleteProjectMemoryResponse>> {
+    return this.request('DELETE', `/projects/${projectId}/memories/${encodeURIComponent(title)}`);
   }
 
   async getFsChildren(path?: string): Promise<ApiResponse<GetFsChildrenResponse>> {

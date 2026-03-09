@@ -113,14 +113,18 @@ def _order_levels(levels: list[str]) -> list[str]:
     return ordered + extras
 
 
-def _extract_levels_from_string(value: str) -> list[str]:
-    direct = _normalize_level_token(value, allow_off=False, allow_unknown=False)
+def _extract_levels_from_string(value: str, *, allow_unknown: bool = False) -> list[str]:
+    direct = _normalize_level_token(
+        value, allow_off=False, allow_unknown=allow_unknown
+    )
     if direct:
         return [direct]
     parts = re.split(r"[,\s|/]+", value.strip())
     out: list[str] = []
     for part in parts:
-        level = _normalize_level_token(part, allow_off=False, allow_unknown=False)
+        level = _normalize_level_token(
+            part, allow_off=False, allow_unknown=allow_unknown
+        )
         if level:
             out.append(level)
     return out
@@ -128,7 +132,7 @@ def _extract_levels_from_string(value: str) -> list[str]:
 
 def _extract_levels_direct(value: Any) -> list[str]:
     if isinstance(value, str):
-        return _extract_levels_from_string(value)
+        return _extract_levels_from_string(value, allow_unknown=True)
 
     if isinstance(value, (list, tuple, set)):
         out: list[str] = []
@@ -199,6 +203,11 @@ def _find_default_level(value: Any, *, reasoning_context: bool = False) -> str |
             child_reasoning_context = reasoning_context or ("reasoning" in key)
 
             if key in _DEFAULT_REASONING_KEY_NAMES:
+                parsed = _extract_levels_direct(child)
+                if parsed:
+                    return parsed[0]
+
+            if key in {"reasoningeffort", "reasoninglevel"} and isinstance(child, str):
                 parsed = _extract_levels_direct(child)
                 if parsed:
                     return parsed[0]
