@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -84,63 +83,6 @@ def _replace_markdown_section(markdown: str, heading: str, body: str) -> str:
     return "\n".join(updated).rstrip() + "\n"
 
 
-def _extract_patch_ops(model_output: str) -> list[dict] | None:
-    text = model_output.strip()
-    if not text:
-        return None
-
-    payload: dict | None = None
-    try:
-        parsed = json.loads(text)
-        if isinstance(parsed, dict):
-            payload = parsed
-    except json.JSONDecodeError:
-        fenced = re.search(r"```(?:json)?\s*(\{[\s\S]*\})\s*```", text, re.IGNORECASE)
-        if fenced:
-            try:
-                parsed = json.loads(fenced.group(1))
-                if isinstance(parsed, dict):
-                    payload = parsed
-            except json.JSONDecodeError:
-                payload = None
-    if payload is None:
-        return None
-    ops = payload.get("ops")
-    if not isinstance(ops, list):
-        return None
-    return [op for op in ops if isinstance(op, dict)]
-
-
-def _apply_plan_edit_output(current_markdown: str, model_output: str) -> str:
-    ops = _extract_patch_ops(model_output)
-    if ops is None:
-        candidate = model_output.strip()
-        return candidate if candidate else current_markdown
-
-    updated = current_markdown
-    for op in ops:
-        op_name = str(op.get("op", "")).strip()
-        if op_name == "replace_all":
-            content = op.get("content")
-            if isinstance(content, str) and content.strip():
-                updated = content.strip() + "\n"
-            continue
-        if op_name == "replace_section":
-            heading = op.get("heading")
-            content = op.get("content")
-            if isinstance(heading, str) and isinstance(content, str):
-                updated = _replace_markdown_section(updated, heading, content)
-            continue
-        if op_name == "append_section":
-            heading = op.get("heading")
-            content = op.get("content")
-            if isinstance(heading, str) and isinstance(content, str):
-                tail = f"\n\n## {heading.strip()}\n{content.strip()}\n"
-                updated = updated.rstrip() + tail
-            continue
-    return updated
-
-
 async def run_agent_turn(
     *,
     chat_id: str,
@@ -188,14 +130,14 @@ async def run_agent_turn(
                 raise ValueError("activePlanId is required for plan_edit mode")
             await plan_svc.sync_external_if_needed(chat_id, active_plan_id)
             existing_plan = await plan_svc.get_plan(chat_id, active_plan_id, include_content=True)
-            existing_content = existing_plan.content or ""
             mode_extra_messages.append(
                 {
                     "role": "system",
                     "content": (
-                        "You are editing an existing markdown implementation plan. "
-                        "Return either updated markdown directly, or JSON object: "
-                        '{"ops":[{"op":"replace_section","heading":"...","content":"..."}]}.'
+                        "You are editing an existing markdown implementation plan file on disk. "
+                        f"The plan file path is: {existing_plan.filePath}. "
+                        "Use read_file to inspect it and edit_file to change it directly. "
+                        "Do not return the full plan markdown in chat because the backend will reload the file after your edits."
                     ),
                 }
             )
@@ -203,7 +145,8 @@ async def run_agent_turn(
                 {
                     "role": "user",
                     "content": (
-                        f"Current plan markdown:\n\n{existing_content}\n\n"
+                        "Edit the existing implementation plan file in place.\n\n"
+                        f"Plan file: {existing_plan.filePath}\n\n"
                         f"Edit request:\n{content}"
                     ),
                 }
@@ -267,25 +210,12 @@ async def run_agent_turn(
                     active_plan_id,
                 )
                 return None
-            current_plan = await plan_svc.get_plan(chat_id, active_plan_id, include_content=True)
-            current_md = current_plan.content or ""
-            next_md = _apply_plan_edit_output(current_md, run_result.final_assistant_text)
-            update_result = await plan_svc.update_plan(
+            await plan_svc.sync_plan_from_file(
                 chat_id=chat_id,
                 plan_id=active_plan_id,
-                content=next_md,
-                base_revision=current_plan.revision,
                 last_editor="agent",
                 checkpoint_id=checkpoint_id,
             )
-            if update_result.conflict:
-                await event_bus.publish(
-                    chat_id,
-                    {
-                        "type": "plan_conflict",
-                        "payload": {"plan": update_result.plan.model_dump(), "reason": "stale_revision"},
-                    },
-                )
             return None
 
         # Post-agent verification: run checks on files edited this turn

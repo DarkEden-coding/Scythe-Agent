@@ -131,6 +131,52 @@ class PlanService:
         )
         return out
 
+    async def sync_plan_from_file(
+        self,
+        *,
+        chat_id: str,
+        plan_id: str,
+        last_editor: str = "external",
+        checkpoint_id: str | None = None,
+        emit_event: bool = True,
+    ) -> ProjectPlanOut | None:
+        row = self.repo.get_project_plan(plan_id)
+        if row is None or row.chat_id != chat_id:
+            raise ValueError(f"Plan not found: {plan_id}")
+        try:
+            content, _ = self.file_store.read_plan(
+                project_id=row.project_id, plan_id=row.id
+            )
+        except ValueError:
+            return None
+        file_hash = self.file_store.sha256_text(content)
+        if file_hash == row.content_sha256:
+            return None
+        now = utc_now_iso()
+        self.repo.set_project_plan_content(
+            row,
+            checkpoint_id=checkpoint_id,
+            status="ready",
+            content_sha256=file_hash,
+            revision=row.revision + 1,
+            last_editor=last_editor,
+            updated_at=now,
+        )
+        self._append_revision(
+            row,
+            content=content,
+            created_at=now,
+            checkpoint_id=checkpoint_id,
+        )
+        self.repo.commit()
+        out = self._to_out(row, include_content=True)
+        if emit_event:
+            await self.event_bus.publish(
+                chat_id,
+                {"type": "plan_updated", "payload": {"plan": out.model_dump(), "content": content}},
+            )
+        return out
+
     async def create_plan(
         self,
         *,

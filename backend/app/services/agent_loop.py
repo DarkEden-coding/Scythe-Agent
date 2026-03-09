@@ -30,6 +30,7 @@ GUARDED_REPEAT_TOOLS = {"read_file", "get_file_structure", "list_files", "grep"}
 PLANNING_ALLOWED_TOOLS = {
     "list_files",
     "read_file",
+    "edit_file",
     "get_file_structure",
     "grep",
     "spawn_sub_agent",
@@ -49,9 +50,11 @@ PLANNING MODE:
 """
 PLAN_EDIT_PROMPT_APPENDIX = """
 PLAN EDIT MODE:
-- Update the existing plan based on the user's edit request.
-- Prefer targeted section edits and keep unaffected sections stable.
-- Return updated plan markdown only.
+- The implementation plan already exists as a markdown file on disk.
+- Read the plan file first, then edit that file directly with tools.
+- Prefer targeted changes and keep unaffected sections stable.
+- Do not paste the full revised plan into chat.
+- After editing, reply with a brief confirmation summary only.
 """
 
 
