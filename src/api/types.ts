@@ -339,6 +339,11 @@ export interface GetFsChildrenResponse {
   allowedRoots: string[];
 }
 
+export interface PickDirectoryResponse {
+  path: string | null;
+  cancelled: boolean;
+}
+
 // 3. Agent-to-user notifications / streaming
 export type AgentEventType =
   | 'message'

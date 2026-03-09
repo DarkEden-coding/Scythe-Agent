@@ -5,13 +5,11 @@ import {
   FolderPlus,
   MessageSquarePlus,
   ChevronRight,
-  Folder,
-  FolderUp,
   Check,
 } from 'lucide-react';
 import type { Project } from '@/types';
 import { Modal } from '@/components/Modal';
-import { useFilesystemBrowser } from '@/api';
+import { api } from '@/api';
 
 interface NewEntityModalProps {
   readonly visible: boolean;
@@ -31,25 +29,45 @@ export function NewEntityModal({
   const [step, setStep] = useState<'choose' | 'project' | 'chat'>('choose');
   const [newProjectName, setNewProjectName] = useState('');
   const [newProjectPath, setNewProjectPath] = useState('');
-  const [goToPath, setGoToPath] = useState('');
   const [newChatProjectId, setNewChatProjectId] = useState('');
-  const fs = useFilesystemBrowser();
+  const [pickError, setPickError] = useState<string | null>(null);
+  const [isPickingFolder, setIsPickingFolder] = useState(false);
 
   const close = () => {
     setStep('choose');
     setNewProjectName('');
     setNewProjectPath('');
-    setGoToPath('');
     setNewChatProjectId('');
+    setPickError(null);
+    setIsPickingFolder(false);
     onClose();
   };
-
-  const currentFolders = (fs.data?.children ?? []).filter((item) => item.kind === 'directory');
 
   const handleCreateProject = async () => {
     if (!newProjectName.trim() || !newProjectPath) return;
     await onCreateProject?.(newProjectName.trim(), newProjectPath);
     close();
+  };
+
+  const handlePickFolder = async () => {
+    setIsPickingFolder(true);
+    setPickError(null);
+
+    try {
+      const res = await api.pickDirectory();
+      if (!res.ok) {
+        setPickError(res.error ?? 'Failed to open folder picker');
+        return;
+      }
+
+      if (!res.data.cancelled && res.data.path) {
+        setNewProjectPath(res.data.path);
+      }
+    } catch (error) {
+      setPickError(error instanceof Error ? error.message : 'Failed to open folder picker');
+    } finally {
+      setIsPickingFolder(false);
+    }
   };
 
   const handleCreateChat = async () => {
@@ -79,10 +97,7 @@ export function NewEntityModal({
           </div>
           <div className="p-4 space-y-2.5">
             <button
-              onClick={async () => {
-                setStep('project');
-                await fs.load();
-              }}
+              onClick={() => setStep('project')}
               className="w-full flex items-center gap-3 px-4 py-3.5 bg-gray-800 hover:bg-gray-750 border border-gray-700/50 hover:border-aqua-500/30 rounded-xl transition-all group"
             >
               <div className="w-9 h-9 rounded-lg bg-aqua-500/10 border border-aqua-500/20 flex items-center justify-center group-hover:bg-aqua-500/20 transition-colors">
@@ -143,8 +158,21 @@ export function NewEntityModal({
             </div>
             <div role="group" aria-labelledby="target-folder-label">
               <label id="target-folder-label" className="block text-[11px] font-medium text-gray-400 mb-2">Target Folder</label>
+              <button
+                type="button"
+                onClick={handlePickFolder}
+                disabled={isPickingFolder}
+                className="w-full py-2.5 text-[11px] font-medium text-aqua-400 bg-aqua-500/10 hover:bg-aqua-500/15 border border-aqua-500/20 rounded-xl transition-colors disabled:opacity-40"
+              >
+                {isPickingFolder ? 'Opening folder browser...' : 'Browse for folder'}
+              </button>
+              {pickError && (
+                <div className="mt-2 px-3 py-2 text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl">
+                  {pickError}
+                </div>
+              )}
               {newProjectPath && (
-                <div className="flex items-center gap-2 mb-2 px-3 py-1.5 bg-aqua-500/10 border border-aqua-500/20 rounded-lg">
+                <div className="flex items-center gap-2 mt-3 px-3 py-1.5 bg-aqua-500/10 border border-aqua-500/20 rounded-lg">
                   <Check className="w-3 h-3 text-aqua-400 shrink-0" />
                   <span className="text-xs font-mono text-aqua-300 truncate">{newProjectPath}</span>
                   <button onClick={() => setNewProjectPath('')} className="ml-auto p-0.5 text-aqua-400 hover:text-aqua-300">
@@ -152,72 +180,11 @@ export function NewEntityModal({
                   </button>
                 </div>
               )}
-              <div className="space-y-3">
-                <div className="flex items-center gap-1 px-3 py-2.5 bg-gray-800 border border-gray-700/50 rounded-xl text-[11px] font-mono text-gray-400">
-                  {fs.data?.parentPath ? (
-                    <button
-                      onClick={() => fs.load(fs.data?.parentPath ?? undefined)}
-                      className="flex items-center gap-1 px-2 py-0.5 -mx-1 rounded-lg text-gray-400 hover:bg-gray-700/60 hover:text-gray-200 transition-colors shrink-0"
-                      title="Parent folder"
-                    >
-                      <FolderUp className="w-3.5 h-3.5" />
-                      <span>..</span>
-                    </button>
-                  ) : null}
-                  <span className="truncate">{fs.path || 'Loading...'}</span>
+              {!newProjectPath && (
+                <div className="mt-3 px-3 py-2.5 bg-gray-800 border border-gray-700/50 rounded-xl text-xs text-gray-500">
+                  No folder selected yet.
                 </div>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={goToPath}
-                    onChange={(e) => setGoToPath(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && fs.load(goToPath || undefined)}
-                    placeholder="/path/to/folder or ~ for home"
-                    className="flex-1 px-3 py-2.5 bg-gray-800 border border-gray-700/50 rounded-xl text-xs font-mono text-gray-200 placeholder-gray-600 focus:outline-none focus:border-aqua-500/50 focus:ring-1 focus:ring-aqua-500/20"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => fs.load(goToPath || undefined)}
-                    disabled={!goToPath.trim()}
-                    className="px-4 py-2.5 text-[11px] font-medium text-aqua-400 bg-aqua-500/10 hover:bg-aqua-500/15 border border-aqua-500/20 rounded-xl disabled:opacity-40 shrink-0"
-                  >
-                    Go
-                  </button>
-                </div>
-                <div className="bg-gray-800 border border-gray-700/50 rounded-xl max-h-40 overflow-y-auto p-1.5 space-y-1">
-                  {fs.loading && <div className="px-3 py-3 text-xs text-gray-500 rounded-lg">Loading directories...</div>}
-                  {fs.error && <div className="px-3 py-3 text-xs text-red-400 rounded-lg">{fs.error}</div>}
-                  {fs.data?.parentPath && (
-                    <button
-                      onClick={() => fs.load(fs.data?.parentPath ?? undefined)}
-                      className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-400 hover:bg-gray-750 hover:text-gray-200 transition-colors rounded-lg"
-                    >
-                      <ArrowLeft className="w-3 h-3" />
-                      <span>..</span>
-                    </button>
-                  )}
-                  {currentFolders.map((folder) => (
-                    <button
-                      key={folder.path}
-                      onClick={() => fs.load(folder.path)}
-                      className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-300 hover:bg-gray-750 hover:text-gray-100 transition-colors rounded-lg group"
-                    >
-                      <Folder className="w-3 h-3 text-aqua-400/60 shrink-0" />
-                      <span className="flex-1 text-left truncate">{folder.name}</span>
-                      {folder.hasChildren && (
-                        <ChevronRight className="w-3 h-3 text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity" />
-                      )}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <button
-                onClick={() => setNewProjectPath(fs.path)}
-                disabled={!fs.path}
-                className="mt-3 w-full py-2.5 text-[11px] font-medium text-aqua-400 bg-aqua-500/10 hover:bg-aqua-500/15 border border-aqua-500/20 rounded-xl transition-colors disabled:opacity-40"
-              >
-                Select current folder
-              </button>
+              )}
             </div>
             <button
               onClick={handleCreateProject}

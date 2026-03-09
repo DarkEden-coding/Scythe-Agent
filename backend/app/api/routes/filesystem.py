@@ -17,3 +17,14 @@ def get_children(path: str | None = Query(default=None)):
         return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
     except Exception as exc:
         return JSONResponse(status_code=500, content=err(full_error_message(exc)).model_dump())
+
+
+@router.post("/pick-directory")
+def pick_directory():
+    try:
+        path, cancelled = FilesystemService().pick_directory()
+        return ok({"path": path, "cancelled": cancelled})
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
+    except Exception as exc:
+        return JSONResponse(status_code=500, content=err(full_error_message(exc)).model_dump())

@@ -1,4 +1,5 @@
 import os
+import subprocess
 from pathlib import Path
 
 from app.config.settings import get_settings
@@ -84,3 +85,31 @@ class FilesystemService:
             children=children,
             allowedRoots=[str(root) for root in self.allowed_roots],
         )
+
+    def pick_directory(self) -> tuple[str | None, bool]:
+        script = 'try\nPOSIX path of (choose folder with prompt "Select a project folder")\non error number -128\nreturn "__CANCELLED__"\nend try'
+        result = subprocess.run(
+            ["osascript", "-e", script],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        if result.returncode != 0:
+            stderr = result.stderr.strip() or "Failed to open native folder picker"
+            raise RuntimeError(stderr)
+
+        output = result.stdout.strip()
+        if output == "__CANCELLED__":
+            return (None, True)
+
+        if not output:
+            raise RuntimeError("Native folder picker did not return a path")
+
+        target = Path(output).expanduser().resolve()
+        if not self._is_within_allowed_roots(target):
+            raise ValueError(f"Path is outside allowed roots: {target}")
+        if not target.exists() or not target.is_dir():
+            raise ValueError(f"Directory not found: {target}")
+
+        return (str(target), False)

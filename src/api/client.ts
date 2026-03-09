@@ -61,6 +61,7 @@ import type {
   UpsertProjectMemoryResponse,
   DeleteProjectMemoryResponse,
   GetFsChildrenResponse,
+  PickDirectoryResponse,
   GetChatHistoryResponse,
   GetProjectsResponse,
   GetSettingsResponse,
@@ -632,6 +633,10 @@ export class ApiClient {
   async getFsChildren(path?: string): Promise<ApiResponse<GetFsChildrenResponse>> {
     const query = path ? `?path=${encodeURIComponent(path)}` : '';
     return this.request('GET', `/fs/children${query}`);
+  }
+
+  async pickDirectory(): Promise<ApiResponse<PickDirectoryResponse>> {
+    return this.request('POST', '/fs/pick-directory');
   }
 
   /** Fetch global settings (model, limits, auto-approve rules). */

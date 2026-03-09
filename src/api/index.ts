@@ -73,6 +73,7 @@ export type {
   GetProjectsResponse,
   FsChild,
   GetFsChildrenResponse,
+  PickDirectoryResponse,
   AgentEventType,
   AgentEvent,
   AgentPausePayload,

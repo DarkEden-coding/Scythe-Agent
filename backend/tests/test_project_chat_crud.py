@@ -48,3 +48,15 @@ def test_fs_children_contract_and_guard(client) -> None:
     any_body = any_path.json()
     assert any_body["ok"] is True
     assert "path" in any_body["data"] and "children" in any_body["data"]
+
+
+def test_pick_directory_contract(client, monkeypatch) -> None:
+    from app.services.filesystem_service import FilesystemService
+
+    monkeypatch.setattr(FilesystemService, "pick_directory", lambda self: ("/tmp/project", False))
+
+    response = client.post("/api/fs/pick-directory")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["data"] == {"path": "/tmp/project", "cancelled": False}
