@@ -135,6 +135,26 @@ export interface ApiClientConfig {
   onRetry?: (attempt: number, delay: number, error: string, method: string, path: string) => boolean | void;
 }
 
+export interface BackendHealthResponse {
+  status: string;
+}
+
+function resolveDefaultApiBaseUrl(): string {
+  const configuredBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim();
+  if (configuredBaseUrl) {
+    return configuredBaseUrl;
+  }
+
+  if (typeof window !== 'undefined') {
+    const protocol = window.location.protocol;
+    if (protocol === 'tauri:' || protocol === 'asset:' || protocol === 'file:') {
+      return 'http://127.0.0.1:3001/api';
+    }
+  }
+
+  return '/api';
+}
+
 /* ── Client Class ───────────────────────────────────────────────── */
 
 export class ApiClient {
@@ -147,7 +167,7 @@ export class ApiClient {
 
   constructor(config: Partial<ApiClientConfig> = {}) {
     this.config = {
-      baseUrl: config.baseUrl ?? '/api',
+      baseUrl: config.baseUrl ?? resolveDefaultApiBaseUrl(),
       token: config.token ?? '',
       timeout: config.timeout ?? 30_000,
     };
@@ -642,6 +662,10 @@ export class ApiClient {
   /** Fetch global settings (model, limits, auto-approve rules). */
   async getSettings(): Promise<ApiResponse<GetSettingsResponse>> {
     return this.request('GET', '/settings', undefined, 'settings');
+  }
+
+  async getBackendHealth(): Promise<ApiResponse<BackendHealthResponse>> {
+    return this.request('GET', '/health', undefined, 'backend-health');
   }
 
   /* ── OpenRouter configuration ────────────────────────────────── */

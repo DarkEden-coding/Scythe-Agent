@@ -29,6 +29,8 @@ export function App() {
   const [processingChats, setProcessingChats] = useState<Set<string>>(new Set());
   const [iterationLimitPause, setIterationLimitPause] = useState<IterationLimitPauseState | null>(null);
   const [continuingPausedRun, setContinuingPausedRun] = useState(false);
+  const [backendConnected, setBackendConnected] = useState(false);
+  const [backendConnectionChecked, setBackendConnectionChecked] = useState(false);
 
   const isProcessing = activeChatId != null && processingChats.has(activeChatId);
 
@@ -60,6 +62,37 @@ export function App() {
   const projectsApi = useProjects();
   const { projects, loading: projectsLoading, projectMemoriesByProject } = projectsApi;
   const settings = useSettings();
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const pollBackendHealth = async () => {
+      const result = await api.getBackendHealth();
+      if (cancelled) return;
+
+      setBackendConnected(result.ok && result.data?.status === 'ok');
+      setBackendConnectionChecked(true);
+    };
+
+    void pollBackendHealth();
+    const intervalId = window.setInterval(() => {
+      void pollBackendHealth();
+    }, 2000);
+
+    const handleWindowFocus = () => {
+      void pollBackendHealth();
+    };
+
+    window.addEventListener('focus', handleWindowFocus);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', handleWindowFocus);
+    };
+  }, []);
+
+  const showBackendConnectionOverlay = !backendConnected || !backendConnectionChecked;
 
   // OAuth popup: when we load with ?openai-sub in a popup, notify opener and close
   useEffect(() => {
@@ -535,6 +568,7 @@ export function App() {
       />
 
       <ResizableLayout
+        className={showBackendConnectionOverlay ? 'pointer-events-none opacity-60' : undefined}
         chatWidth={chatWidth}
         onChatWidthChange={setChatWidth}
         leftPanel={
@@ -602,6 +636,22 @@ export function App() {
           />
         }
       />
+
+      {showBackendConnectionOverlay && (
+        <div className="absolute inset-0 z-40 flex items-center justify-center bg-gray-950/88 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-4 rounded-2xl border border-gray-800 bg-gray-900/90 px-8 py-7 shadow-2xl shadow-black/40">
+            <div className="h-10 w-10 animate-spin rounded-full border-4 border-cyan-500/20 border-t-cyan-400" />
+            <div className="text-center">
+              <p className="text-sm font-medium text-gray-100">
+                {backendConnectionChecked ? 'Waiting for backend connection…' : 'Connecting to backend…'}
+              </p>
+              <p className="mt-1 text-xs text-gray-400">
+                The interface will unlock automatically when the backend responds.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Toast */}
       {showNotification && (

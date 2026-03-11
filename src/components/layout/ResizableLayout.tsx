@@ -5,6 +5,7 @@ interface ResizableLayoutProps {
   readonly onChatWidthChange: (width: number) => void;
   readonly leftPanel: React.ReactNode;
   readonly rightPanel: React.ReactNode;
+  readonly className?: string;
 }
 
 export function ResizableLayout({
@@ -12,6 +13,7 @@ export function ResizableLayout({
   onChatWidthChange,
   leftPanel,
   rightPanel,
+  className,
 }: ResizableLayoutProps) {
   const isDragging = useRef(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -50,7 +52,7 @@ export function ResizableLayout({
   }, [handleMouseMove, handleMouseUp]);
 
   return (
-    <div ref={containerRef} className="flex-1 flex gap-0 p-3 overflow-hidden">
+    <div ref={containerRef} className={`flex-1 flex gap-0 p-3 overflow-hidden ${className ?? ''}`.trim()}>
       <div className="flex flex-col overflow-hidden" style={{ width: `${chatWidth}%` }}>
         {leftPanel}
       </div>

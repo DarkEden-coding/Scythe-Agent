@@ -108,3 +108,4 @@ temp/
 # alembic
 alembic.ini
 alembic/versions/
+src-tauri/target/

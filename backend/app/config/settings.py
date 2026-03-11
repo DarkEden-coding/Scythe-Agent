@@ -28,6 +28,9 @@ class AppSettings(BaseSettings):
         "http://127.0.0.1:5173",
         "http://localhost:4173",
         "http://127.0.0.1:4173",
+        "tauri://localhost",
+        "http://tauri.localhost",
+        "https://tauri.localhost",
     ]
     oauth_redirect_base: str = "http://localhost:8000"
     oauth_redirect_uri: str = "http://localhost:1455/auth/callback"  # Codex OAuth app allows this; proxy on 1455 forwards to main app
