@@ -2,25 +2,13 @@ import os
 import subprocess
 from pathlib import Path
 
-from app.config.settings import get_settings
 from app.schemas.filesystem import FsChildOut, FsChildrenResponse
 
 
 class FilesystemService:
     def __init__(self) -> None:
-        settings = get_settings()
-        configured_roots = [
-            Path(value).expanduser().resolve()
-            for value in getattr(settings, "fs_allowed_roots", [])
-            if value
-        ]
-
-        if configured_roots:
-            self.allowed_roots = configured_roots
-            self.restrict_to_roots = True
-        else:
-            self.allowed_roots = [Path.home().resolve()]
-            self.restrict_to_roots = False
+        self.allowed_roots = [Path("/").resolve()]
+        self.restrict_to_roots = False
 
     def _is_within_allowed_roots(self, path: Path) -> bool:
         if not self.restrict_to_roots:

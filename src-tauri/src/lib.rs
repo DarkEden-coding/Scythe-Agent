@@ -68,10 +68,6 @@ fn backend_env() -> HashMap<String, String> {
             format!("sqlite:///{}", database_path.display()),
         ),
         (
-            "FS_ALLOWED_ROOTS".into(),
-            format!("[\"{}\"]", project_root.display()),
-        ),
-        (
             "SCYTHE_PROJECT_ROOT".into(),
             project_root.display().to_string(),
         ),
