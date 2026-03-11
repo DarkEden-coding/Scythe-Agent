@@ -107,8 +107,6 @@ class FilesystemService:
             raise RuntimeError("Native folder picker did not return a path")
 
         target = Path(output).expanduser().resolve()
-        if not self._is_within_allowed_roots(target):
-            raise ValueError(f"Path is outside allowed roots: {target}")
         if not target.exists() or not target.is_dir():
             raise ValueError(f"Directory not found: {target}")
 
