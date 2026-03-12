@@ -27,6 +27,8 @@ export interface ModalProps {
   children: React.ReactNode;
   /** Optional class for the panel. */
   panelClassName?: string;
+  /** Optional class for the overlay (e.g. higher z-index for Tauri/WebView). */
+  overlayClassName?: string;
 }
 
 /**
@@ -46,6 +48,7 @@ export function Modal({
   maxHeight = 'max-h-[80vh]',
   children,
   panelClassName,
+  overlayClassName,
 }: ModalProps) {
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -69,6 +72,7 @@ export function Modal({
       className={cn(
         'fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm transition-opacity duration-200',
         visible ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none invisible',
+        overlayClassName,
       )}
       aria-hidden={!visible}
       aria-modal={visible}

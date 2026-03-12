@@ -66,6 +66,8 @@ export function App() {
       return {};
     }
   });
+  const [isGlobalRefreshing, setIsGlobalRefreshing] = useState(false);
+  const isGlobalRefreshingRef = useRef(false);
 
   // ── API hooks ──────────────────────────────────────────────────
   const chat = useChatHistory(activeChatId);
@@ -164,6 +166,17 @@ export function App() {
   const projectsApi = useProjects();
   const { projects, loading: projectsLoading, projectMemoriesByProject } = projectsApi;
   const settings = useSettings();
+  const activeChatExistsInProjects = useMemo(
+    () =>
+      activeChatId == null
+        ? false
+        : projects.some((project) => project.chats.some((chat) => chat.id === activeChatId)),
+    [activeChatId, projects],
+  );
+  const isChatInfoMissing = useMemo(
+    () => backendConnected && activeChatId != null && !activeChatExistsInProjects,
+    [activeChatId, activeChatExistsInProjects, backendConnected],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -416,6 +429,66 @@ export function App() {
   );
 
   useAgentEvents([activeChatId, ...processingChats], handleAgentEvent);
+
+  const handleRefreshAllData = useCallback(
+    async ({ silent = false }: { silent?: boolean } = {}) => {
+      if (isGlobalRefreshingRef.current) return;
+      isGlobalRefreshingRef.current = true;
+      setIsGlobalRefreshing(true);
+
+      const errors: string[] = [];
+      const activeChatIdToRefresh = activeChatId;
+
+      try {
+        const projectsRefresh = await projectsApi.refresh();
+        if (!projectsRefresh.ok) {
+          errors.push(projectsRefresh.error ?? 'Failed to refresh projects');
+        }
+
+        const settingsRefresh = await settings.refreshSettings();
+        if (!settingsRefresh.ok) {
+          errors.push(settingsRefresh.error ?? 'Failed to refresh settings');
+        }
+
+        if (activeChatIdToRefresh) {
+          await Promise.all([
+            chat.refreshHistoryFromServer(activeChatIdToRefresh),
+            chat.refreshPlans(),
+            chat.refreshMemoryState(activeChatIdToRefresh),
+            chat.refreshRuntimeState(activeChatIdToRefresh),
+          ]);
+        }
+
+        if (!silent && errors.length > 0) {
+          showToast(errors.map((message) => `Error: ${message}`).join(' | '));
+        }
+      } finally {
+        isGlobalRefreshingRef.current = false;
+        setIsGlobalRefreshing(false);
+      }
+    },
+    [activeChatId, chat, projectsApi, settings, showToast],
+  );
+
+  useEffect(() => {
+    if (!isChatInfoMissing) return;
+
+    let cancelled = false;
+    const poll = () => {
+      if (cancelled) return;
+      void handleRefreshAllData({ silent: true });
+    };
+
+    void poll();
+    const intervalId = window.setInterval(() => {
+      void poll();
+    }, 2000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [handleRefreshAllData, isChatInfoMissing]);
 
   // ── Actions that go through the API ────────────────────────────
 
@@ -1001,6 +1074,8 @@ export function App() {
         onSelectSettingsProvider={setSettingsTab}
         projectsLoading={projectsLoading}
         chatLoading={chat.loading}
+        onRefresh={handleRefreshAllData}
+        isRefreshing={isGlobalRefreshing}
       />
 
       <ResizableLayout

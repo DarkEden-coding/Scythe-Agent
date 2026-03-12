@@ -8,6 +8,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { createPortal } from 'react-dom';
 import { AlertTriangle, Pencil } from 'lucide-react';
 import { Modal } from '@/components/Modal';
 import { cn } from '@/utils/cn';
@@ -102,22 +103,26 @@ export function QueryProvider({ children }: QueryProviderProps) {
   return (
     <QueryContext.Provider value={value}>
       {children}
-      {confirmState && (
-        <ConfirmModal
-          message={confirmState.message}
-          options={confirmState.options}
-          onConfirm={handleConfirmOk}
-          onCancel={handleConfirmCancel}
-        />
-      )}
-      {promptState && (
-        <PromptModal
-          message={promptState.message}
-          defaultValue={promptState.defaultValue}
-          onConfirm={handlePromptOk}
-          onCancel={handlePromptCancel}
-        />
-      )}
+      {confirmState &&
+        createPortal(
+          <ConfirmModal
+            message={confirmState.message}
+            options={confirmState.options}
+            onConfirm={handleConfirmOk}
+            onCancel={handleConfirmCancel}
+          />,
+          document.body,
+        )}
+      {promptState &&
+        createPortal(
+          <PromptModal
+            message={promptState.message}
+            defaultValue={promptState.defaultValue}
+            onConfirm={handlePromptOk}
+            onCancel={handlePromptCancel}
+          />,
+          document.body,
+        )}
     </QueryContext.Provider>
   );
 }
@@ -143,7 +148,7 @@ function ConfirmModal({
   const isDanger = variant === 'danger';
 
   return (
-    <Modal visible onClose={onCancel} maxWidth="max-w-sm">
+    <Modal visible onClose={onCancel} maxWidth="max-w-sm" overlayClassName="z-[9999]">
       <div className="px-6 py-4 flex flex-col gap-4">
         <div className="flex items-start gap-3">
           <div
@@ -216,7 +221,7 @@ function PromptModal({
   };
 
   return (
-    <Modal visible onClose={onCancel} maxWidth="max-w-sm">
+    <Modal visible onClose={onCancel} maxWidth="max-w-sm" overlayClassName="z-[9999]">
       <form onSubmit={handleSubmit} className="px-6 py-4 flex flex-col gap-4">
         <div className="flex items-start gap-3">
           <div className="shrink-0 p-2 rounded-lg border bg-aqua-500/10 border-aqua-500/20">

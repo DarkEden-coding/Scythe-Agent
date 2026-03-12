@@ -29,7 +29,7 @@ Build the frontend and desktop shell with:
 npm run tauri:build
 ```
 
-On macOS, the Tauri bundle target is currently restricted to the application bundle itself, configured as [`"targets": ["app"]`](src-tauri/tauri.conf.json:29). This avoids the failing DMG packaging step while still producing a usable native app bundle.
+On macOS, the Tauri bundle target is restricted to the application bundle (`"targets": ["app"]`), avoiding the DMG packaging step which often fails. Run [`npm run tauri:install`](package.json:13) to build and launch the app directly.
 
 ## API behavior
 

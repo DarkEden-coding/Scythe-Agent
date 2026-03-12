@@ -1,4 +1,4 @@
-import { Terminal, ChevronDown } from 'lucide-react';
+import { Terminal, ChevronDown, RefreshCw } from 'lucide-react';
 import { ChatTabBar } from './ChatTabBar';
 import { ProviderSettingsDropdown, type SettingsTabId } from '@/components/ProviderSettingsDropdown';
 import type { ProjectChat } from '@/types';
@@ -16,6 +16,8 @@ interface AppHeaderProps {
   readonly onSelectSettingsProvider: (id: SettingsTabId) => void;
   readonly projectsLoading?: boolean;
   readonly chatLoading?: boolean;
+  readonly onRefresh?: () => void;
+  readonly isRefreshing?: boolean;
 }
 
 export function AppHeader({
@@ -31,6 +33,8 @@ export function AppHeader({
   onSelectSettingsProvider,
   projectsLoading = false,
   chatLoading = false,
+  onRefresh,
+  isRefreshing = false,
 }: AppHeaderProps) {
   return (
     <header className="flex items-center justify-between gap-3 px-5 py-2.5 bg-gray-900/80 border-b border-gray-700/30 min-h-0">
@@ -52,6 +56,15 @@ export function AppHeader({
       </div>
 
       <div className="flex items-center gap-2 shrink-0">
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={isRefreshing}
+          className="flex items-center gap-2 px-2.5 py-1.5 bg-gray-800/60 rounded-xl border border-gray-700/40 shadow-sm hover:bg-gray-750 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+          title="Refresh all data"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 text-aqua-400 ${isRefreshing ? 'animate-spin' : ''}`} />
+        </button>
         <button
           onClick={onOpenModelPicker}
           onMouseEnter={onPrefetchSettings}
