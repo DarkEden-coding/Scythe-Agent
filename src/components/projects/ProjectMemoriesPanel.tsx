@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Brain, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import type { ProjectMemory } from '@/types';
 import { Modal } from '@/components/Modal';
+import { useQuery } from '@/contexts/QueryContext';
 import { ProjectMemoryEditor } from './ProjectMemoryEditor';
 
 interface ProjectMemoriesPanelProps {
@@ -25,6 +26,7 @@ export function ProjectMemoriesPanel({
   onSave,
   onDelete,
 }: ProjectMemoriesPanelProps) {
+  const query = useQuery();
   const [editingTitle, setEditingTitle] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -73,7 +75,7 @@ export function ProjectMemoriesPanel({
   };
 
   const handleDelete = async (title: string) => {
-    if (!globalThis.confirm(`Delete project memory "${title}"?`)) return;
+    if (!(await query.confirm(`Delete project memory "${title}"?`, { variant: 'danger', confirmLabel: 'Delete' }))) return;
     setBusy(true);
     setError(null);
     try {

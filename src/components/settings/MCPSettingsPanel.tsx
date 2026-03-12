@@ -11,6 +11,7 @@ import {
   X,
 } from 'lucide-react';
 import { useMcp } from '@/api/hooks';
+import { useQuery } from '@/contexts/QueryContext';
 import { cn } from '@/utils/cn';
 import type { MCPServer, MCPTool } from '@/api/types';
 
@@ -288,6 +289,7 @@ function HttpConfigFields({
 }
 
 export function MCPSettingsPanel({ footer }: MCPSettingsPanelProps) {
+  const query = useQuery();
   const {
     servers,
     loading,
@@ -368,7 +370,7 @@ export function MCPSettingsPanel({ footer }: MCPSettingsPanelProps) {
   };
 
   const handleDelete = async (serverId: string) => {
-    if (!globalThis.confirm('Delete this MCP server? Cached tools will be removed.')) return;
+    if (!(await query.confirm('Delete this MCP server? Cached tools will be removed.', { variant: 'danger', confirmLabel: 'Delete' }))) return;
     const res = await deleteServer(serverId);
     if (res.ok) {
       setEditingId(null);

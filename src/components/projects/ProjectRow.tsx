@@ -5,6 +5,7 @@ import { ChatListItem } from './ChatListItem';
 import { ProjectMemoriesPanel } from './ProjectMemoriesPanel';
 import { formatRelativeTime } from '@/utils/formatTime';
 import { cn } from '@/utils/cn';
+import { useQuery } from '@/contexts/QueryContext';
 
 interface ProjectRowProps {
   readonly project: Project;
@@ -53,6 +54,7 @@ export function ProjectRow({
   onUpsertProjectMemory,
   onDeleteProjectMemory,
 }: ProjectRowProps) {
+  const query = useQuery();
   const [showMemories, setShowMemories] = useState(false);
 
   return (
@@ -106,7 +108,7 @@ export function ProjectRow({
               type="button"
               onClick={async (e) => {
                 e.stopPropagation();
-                if (!globalThis.confirm(`Delete project "${project.name}"? This will remove all chats in this project.`))
+                if (!(await query.confirm(`Delete project "${project.name}"? This will remove all chats in this project.`, { variant: 'danger', confirmLabel: 'Delete' })))
                   return;
                 await onDeleteProject(project.id);
               }}

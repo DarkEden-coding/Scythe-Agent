@@ -7,6 +7,7 @@ import { EnhancedModelPicker } from './components/EnhancedModelPicker';
 import { SettingsModal } from './components/SettingsModal';
 import { Modal } from './components/Modal';
 import { useToast } from './hooks/useToast';
+import { useQuery } from './contexts/QueryContext';
 import { api, useChatHistory, useProjects, useSettings, useAgentEvents } from './api';
 import type { AgentEvent, AgentPausePayload, AutoApproveRule } from './api';
 import type { SettingsTabId } from './components/ProviderSettingsDropdown';
@@ -43,6 +44,7 @@ export function App() {
   const [chatWidth, setChatWidth] = useState(33.33);
   const [showObservationsInChat, setShowObservationsInChat] = useState(false);
   const { showNotification, notificationMessage, showToast } = useToast();
+  const query = useQuery();
   const [processingChats, setProcessingChats] = useState<Set<string>>(new Set());
   const [iterationLimitPause, setIterationLimitPause] = useState<IterationLimitPauseState | null>(null);
   const [continuingPausedRun, setContinuingPausedRun] = useState(false);
@@ -758,8 +760,8 @@ export function App() {
     else showToast(`Error: ${res.error}`);
   };
 
-  const handleEditMessage = (messageId: string, newContent: string, referencedFiles?: string[]) => {
-    if (!window.confirm('This will revert all changes after this message and re-run the agent with the new content. Continue?')) {
+  const handleEditMessage = async (messageId: string, newContent: string, referencedFiles?: string[]) => {
+    if (!(await query.confirm('This will revert all changes after this message and re-run the agent with the new content. Continue?'))) {
       return;
     }
     setProcessingChats((prev) => new Set(prev).add(activeChatId!));

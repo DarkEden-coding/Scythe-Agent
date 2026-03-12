@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { MessageSquare, Clock, Hash, MoreHorizontal, PinIcon, Trash2 } from 'lucide-react';
 import type { ProjectChat } from '@/types';
+import { useQuery } from '@/contexts/QueryContext';
 import { cn } from '@/utils/cn';
 
 interface ChatListItemProps {
@@ -36,6 +37,7 @@ export function ChatListItem({
   onDelete,
   onRequestDelete,
 }: ChatListItemProps) {
+  const query = useQuery();
   const [showMenu, setShowMenu] = useState(false);
   const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
   const [menuFocusedIndex, setMenuFocusedIndex] = useState(0);
@@ -189,10 +191,10 @@ export function ChatListItem({
           <button
             ref={(el) => { menuButtonRefs.current[1] = el; }}
             type="button"
-            onClick={() => {
+            onClick={async () => {
               closeMenu();
-              const next = globalThis.prompt('Rename chat', chat.title);
-              if (next?.trim()) onRename?.(chat.id, next.trim());
+              const next = await query.prompt('Rename chat', chat.title);
+              if (next) onRename?.(chat.id, next);
             }}
             className={cn(
               'w-full flex items-center gap-2 px-3 py-1.5 text-xs text-gray-300 transition-colors',
