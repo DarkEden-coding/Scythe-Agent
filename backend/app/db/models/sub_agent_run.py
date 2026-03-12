@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import ForeignKey, Integer, Text
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import ForeignKey, Integer, Text  # type: ignore[reportMissingImports]
+from sqlalchemy.orm import Mapped, mapped_column, relationship  # type: ignore[reportMissingImports]
 
 from app.db.base import Base
 
@@ -25,9 +25,9 @@ class SubAgentRun(Base):
     task: Mapped[str] = mapped_column(Text, nullable=False)
     model: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(Text, nullable=False)
-    output_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    output_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     timestamp: Mapped[str] = mapped_column(Text, nullable=False)
-    duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    duration_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
     chat: Mapped["Chat"] = relationship(back_populates="sub_agent_runs")
     tool_call: Mapped["ToolCall"] = relationship(back_populates="sub_agent_run")

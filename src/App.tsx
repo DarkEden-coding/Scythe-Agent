@@ -19,6 +19,23 @@ interface IterationLimitPauseState {
   message: string;
 }
 
+interface QueuedMessagePayload {
+  readonly content: string;
+  readonly mode?: 'default' | 'planning' | 'plan_edit';
+  readonly activePlanId?: string;
+  readonly referencedFiles?: string[];
+  readonly attachments?: { data: string; mimeType: string; name?: string }[];
+}
+
+interface QueuedMessageItem {
+  readonly id: string;
+  readonly chatId: string;
+  readonly createdAt: string;
+  readonly payload: QueuedMessagePayload;
+}
+
+type QueuedMessagesByChat = Record<string, QueuedMessageItem[]>;
+
 export function App() {
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [showModelPicker, setShowModelPicker] = useState(false);
@@ -32,6 +49,17 @@ export function App() {
   const [continuingInterruptedRun, setContinuingInterruptedRun] = useState(false);
   const [backendConnected, setBackendConnected] = useState(false);
   const [backendConnectionChecked, setBackendConnectionChecked] = useState(false);
+  const [queuedMessagesByChat, setQueuedMessagesByChat] = useState<QueuedMessagesByChat>(() => {
+    try {
+      const raw = localStorage.getItem('queuedMessagesByChat');
+      if (!raw) return {};
+      const parsed = JSON.parse(raw) as unknown;
+      if (!parsed || typeof parsed !== 'object') return {};
+      return parsed as QueuedMessagesByChat;
+    } catch {
+      return {};
+    }
+  });
 
   // ── API hooks ──────────────────────────────────────────────────
   const chat = useChatHistory(activeChatId);
@@ -211,6 +239,15 @@ export function App() {
     if (activeChatId) localStorage.setItem('activeChatId', activeChatId);
   }, [activeChatId]);
 
+  useEffect(() => {
+    try {
+      const serialized = JSON.stringify(queuedMessagesByChat);
+      localStorage.setItem('queuedMessagesByChat', serialized);
+    } catch {
+      // Ignore persistence errors.
+    }
+  }, [queuedMessagesByChat]);
+
   // Bootstrap activeChatId from last opened or first available chat when projects load
   useEffect(() => {
     if (projectsLoading || !projects.length) return;
@@ -227,12 +264,46 @@ export function App() {
 
   const setProcessingChatsRef = useRef(setProcessingChats);
   setProcessingChatsRef.current = setProcessingChats;
+  const queuedMessagesByChatRef = useRef(queuedMessagesByChat);
+  queuedMessagesByChatRef.current = queuedMessagesByChat;
 
   const removeProcessing = useCallback((chatIdToRemove: string) => {
     setProcessingChatsRef.current((prev) => {
       const next = new Set(prev);
       next.delete(chatIdToRemove);
       return next;
+    });
+  }, []);
+
+  const enqueueMessage = useCallback(
+    (chatId: string, payload: QueuedMessagePayload) => {
+      setQueuedMessagesByChat((prev) => {
+        const existing = prev[chatId] ?? [];
+        const nextItem: QueuedMessageItem = {
+          id: `${chatId}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+          chatId,
+          createdAt: new Date().toISOString(),
+          payload,
+        };
+        return {
+          ...prev,
+          [chatId]: [...existing, nextItem],
+        };
+      });
+    },
+    [],
+  );
+
+  const removeQueuedMessage = useCallback((chatId: string, queuedId: string) => {
+    setQueuedMessagesByChat((prev) => {
+      const existing = prev[chatId];
+      if (!existing) return prev;
+      const nextForChat = existing.filter((item) => item.id !== queuedId);
+      if (nextForChat.length === existing.length) return prev;
+      return {
+        ...prev,
+        [chatId]: nextForChat,
+      };
     });
   }, []);
 
@@ -297,27 +368,56 @@ export function App() {
 
   // ── Actions that go through the API ────────────────────────────
 
+  const sendPayloadNow = useCallback(
+    async (chatIdToProcess: string, payload: QueuedMessagePayload) => {
+      setProcessingChats((prev) => new Set(prev).add(chatIdToProcess));
+
+      const res = await chat.sendMessage(payload.content, {
+        mode: payload.mode,
+        activePlanId: payload.activePlanId,
+        referencedFiles: payload.referencedFiles,
+        attachments: payload.attachments,
+      });
+      if (!res.ok) {
+        showToast(`Error: ${res.error}`);
+        setProcessingChats((prev) => {
+          const next = new Set(prev);
+          next.delete(chatIdToProcess);
+          return next;
+        });
+      }
+
+      return res;
+    },
+    [chat, showToast],
+  );
+
   const handleSendMessage = async (
     content: string,
     options?: {
       mode?: 'default' | 'planning' | 'plan_edit';
       activePlanId?: string;
       referencedFiles?: string[];
+      attachments?: { data: string; mimeType: string; name?: string }[];
     },
   ) => {
     if (activeChatId == null) return;
     const chatIdToProcess = activeChatId;
-    setProcessingChats((prev) => new Set(prev).add(chatIdToProcess));
+    const isChatBusy = isProcessing;
+    const payload: QueuedMessagePayload = {
+      content,
+      mode: options?.mode,
+      activePlanId: options?.activePlanId,
+      referencedFiles: options?.referencedFiles,
+      attachments: options?.attachments,
+    };
 
-    const res = await chat.sendMessage(content, options);
-    if (!res.ok) {
-      showToast(`Error: ${res.error}`);
-      setProcessingChats((prev) => {
-        const next = new Set(prev);
-        next.delete(chatIdToProcess);
-        return next;
-      });
+    if (isChatBusy) {
+      enqueueMessage(chatIdToProcess, payload);
+      return;
     }
+
+    await sendPayloadNow(chatIdToProcess, payload);
   };
 
   const handleCancelMessage = useCallback(() => {
@@ -329,6 +429,59 @@ export function App() {
       return next;
     });
   }, [activeChatId, chat]);
+
+  const handleDeleteQueuedMessage = useCallback(
+    (queuedId: string) => {
+      if (activeChatId == null) return;
+      removeQueuedMessage(activeChatId, queuedId);
+    },
+    [activeChatId, removeQueuedMessage],
+  );
+
+  const handleSendQueuedNow = useCallback(
+    async (queuedId: string) => {
+      if (activeChatId == null) return;
+      const chatId = activeChatId;
+      const queuedForChat = queuedMessagesByChat[chatId] ?? [];
+      const target = queuedForChat.find((item) => item.id === queuedId);
+      if (!target) return;
+
+      removeQueuedMessage(chatId, queuedId);
+      if (isProcessing) {
+        chat.cancelProcessing(chatId);
+        setProcessingChats((prev) => {
+          const next = new Set(prev);
+          next.delete(chatId);
+          return next;
+        });
+      }
+
+      const res = await sendPayloadNow(chatId, target.payload);
+      if (!res.ok) {
+        setQueuedMessagesByChat((prev) => ({
+          ...prev,
+          [chatId]: [target, ...(prev[chatId] ?? [])],
+        }));
+      }
+    },
+    [activeChatId, chat, isProcessing, queuedMessagesByChat, removeQueuedMessage, sendPayloadNow],
+  );
+
+  useEffect(() => {
+    if (activeChatId == null || isProcessing || awaitingUserQuery != null) return;
+    const nextQueued = queuedMessagesByChatRef.current[activeChatId]?.[0];
+    if (!nextQueued) return;
+
+    removeQueuedMessage(activeChatId, nextQueued.id);
+    void sendPayloadNow(activeChatId, nextQueued.payload).then((res) => {
+      if (!res.ok) {
+        setQueuedMessagesByChat((prev) => ({
+          ...prev,
+          [activeChatId]: [nextQueued, ...(prev[activeChatId] ?? [])],
+        }));
+      }
+    });
+  }, [activeChatId, awaitingUserQuery, isProcessing, removeQueuedMessage, sendPayloadNow]);
 
   const handleRetryObservation = useCallback(async () => {
     const res = await chat.retryObservation();
@@ -710,6 +863,15 @@ export function App() {
             canContinueInterruptedRun={canContinueInterruptedRun}
             onContinueInterruptedRun={handleContinueInterruptedRun}
             continueBusy={continuingInterruptedRun}
+            queuedMessages={
+              activeChatId ? (queuedMessagesByChat[activeChatId] ?? []).map((item) => ({
+                id: item.id,
+                createdAt: item.createdAt,
+                payload: item.payload,
+              })) : []
+            }
+            onDeleteQueuedMessage={handleDeleteQueuedMessage}
+            onSendQueuedNow={handleSendQueuedNow}
           />
         }
         rightPanel={

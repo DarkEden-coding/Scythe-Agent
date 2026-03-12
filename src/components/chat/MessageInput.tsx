@@ -381,6 +381,7 @@ export function MessageInput({
   const [mentionContext, setMentionContext] = useState<MentionContext | null>(null);
   const [segments, setSegments] = useState<Segment[]>(() => valueAndRefsToSegments(value, referencedFiles));
   const lastEmittedRef = useRef<{ value: string; refs: string[] } | null>(null);
+  const hasDraftContent = value.trim().length > 0 || attachments.length > 0;
 
   const setEditContentFromSegments = useCallback((nextSegments: Segment[]) => {
     const el = editRef.current;
@@ -635,8 +636,8 @@ export function MessageInput({
 
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      if (isProcessing) onCancel?.();
-      else onSubmit();
+      if (!activeChatId || disabled || !hasDraftContent) return;
+      onSubmit();
     }
   };
 
@@ -644,31 +645,44 @@ export function MessageInput({
 
   return (
     <div className={cn('space-y-2', !activeChatId && 'opacity-50 pointer-events-none')}>
-      <div className="flex items-center gap-1.5">
-        <button
-          type="button"
-          onClick={() => onComposeModeChange?.('default')}
-          className={cn(
-            'px-2 py-1 text-[10px] rounded-md border transition-colors',
-            composeMode === 'default'
-              ? 'bg-gray-700 border-gray-500 text-gray-100'
-              : 'border-gray-700/60 text-gray-400 hover:text-gray-200 hover:bg-gray-800/70',
-          )}
-        >
-          Chat
-        </button>
-        <button
-          type="button"
-          onClick={() => onComposeModeChange?.('planning')}
-          className={cn(
-            'px-2 py-1 text-[10px] rounded-md border transition-colors',
-            composeMode === 'planning'
-              ? 'bg-cyan-500/20 border-cyan-400/50 text-cyan-200'
-              : 'border-gray-700/60 text-gray-400 hover:text-cyan-200 hover:bg-cyan-500/10',
-          )}
-        >
-          Planning
-        </button>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => onComposeModeChange?.('default')}
+            className={cn(
+              'px-2 py-1 text-[10px] rounded-md border transition-colors',
+              composeMode === 'default'
+                ? 'bg-gray-700 border-gray-500 text-gray-100'
+                : 'border-gray-700/60 text-gray-400 hover:text-gray-200 hover:bg-gray-800/70',
+            )}
+          >
+            Chat
+          </button>
+          <button
+            type="button"
+            onClick={() => onComposeModeChange?.('planning')}
+            className={cn(
+              'px-2 py-1 text-[10px] rounded-md border transition-colors',
+              composeMode === 'planning'
+                ? 'bg-cyan-500/20 border-cyan-400/50 text-cyan-200'
+                : 'border-gray-700/60 text-gray-400 hover:text-cyan-200 hover:bg-cyan-500/10',
+            )}
+          >
+            Planning
+          </button>
+        </div>
+        {isProcessing && (
+          <button
+            type="button"
+            onClick={onSubmit}
+            disabled={!activeChatId || disabled || !hasDraftContent}
+            className="px-2.5 py-1 text-[10px] rounded-md border border-cyan-400/40 bg-cyan-500/15 text-cyan-100 transition-colors hover:bg-cyan-500/25 disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Queue message"
+          >
+            Queue
+          </button>
+        )}
       </div>
       <div className="flex items-end gap-2">
         <div
@@ -786,6 +800,7 @@ export function MessageInput({
         </div>
         {isProcessing ? (
           <button
+            type="button"
             onClick={onCancel}
             disabled={!activeChatId}
             className="p-3 bg-amber-500/90 hover:bg-amber-500 text-gray-950 rounded-xl transition-colors shadow-lg shadow-amber-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -795,6 +810,7 @@ export function MessageInput({
           </button>
         ) : (
           <button
+            type="button"
             onClick={onSubmit}
             disabled={!activeChatId || disabled}
             className="p-3 bg-aqua-500 hover:bg-aqua-400 text-gray-950 rounded-xl transition-colors shadow-lg shadow-aqua-500/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-aqua-500"

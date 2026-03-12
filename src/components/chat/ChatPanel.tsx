@@ -9,6 +9,9 @@ import {
   AlertTriangle,
   RotateCcw,
   MessageCircleQuestion,
+  ArrowDown,
+  ArrowUp,
+  Trash2,
 } from 'lucide-react';
 import type {
   Message,
@@ -83,6 +86,18 @@ interface ChatPanelProps {
   readonly canContinueInterruptedRun?: boolean;
   readonly onContinueInterruptedRun?: () => void;
   readonly continueBusy?: boolean;
+  readonly queuedMessages?: {
+    readonly id: string;
+    readonly createdAt: string;
+    readonly payload: {
+      readonly content: string;
+      readonly mode?: 'default' | 'planning' | 'plan_edit';
+      readonly referencedFiles?: string[];
+      readonly attachments?: { data: string; mimeType: string; name?: string }[];
+    };
+  }[];
+  readonly onDeleteQueuedMessage?: (queuedId: string) => void;
+  readonly onSendQueuedNow?: (queuedId: string) => void;
 }
 
 export function ChatPanel({
@@ -125,6 +140,9 @@ export function ChatPanel({
   canContinueInterruptedRun = false,
   onContinueInterruptedRun,
   continueBusy = false,
+  queuedMessages = [],
+  onDeleteQueuedMessage,
+  onSendQueuedNow,
 }: ChatPanelProps) {
   const [inputValue, setInputValue] = useState('');
   const [inputReferencedFiles, setInputReferencedFiles] = useState<string[]>([]);
@@ -171,6 +189,20 @@ export function ChatPanel({
     setInputReferencedFiles([]);
     setInputAttachments([]);
   };
+
+  const handleRestoreQueuedToComposer = useCallback(
+    (queuedId: string) => {
+      const target = queuedMessages.find((item) => item.id === queuedId);
+      if (!target) return;
+      setInputValue(target.payload.content);
+      setInputReferencedFiles(target.payload.referencedFiles ?? []);
+      setInputAttachments(target.payload.attachments ?? []);
+      setComposeMode(target.payload.mode === 'default' ? 'default' : 'planning');
+      setActiveTab('chat');
+      onDeleteQueuedMessage?.(queuedId);
+    },
+    [onDeleteQueuedMessage, queuedMessages, setActiveTab],
+  );
 
   const currentProject = activeChatId
     ? projects.find((p) => p.chats.some((c) => c.id === activeChatId))
@@ -278,7 +310,7 @@ export function ChatPanel({
               <div className="flex items-start justify-between gap-3">
                 <div className="flex items-start gap-2 min-w-0">
                   <AlertTriangle className="w-4 h-4 text-red-300 mt-0.5 shrink-0" />
-                  <p className="text-xs text-red-100 break-words">{persistentError.message}</p>
+                  <p className="text-xs text-red-100 wrap-break-word">{persistentError.message}</p>
                 </div>
                 {persistentError.retryable && persistentError.retryAction === 'retry_observation' && (
                   <button
@@ -337,6 +369,60 @@ export function ChatPanel({
             </div>
           )}
           <div className="p-3 border-t border-gray-700/40 bg-gray-850">
+            {queuedMessages.length > 0 && (
+              <div className="mb-2 rounded-xl border border-cyan-500/30 bg-cyan-500/5 px-3 py-2.5 space-y-1">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[10px] font-semibold tracking-wide uppercase text-cyan-300/80">
+                    Queued messages
+                  </span>
+                  <span className="text-[10px] text-cyan-200/80">
+                    {queuedMessages.length}
+                    {' '}
+                    in queue
+                  </span>
+                </div>
+                <div className="space-y-1.5 max-h-32 overflow-y-auto">
+                  {queuedMessages.map((item) => (
+                    <div
+                      key={item.id}
+                      className="flex items-start gap-2 rounded-lg bg-gray-800/80 border border-gray-700/60 px-2.5 py-1.5"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs text-gray-100 truncate">
+                          {item.payload.content.trim() || 'Queued message'}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleRestoreQueuedToComposer(item.id)}
+                          className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-gray-750/90 hover:bg-gray-700 text-cyan-200 hover:text-cyan-100 border border-cyan-500/30 transition-colors"
+                          title="Move into composer"
+                        >
+                          <ArrowDown className="w-3 h-3" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onSendQueuedNow?.(item.id)}
+                          className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-cyan-500/95 hover:bg-cyan-400 text-gray-950 shadow-sm shadow-cyan-500/40 transition-colors"
+                          title="Send now"
+                        >
+                          <ArrowUp className="w-3 h-3" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onDeleteQueuedMessage?.(item.id)}
+                          className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-gray-800/90 hover:bg-red-500/90 text-gray-300 hover:text-white border border-gray-700/70 hover:border-red-400/70 transition-colors"
+                          title="Delete"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             <MessageInput
               value={inputValue}
               onChange={setInputValue}

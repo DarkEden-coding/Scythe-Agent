@@ -8,9 +8,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import Any, TypedDict
+from typing import Any, Optional, TypedDict, Union
 
-import httpx
+import httpx  # type: ignore[reportMissingImports]
 
 logger = logging.getLogger(__name__)
 
@@ -49,12 +49,15 @@ class StreamReasoningEvent(TypedDict):
     type: str
     reasoning_block_id: str
     delta: str
-    checkpoint_id: str | None
+    checkpoint_id: Optional[str]
 
 
-StreamEvent = (
-    StreamContentEvent | StreamToolCallsEvent | StreamFinishEvent | StreamReasoningEvent
-)
+StreamEvent = Union[
+    StreamContentEvent,
+    StreamToolCallsEvent,
+    StreamFinishEvent,
+    StreamReasoningEvent,
+]
 
 
 def _accumulate_tool_calls(
@@ -105,7 +108,7 @@ def _build_tool_calls_list(
     ]
 
 
-def _parse_sse_line(line: str) -> tuple[dict | None, bool]:
+def _parse_sse_line(line: str) -> tuple[Optional[dict], bool]:
     """Parse SSE data line. Returns (parsed dict or None, stream_done)."""
     if not line.startswith("data: "):
         return (None, False)
@@ -124,7 +127,7 @@ def _process_parsed_choice(
     parsed: dict,
     content_parts: list[str],
     accumulated: dict[int, dict[str, Any]],
-) -> tuple[list[StreamEvent], str | None]:
+) -> tuple[list[StreamEvent], Optional[str]]:
     """
     Process parsed SSE choice. Returns (list of events to yield, finish_reason or None).
     """
@@ -189,8 +192,8 @@ class GroqClient:
 
     def __init__(
         self,
-        api_key: str | None = None,
-        base_url: str | None = None,
+        api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
     ) -> None:
         """
         Initialize Groq client.
@@ -204,7 +207,7 @@ class GroqClient:
         self._api_key = api_key or os.environ.get("GROQ_API_KEY") or ""
         self._base_url = (base_url or GROQ_BASE_URL).rstrip("/")
 
-    def count_tokens(self, text: str, model: str) -> int | None:
+    def count_tokens(self, text: str, model: str) -> Optional[int]:
         """Groq has no tokenize endpoint; returns None for tiktoken fallback."""
         return None
 
