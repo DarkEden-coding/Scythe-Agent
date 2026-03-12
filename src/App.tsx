@@ -66,9 +66,10 @@ export function App() {
     const lastMessage = chat.messages.at(-1);
     if (lastMessage?.role !== 'agent') return false;
     const lastMessageTimestamp = lastMessage.timestamp.getTime();
-    const lastToolAction = [...chat.toolCalls]
+    const postMessageToolCalls = [...chat.toolCalls]
       .filter((toolCall) => toolCall.timestamp.getTime() >= lastMessageTimestamp)
-      .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())[0];
+      .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+    const lastToolAction = postMessageToolCalls[0];
     if (
       lastToolAction?.name === 'submit_task'
       && lastToolAction.status === 'completed'
@@ -76,6 +77,23 @@ export function App() {
     ) {
       return false;
     }
+
+    const lastParallelGroupId = lastToolAction?.parallelGroupId != null && lastToolAction.isParallel
+      ? lastToolAction.parallelGroupId
+      : undefined;
+    const lastParallelGroupHasSubmitTask = Boolean(
+      lastParallelGroupId && postMessageToolCalls.some(
+        (toolCall) =>
+          toolCall.parallelGroupId === lastParallelGroupId
+          && toolCall.name === 'submit_task'
+          && toolCall.status === 'completed'
+          && String(toolCall.output ?? '').trim() === 'Task submitted.',
+      ),
+    );
+    if (lastParallelGroupHasSubmitTask) {
+      return false;
+    }
+
     const hasIncompleteToolCall = chat.toolCalls.some((toolCall) => toolCall.status === 'pending' || toolCall.status === 'running');
     const hasRecoverablePersistentError = Boolean(
       chat.persistentError && chat.persistentError.source !== 'observer' && chat.persistentError.source !== 'reflector',
