@@ -15,6 +15,7 @@ for browser development, or:
 ```bash
 npm run tauri:dev
 ```
+This command now clears any existing processes on ports `5173` and `3001` before launching Tauri.
 
 for desktop development.
 
@@ -42,6 +43,7 @@ On macOS, the Tauri bundle target is currently restricted to the application bun
 - Tauri starts the backend from [`backend/app/desktop_entry.py`](backend/app/desktop_entry.py:1).
 - In local development it first tries `uv run --project backend python -m app.desktop_entry` from the repository root.
 - If `uv` is unavailable, it falls back to `python3 -m app.desktop_entry` from the [`backend`](backend) directory.
+- `SCYTHE_BACKEND_PORT` controls the backend listening port (defaults to `3001`).
 - Backend startup is now asynchronous in [`src-tauri/src/lib.rs`](src-tauri/src/lib.rs:1), so the desktop window can open immediately even if the Python server is still booting or fails to start.
 - On app exit, the spawned backend process is terminated by [`src-tauri/src/lib.rs`](src-tauri/src/lib.rs:1).
 

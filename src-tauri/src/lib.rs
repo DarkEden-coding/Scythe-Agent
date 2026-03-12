@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    env,
     net::TcpStream,
     path::PathBuf,
     process::{Child, Command, Stdio},
@@ -9,6 +10,9 @@ use std::{
 };
 
 use tauri::{AppHandle, Emitter, Manager, RunEvent};
+
+const DEFAULT_BACKEND_PORT: u16 = 3001;
+const BACKEND_HOST: &str = "127.0.0.1";
 
 struct BackendState {
     child: Mutex<Option<Child>>,
@@ -57,7 +61,15 @@ fn backend_dir() -> PathBuf {
     project_root().join("backend")
 }
 
-fn backend_env() -> HashMap<String, String> {
+fn resolve_backend_port() -> u16 {
+    env::var("SCYTHE_BACKEND_PORT")
+        .ok()
+        .and_then(|raw_port| raw_port.parse::<u16>().ok())
+        .filter(|port| *port > 0)
+        .unwrap_or(DEFAULT_BACKEND_PORT)
+}
+
+fn backend_env(backend_port: u16) -> HashMap<String, String> {
     let project_root = project_root();
     let backend_dir = backend_dir();
     let database_path = backend_dir.join("agentic.db");
@@ -71,19 +83,24 @@ fn backend_env() -> HashMap<String, String> {
             "SCYTHE_PROJECT_ROOT".into(),
             project_root.display().to_string(),
         ),
+        (
+            "SCYTHE_BACKEND_PORT".into(),
+            backend_port.to_string(),
+        ),
     ])
 }
 
-fn wait_for_backend() -> Result<(), String> {
+fn wait_for_backend(backend_port: u16) -> Result<(), String> {
+    let backend_addr = format!("{BACKEND_HOST}:{backend_port}");
     let deadline = Instant::now() + Duration::from_secs(20);
     while Instant::now() < deadline {
-        if TcpStream::connect("127.0.0.1:3001").is_ok() {
+        if TcpStream::connect(&backend_addr).is_ok() {
             return Ok(());
         }
         thread::sleep(Duration::from_millis(250));
     }
 
-    Err("Timed out waiting for backend on 127.0.0.1:3001".into())
+    Err(format!("Timed out waiting for backend on {backend_addr}").into())
 }
 
 fn emit_backend_status(app: &AppHandle, status: &str, detail: &str) {
@@ -119,14 +136,14 @@ fn spawn_backend(config: &BackendLaunchConfig) -> Result<Child, String> {
     })
 }
 
-fn backend_launch_candidates(app: &AppHandle) -> Vec<BackendLaunchConfig> {
+fn backend_launch_candidates(app: &AppHandle, backend_port: u16) -> Vec<BackendLaunchConfig> {
     let backend_dir = backend_dir();
     let resource_backend_dir = app
         .path()
         .resource_dir()
         .ok()
         .map(|dir| dir.join("backend"));
-    let backend_env = backend_env();
+    let backend_env = backend_env(backend_port);
 
     let mut candidates = Vec::new();
 
@@ -167,12 +184,13 @@ fn backend_launch_candidates(app: &AppHandle) -> Vec<BackendLaunchConfig> {
 
 fn start_backend_in_background(app: AppHandle) {
     thread::spawn(move || {
+        let backend_port = resolve_backend_port();
         emit_backend_status(&app, "starting", "Launching local Python backend");
 
         let mut errors = Vec::new();
-        for candidate in backend_launch_candidates(&app) {
+        for candidate in backend_launch_candidates(&app, backend_port) {
             match spawn_backend(&candidate) {
-                Ok(mut child) => match wait_for_backend() {
+                Ok(mut child) => match wait_for_backend(backend_port) {
                     Ok(()) => {
                         app.state::<BackendState>().set_child(child);
                         emit_backend_status(&app, "ready", "Backend is accepting connections");

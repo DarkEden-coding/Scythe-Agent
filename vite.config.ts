@@ -8,6 +8,15 @@ import { viteSingleFile } from "vite-plugin-singlefile";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const host = process.env.TAURI_DEV_HOST;
+const parsePort = (value: string | undefined, fallback: number): number => {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0 || parsed > 65535) {
+    return fallback;
+  }
+  return parsed;
+};
+const frontendPort = parsePort(process.env.SCYTHE_FRONTEND_PORT, 5173);
+const backendPort = parsePort(process.env.SCYTHE_BACKEND_PORT, 3001);
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -20,7 +29,7 @@ export default defineConfig({
   },
   envPrefix: ["VITE_", "TAURI_ENV_*"],
   server: {
-    port: 5173,
+    port: frontendPort,
     strictPort: true,
     host: host || false,
     hmr: host
@@ -35,7 +44,7 @@ export default defineConfig({
     },
     proxy: {
       "/api": {
-        target: "http://127.0.0.1:3001",
+        target: `http://127.0.0.1:${backendPort}`,
         changeOrigin: true,
       },
     },

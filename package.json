@@ -7,8 +7,10 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:clean-ports": "export SCYTHE_FRONTEND_PORT=${SCYTHE_FRONTEND_PORT:-5173}; export SCYTHE_BACKEND_PORT=${SCYTHE_BACKEND_PORT:-3001}; export VITE_BACKEND_PORT=$SCYTHE_BACKEND_PORT; for PORT in \"$SCYTHE_FRONTEND_PORT\" \"$SCYTHE_BACKEND_PORT\"; do PIDS=\"$(lsof -nP -iTCP:$PORT -sTCP:LISTEN -t || true)\"; if [ -n \"$PIDS\" ]; then echo \"Killing orphan process(es) on TCP port $PORT: $PIDS\"; kill -9 $PIDS; fi; done",
+    "tauri:dev": "npm run tauri:clean-ports && tauri dev",
+    "tauri:build": "tauri build",
+    "tauri:install": "npm run tauri:build -- --bundles dmg && open src-tauri/target/release/bundle/dmg/*.dmg"
   },
   "dependencies": {
     "clsx": "2.1.1",

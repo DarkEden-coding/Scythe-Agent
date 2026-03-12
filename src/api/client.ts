@@ -141,16 +141,32 @@ export interface BackendHealthResponse {
 }
 
 function resolveDefaultApiBaseUrl(): string {
+  const resolveBackendPort = (): number => {
+    const configuredPort = Number.parseInt(import.meta.env.VITE_BACKEND_PORT ?? "", 10);
+    if (Number.isInteger(configuredPort) && configuredPort > 0 && configuredPort <= 65535) {
+      return configuredPort;
+    }
+    return 3001;
+  };
+
   const configuredBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim();
-  if (configuredBaseUrl) {
-    return configuredBaseUrl;
-  }
 
   if (typeof window !== 'undefined') {
-    const protocol = window.location.protocol;
-    if (protocol === 'tauri:' || protocol === 'asset:' || protocol === 'file:') {
-      return 'http://127.0.0.1:3001/api';
+    const { protocol, hostname } = window.location;
+    const isTauriRuntime =
+      protocol === 'tauri:'
+      || protocol === 'asset:'
+      || protocol === 'file:'
+      || hostname === 'tauri.localhost'
+      || hostname.endsWith('.tauri.localhost');
+
+    if (isTauriRuntime) {
+      return `http://127.0.0.1:${resolveBackendPort()}/api`;
     }
+  }
+
+  if (configuredBaseUrl) {
+    return configuredBaseUrl;
   }
 
   return '/api';
