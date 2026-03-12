@@ -10,7 +10,7 @@ import json
 import logging
 from typing import Any, Optional, TypedDict, Union
 
-import httpx  # type: ignore[reportMissingImports]
+import httpx  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -233,7 +233,7 @@ class GroqClient:
         messages: list[dict],
         max_tokens: int = 128,
         temperature: float = 0.0,
-        tools: list[dict] | None = None,
+        tools: Optional[list[dict]] = None,
     ) -> str:
         """Create a non-streaming chat completion."""
         if not self._api_key:
@@ -292,8 +292,8 @@ class GroqClient:
         messages: list[dict],
         max_tokens: int = 128,
         temperature: float = 0.0,
-        tools: list[dict] | None = None,
-        reasoning: dict[str, Any] | None = None,
+        tools: Optional[list[dict]] = None,
+        reasoning: Optional[dict[str, Any]] = None,
     ):
         """
         Stream chat completion from Groq.

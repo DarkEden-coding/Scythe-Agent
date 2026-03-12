@@ -43,6 +43,11 @@ interface MentionContext {
   query: string;
 }
 
+interface SelectionBoundary {
+  node: Node;
+  offset: number;
+}
+
 type Segment = { type: 'text'; value: string } | { type: 'chip'; path: string };
 
 /** Matches {{FILE:i}} plus any trailing stray braces */
@@ -304,8 +309,8 @@ function getContentEditableTextAndCursor(container: HTMLDivElement): { text: str
 
 function setRangeByOffset(container: Node, range: Range, startOffset: number, endOffset: number): boolean {
   let pos = 0;
-  let startRes: { node: Node; offset: number } | null = null;
-  let endRes: { node: Node; offset: number } | null = null;
+  let startRes: SelectionBoundary | null = null;
+  let endRes: SelectionBoundary | null = null;
 
   const walk = (node: Node): boolean => {
     if (node.nodeType === Node.TEXT_NODE) {
@@ -341,8 +346,10 @@ function setRangeByOffset(container: Node, range: Range, startOffset: number, en
 
   walk(container);
   if (startRes && endRes) {
-    range.setStart(startRes.node, startRes.offset);
-    range.setEnd(endRes.node, endRes.offset);
+    const start = startRes;
+    const end = endRes;
+    range.setStart(start.node, start.offset);
+    range.setEnd(end.node, end.offset);
     return true;
   }
   return false;

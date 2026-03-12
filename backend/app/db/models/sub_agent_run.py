@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import ForeignKey, Integer, Text  # type: ignore[reportMissingImports]
-from sqlalchemy.orm import Mapped, mapped_column, relationship  # type: ignore[reportMissingImports]
+from sqlalchemy import ForeignKey, Integer, Text  # type: ignore
+from sqlalchemy.orm import Mapped, mapped_column, relationship  # type: ignore
 
 from app.db.base import Base
 

@@ -12,9 +12,9 @@ import logging
 import platform
 import ssl
 import uuid
-from typing import Any, TypedDict, cast
+from typing import Any, Optional, TypedDict, Union, cast
 
-import httpx
+import httpx  # type: ignore
 
 from app.providers.openai_sub.models import get_openai_sub_models_payload
 
@@ -56,9 +56,12 @@ class StreamFinishEvent(TypedDict):
     content: str
 
 
-StreamEvent = (
-    StreamContentEvent | StreamReasoningEvent | StreamToolCallsEvent | StreamFinishEvent
-)
+StreamEvent = Union[
+    StreamContentEvent,
+    StreamReasoningEvent,
+    StreamToolCallsEvent,
+    StreamFinishEvent,
+]
 
 
 def _sanitize_call_id(call_id: str, max_len: int = 64) -> str:
@@ -246,7 +249,7 @@ def _openrouter_tools_to_responses(tools: list[dict]) -> list[dict]:
     return result
 
 
-def _parse_sse_line(line: str) -> tuple[dict | None, bool]:
+def _parse_sse_line(line: str) -> tuple[Optional[dict], bool]:
     if not line.startswith("data:"):
         return (None, False)
     data = line[5:].lstrip()
@@ -289,7 +292,7 @@ def _extract_from_responses_output(output: list[dict]) -> tuple[str, list[dict],
     return ("".join(text_parts), tool_calls, finish_reason)
 
 
-def _find_accumulated_idx_by_call_id(accumulated: dict, call_id: str) -> int | None:
+def _find_accumulated_idx_by_call_id(accumulated: dict, call_id: str) -> Optional[int]:
     """Find existing accumulated tool call entry by call_id to prevent duplicates."""
     if not call_id:
         return None
@@ -303,8 +306,8 @@ def _process_stream_event(
     parsed: dict,
     content_parts: list[str],
     accumulated: dict,
-    reasoning_parts: list[str] | None = None,
-) -> tuple[list[StreamEvent], str | None]:
+    reasoning_parts: Optional[list[str]] = None,
+) -> tuple[list[StreamEvent], Optional[str]]:
     """Process SSE event from Codex or Responses API. Returns (events, finish_reason)."""
     events: list[StreamEvent] = []
     ev_type = parsed.get("type")
@@ -510,7 +513,7 @@ def _process_stream_event(
 
 
 def _codex_headers(
-    access_token: str, session_id: str, *, account_id: str | None = None
+    access_token: str, session_id: str, *, account_id: Optional[str] = None
 ) -> dict[str, str]:
     """Build Codex-specific headers required for subscription auth."""
     headers = {
@@ -528,12 +531,14 @@ def _codex_headers(
 class OpenAISubClient:
     """Client for OpenAI Codex Responses API using subscription OAuth token."""
 
-    def __init__(self, access_token: str, *, account_id: str | None = None) -> None:
+    def __init__(
+        self, access_token: str, *, account_id: Optional[str] = None
+    ) -> None:
         self._access_token = access_token
         self._session_id = str(uuid.uuid4())
         self._account_id = account_id
 
-    def count_tokens(self, text: str, model: str) -> int | None:
+    def count_tokens(self, text: str, model: str) -> Optional[int]:
         return None
 
     async def get_models(self) -> list[dict]:
@@ -547,7 +552,7 @@ class OpenAISubClient:
         messages: list[dict],
         max_tokens: int = 128,
         temperature: float = 0.0,
-        tools: list[dict] | None = None,
+        tools: Optional[list[dict]] = None,
     ) -> str:
         input_items, instructions = _messages_to_codex_input(messages)
         resp_tools = _openrouter_tools_to_responses(tools) if tools else None
@@ -603,7 +608,7 @@ class OpenAISubClient:
         messages: list[dict],
         max_tokens: int,
         temperature: float,
-        tools: list[dict] | None,
+        tools: Optional[list[dict]],
     ) -> str:
         """Compatibility path when upstream requires stream=true."""
         parts: list[str] = []
@@ -637,8 +642,8 @@ class OpenAISubClient:
         messages: list[dict],
         max_tokens: int = 128,
         temperature: float = 0.0,
-        tools: list[dict] | None = None,
-        reasoning: dict[str, Any] | None = None,
+        tools: Optional[list[dict]] = None,
+        reasoning: Optional[dict[str, Any]] = None,
         tool_choice: Any = None,
     ):
         input_items, instructions = _messages_to_codex_input(messages)

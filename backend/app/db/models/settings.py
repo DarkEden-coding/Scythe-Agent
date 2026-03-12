@@ -1,7 +1,7 @@
-from typing import Optional  # type: ignore[reportMissingImports]
+from typing import Optional
 
-from sqlalchemy import Integer, Text  # type: ignore[reportMissingImports]
-from sqlalchemy.orm import Mapped, mapped_column  # type: ignore[reportMissingImports]
+from sqlalchemy import Integer, Text  # type: ignore
+from sqlalchemy.orm import Mapped, mapped_column  # type: ignore
 
 from app.db.base import Base
 

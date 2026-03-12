@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
-import httpx
+import httpx  # type: ignore
 
 from app.db.models.observation import Observation
 from app.services.memory.observational.prompts import (
@@ -94,7 +94,7 @@ def _count_tokens(text: str) -> int:
     if not text:
         return 0
     try:
-        import tiktoken
+        import tiktoken  # type: ignore
         enc = tiktoken.get_encoding("cl100k_base")
         return len(enc.encode(text)) or 1
     except Exception:
@@ -331,7 +331,7 @@ class ObservationMemoryService:
 
         observed: list[dict] = []
         unobserved: list[dict] = []
-        for msg, is_observed in zip(all_messages, observed_flags, strict=False):
+        for msg, is_observed in zip(all_messages, observed_flags):
             if is_observed:
                 observed.append(msg)
             else:

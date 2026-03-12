@@ -11,9 +11,9 @@ import asyncio
 import json
 import logging
 import os
-from typing import Any, TypedDict
+from typing import Any, Optional, TypedDict, Union
 
-import httpx
+import httpx  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -58,17 +58,20 @@ class StreamReasoningEvent(TypedDict):
     type: str
     reasoning_block_id: str
     delta: str
-    checkpoint_id: str | None
+    checkpoint_id: Optional[str]
 
 
-StreamEvent = (
-    StreamContentEvent | StreamToolCallsEvent | StreamFinishEvent | StreamReasoningEvent
-)
+StreamEvent = Union[
+    StreamContentEvent,
+    StreamToolCallsEvent,
+    StreamFinishEvent,
+    StreamReasoningEvent,
+]
 
 
 def _yield_reasoning_from_content(
     delta: dict, reasoning_accumulated: dict[int, dict[str, Any]]
-) -> StreamEvent | None:
+) -> Optional[StreamEvent]:
     """Handle reasoning_content or reasoning field; returns event or None."""
     rd_content = delta.get("reasoning_content") or delta.get("reasoning")
     if not isinstance(rd_content, str) or not rd_content:
@@ -165,7 +168,7 @@ def _build_tool_calls_list(
     ]
 
 
-def _parse_sse_line(line: str) -> tuple[dict | None, bool]:
+def _parse_sse_line(line: str) -> tuple[Optional[dict], bool]:
     """Parse SSE data line. Returns (parsed dict or None, stream_done)."""
     if not line.startswith("data: "):
         return (None, False)
@@ -185,7 +188,7 @@ def _process_parsed_choice(
     content_parts: list[str],
     accumulated: dict[int, dict[str, Any]],
     reasoning_accumulated: dict[int, dict[str, Any]],
-) -> tuple[list[StreamEvent], str | None]:
+) -> tuple[list[StreamEvent], Optional[str]]:
     """Process parsed SSE choice. Returns (events, finish_reason)."""
     events: list[StreamEvent] = []
     choices = parsed.get("choices", [])
@@ -252,14 +255,14 @@ class ZAiClient:
 
     def __init__(
         self,
-        api_key: str | None = None,
-        base_url: str | None = None,
+        api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
     ) -> None:
         """Initialize Z.ai client."""
         self._api_key = api_key or os.environ.get("ZAI_API_KEY") or ""
         self._base_url = (base_url or ZAI_BASE_URL).rstrip("/")
 
-    def count_tokens(self, text: str, model: str) -> int | None:
+    def count_tokens(self, text: str, model: str) -> Optional[int]:
         """Z.ai has no tokenize endpoint; returns None for tiktoken fallback."""
         return None
 
@@ -285,7 +288,7 @@ class ZAiClient:
         messages: list[dict],
         max_tokens: int = 128,
         temperature: float = 0.0,
-        tools: list[dict] | None = None,
+        tools: Optional[list[dict]] = None,
     ) -> str:
         """Create a non-streaming chat completion."""
         if not self._api_key:
@@ -344,8 +347,8 @@ class ZAiClient:
         messages: list[dict],
         max_tokens: int = 128,
         temperature: float = 0.0,
-        tools: list[dict] | None = None,
-        reasoning: dict[str, Any] | None = None,
+        tools: Optional[list[dict]] = None,
+        reasoning: Optional[dict[str, Any]] = None,
     ):
         """Stream chat completion from Z.ai."""
         if not self._api_key:

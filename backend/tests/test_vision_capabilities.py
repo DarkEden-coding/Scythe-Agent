@@ -1,8 +1,11 @@
 from app.providers.vision import model_has_vision
 
 
+from typing import Optional
+
+
 class _StubSettingsRepo:
-    def __init__(self, models: list[object] | None = None) -> None:
+    def __init__(self, models: Optional[list[object]] = None) -> None:
         self._models = models or []
 
     def list_models(self) -> list[object]:

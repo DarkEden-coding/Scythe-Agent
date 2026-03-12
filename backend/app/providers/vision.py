@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING
+from collections.abc import Iterable
+from typing import Any, Optional, Protocol
 
 from app.providers.openai_sub.models import get_openai_sub_model
 
-if TYPE_CHECKING:
-    from app.db.repositories.settings_repo import SettingsRepository
+
+class _SettingsRepo(Protocol):
+    """Protocol for repositories used by vision model metadata lookup."""
+
+    def list_models(self) -> Iterable[Any]:
+        ...
 
 # Fallback list of known vision-capable Groq models when API metadata lacks modality info
 GROQ_VISION_MODELS: frozenset[str] = frozenset({
@@ -24,8 +29,8 @@ GROQ_VISION_MODELS: frozenset[str] = frozenset({
 def model_has_vision(
     provider: str,
     model_label: str,
-    settings_repo: SettingsRepository,
-    raw_model: dict | None = None,
+    settings_repo: _SettingsRepo,
+    raw_model: Optional[dict] = None,
 ) -> bool:
     """Detect if the given model supports image/vision inputs.
 
