@@ -37,6 +37,7 @@ import type {
   AgentObservationStatusPayload,
   AgentPlanConflictPayload,
   AgentPlanPayload,
+  AgentRunStatusPayload,
   ChatRuntimeStateResponse,
   ChatMemoryStateResponse,
 } from '@/api/types';
@@ -411,6 +412,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
   const [persistentError, setPersistentError] = useState<ChatPersistentError | null>(null);
   const [visionPreprocessing, setVisionPreprocessing] = useState(false);
   const [runtimeState, setRuntimeState] = useState<ChatRuntimeStateResponse | null>(null);
+  const runtimeStateRef = useRef<ChatRuntimeStateResponse | null>(null);
 
   const pendingContentDeltas = useRef<Map<string, string>>(new Map());
   const pendingReasoningDeltas = useRef<Map<string, string>>(new Map());
@@ -438,6 +440,29 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
     },
     [],
   );
+
+  const updateRuntimeState = useCallback((next: ChatRuntimeStateResponse | null) => {
+    runtimeStateRef.current = next;
+    setRuntimeState(next);
+  }, []);
+
+  const isCurrentRunStatusEvent = useCallback((event: AgentEvent) => {
+    const currentRuntimeState = runtimeStateRef.current;
+    if (
+      currentRuntimeState == null
+      || currentRuntimeState.chatId !== event.chatId
+      || !currentRuntimeState.isRunning
+    ) {
+      return true;
+    }
+    const eventCheckpointId = typeof (event.payload as { checkpointId?: string | null })?.checkpointId === 'string'
+      ? (event.payload as { checkpointId?: string | null }).checkpointId ?? null
+      : null;
+    if (!currentRuntimeState.checkpointId || !eventCheckpointId) {
+      return true;
+    }
+    return currentRuntimeState.checkpointId === eventCheckpointId;
+  }, []);
 
   const setContextItemsWithOverlay = useCallback(
     (next: ContextItem[] | ((prev: ContextItem[]) => ContextItem[])) => {
@@ -480,7 +505,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
       setObservations([]);
       setPersistentError(null);
       setVisionPreprocessing(false);
-      setRuntimeState(null);
+      updateRuntimeState(null);
       setError(null);
       pendingContentDeltas.current.clear();
       pendingReasoningDeltas.current.clear();
@@ -510,7 +535,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
     setObservations([]);
     setObservationStatus('idle');
     setPersistentError(null);
-    setRuntimeState(null);
+    updateRuntimeState(null);
 
     Promise.all([
       client.getChatHistory(resolvedChatId),
@@ -550,9 +575,9 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
         memoryStateRef.current = null;
       }
       if (runtimeRes.ok) {
-        setRuntimeState(runtimeRes.data);
+        updateRuntimeState(runtimeRes.data);
       } else {
-        setRuntimeState({ chatId: resolvedChatId, isRunning: false });
+        updateRuntimeState({ chatId: resolvedChatId, isRunning: false, checkpointId: null });
       }
       if (histRes.ok) {
         commitContextItems(histRes.data.contextItems, memoryStateRef.current);
@@ -563,7 +588,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
     return () => {
       cancelled = true;
     };
-  }, [chatId, client, commitContextItems]);
+  }, [chatId, client, commitContextItems, updateRuntimeState]);
 
   const sendMessage = useCallback(
     async (
@@ -640,19 +665,27 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
   );
 
   const cancelProcessing = useCallback(
-    (targetChatId?: string) => {
+    async (targetChatId?: string) => {
       const id = targetChatId ?? chatId;
-      if (typeof id !== 'string') return;
+      if (typeof id !== 'string') {
+        return { ok: false as const, data: null, error: 'No chat selected', timestamp: new Date().toISOString() };
+      }
       client.cancelSession(id);
-      client.cancelChat(id);
-      setRuntimeState({ chatId: id, isRunning: false });
+      const res = await client.cancelChat(id);
+      if (res.ok) {
+        const runtimeRes = await client.getChatRuntime(id);
+        if (runtimeRes.ok) {
+          updateRuntimeState(runtimeRes.data);
+        }
+      }
       setProcessingChats((prev) => {
         const next = new Set(prev);
         next.delete(id);
         return next;
       });
+      return res;
     },
-    [chatId, client],
+    [chatId, client, updateRuntimeState],
   );
 
   const approveCommand = useCallback(
@@ -733,17 +766,17 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
     async (targetChatId?: string | null) => {
       const resolvedChatId = targetChatId ?? chatId;
       if (!isValidChatId(resolvedChatId)) {
-        setRuntimeState(null);
+        updateRuntimeState(null);
         return { ok: true as const, runtime: null as ChatRuntimeStateResponse | null };
       }
       const res = await client.getChatRuntime(resolvedChatId);
       if (res.ok) {
-        setRuntimeState(res.data);
+        updateRuntimeState(res.data);
         return { ok: true as const, runtime: res.data };
       }
-      return { ok: false as const, runtime: runtimeState };
+      return { ok: false as const, runtime: runtimeStateRef.current };
     },
-    [chatId, client, runtimeState],
+    [chatId, client, updateRuntimeState],
   );
 
   const refreshMemoryState = useCallback(
@@ -897,7 +930,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
       const res = await client.getChatRuntime(resolvedChatId);
       if (cancelled) return;
       if (res.ok) {
-        setRuntimeState(res.data);
+        updateRuntimeState(res.data);
       }
     };
 
@@ -923,7 +956,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
       window.removeEventListener('focus', handleWindowFocus);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [chatId, client]);
+  }, [chatId, client, updateRuntimeState]);
 
   useEffect(() => {
     if (!isValidChatId(chatId) || plans.length === 0) return () => {};
@@ -1109,7 +1142,12 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
 
       switch (event.type) {
         case 'agent_started': {
-          setRuntimeState({ chatId: event.chatId, isRunning: true });
+          const payload = event.payload as AgentRunStatusPayload;
+          updateRuntimeState({
+            chatId: event.chatId,
+            isRunning: true,
+            checkpointId: payload.checkpointId ?? null,
+          });
           break;
         }
         case 'vision_preprocessing': {
@@ -1504,14 +1542,20 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
           break;
         }
         case 'agent_done': {
+          if (!isCurrentRunStatusEvent(event)) {
+            break;
+          }
           setVisionPreprocessing(false);
           setPersistentError(null);
-          setRuntimeState({ chatId: event.chatId, isRunning: false });
+          updateRuntimeState({ chatId: event.chatId, isRunning: false, checkpointId: null });
           void refreshHistoryFromServer(event.chatId);
           break;
         }
         case 'agent_paused': {
-          setRuntimeState({ chatId: event.chatId, isRunning: false });
+          if (!isCurrentRunStatusEvent(event)) {
+            break;
+          }
+          updateRuntimeState({ chatId: event.chatId, isRunning: false, checkpointId: null });
           break;
         }
         case 'error': {
@@ -1532,7 +1576,10 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
               );
             }
           } else {
-            setRuntimeState({ chatId: event.chatId, isRunning: false });
+            if (!isCurrentRunStatusEvent(event)) {
+              break;
+            }
+            updateRuntimeState({ chatId: event.chatId, isRunning: false, checkpointId: null });
             setPersistentError({
               message: payload.message ?? 'An error occurred.',
               source: payload.source,
@@ -1549,7 +1596,17 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
           break;
       }
     },
-    [asDate, scheduleContextRefresh, scheduleStreamFlush, refreshContextFromHistory, refreshHistoryFromServer, refreshMemoryState, resetTransientStreamState],
+    [
+      asDate,
+      isCurrentRunStatusEvent,
+      refreshContextFromHistory,
+      refreshHistoryFromServer,
+      refreshMemoryState,
+      resetTransientStreamState,
+      scheduleContextRefresh,
+      scheduleStreamFlush,
+      updateRuntimeState,
+    ],
   );
 
   return {

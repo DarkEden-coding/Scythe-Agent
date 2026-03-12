@@ -322,6 +322,7 @@ export interface GetChatHistoryResponse {
 export interface ChatRuntimeStateResponse {
   chatId: string;
   isRunning: boolean;
+  checkpointId?: string | null;
 }
 
 // 2. All projects

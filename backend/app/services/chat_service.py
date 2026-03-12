@@ -916,7 +916,12 @@ class ChatService:
 
         active_task = self.task_manager.get(chat_id)
         is_running = active_task is not None and not active_task.done()
-        return ChatRuntimeStateOut(chatId=chat_id, isRunning=is_running)
+        checkpoint_id = self.task_manager.get_checkpoint_id(chat_id) if is_running else None
+        return ChatRuntimeStateOut(
+            chatId=chat_id,
+            isRunning=is_running,
+            checkpointId=checkpoint_id,
+        )
 
     def get_chat_debug(self, chat_id: str) -> dict:
         """Assemble a debug dump of prompts and API payload for the current conversation."""
@@ -1121,7 +1126,7 @@ def _schedule_background_task(
             )
 
     task = asyncio.create_task(_run())
-    task_manager.set(chat_id, task)
+    task_manager.set(chat_id, task, checkpoint_id=checkpoint_id)
 
     def _on_done(t: asyncio.Task) -> None:
         # Only remove if this task is still the tracked one; avoids

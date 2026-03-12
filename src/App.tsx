@@ -49,6 +49,10 @@ export function App() {
   const [continuingInterruptedRun, setContinuingInterruptedRun] = useState(false);
   const [backendConnected, setBackendConnected] = useState(false);
   const [backendConnectionChecked, setBackendConnectionChecked] = useState(false);
+  const [pendingRunStartChats, setPendingRunStartChats] = useState<Set<string>>(new Set());
+  const [queueFrozenChats, setQueueFrozenChats] = useState<Set<string>>(new Set());
+  const [pendingPriorityQueuedMessage, setPendingPriorityQueuedMessage] = useState<QueuedMessageItem | null>(null);
+  const [queueDrainLockChatId, setQueueDrainLockChatId] = useState<string | null>(null);
   const [queuedMessagesByChat, setQueuedMessagesByChat] = useState<QueuedMessagesByChat>(() => {
     try {
       const raw = localStorage.getItem('queuedMessagesByChat');
@@ -66,6 +70,7 @@ export function App() {
   const isProcessing = activeChatId != null
     && (
       processingChats.has(activeChatId)
+      || pendingRunStartChats.has(activeChatId)
       || (chat.runtimeState?.chatId === activeChatId && chat.runtimeState?.isRunning === true)
     );
 
@@ -266,11 +271,30 @@ export function App() {
   setProcessingChatsRef.current = setProcessingChats;
   const queuedMessagesByChatRef = useRef(queuedMessagesByChat);
   queuedMessagesByChatRef.current = queuedMessagesByChat;
+  const pendingPriorityQueuedMessageRef = useRef<QueuedMessageItem | null>(pendingPriorityQueuedMessage);
+  pendingPriorityQueuedMessageRef.current = pendingPriorityQueuedMessage;
+  const cancellationReasonByChatRef = useRef<Record<string, 'manual' | 'priority'>>({});
 
   const removeProcessing = useCallback((chatIdToRemove: string) => {
     setProcessingChatsRef.current((prev) => {
       const next = new Set(prev);
       next.delete(chatIdToRemove);
+      return next;
+    });
+  }, []);
+
+  const markPendingRunStart = useCallback((chatIdToMark: string) => {
+    setPendingRunStartChats((prev) => {
+      if (prev.has(chatIdToMark)) return prev;
+      return new Set(prev).add(chatIdToMark);
+    });
+  }, []);
+
+  const clearPendingRunStart = useCallback((chatIdToClear: string) => {
+    setPendingRunStartChats((prev) => {
+      if (!prev.has(chatIdToClear)) return prev;
+      const next = new Set(prev);
+      next.delete(chatIdToClear);
       return next;
     });
   }, []);
@@ -311,11 +335,16 @@ export function App() {
     const activeRuntimeState = chat.runtimeState;
     if (activeChatId == null || activeRuntimeState?.chatId !== activeChatId) return;
     if (activeRuntimeState.isRunning) {
+      clearPendingRunStart(activeChatId);
       setProcessingChats((prev) => new Set(prev).add(activeChatId));
+      if (queueDrainLockChatId === activeChatId) {
+        setQueueDrainLockChatId(null);
+      }
       return;
     }
+    if (pendingRunStartChats.has(activeChatId)) return;
     removeProcessing(activeChatId);
-  }, [activeChatId, chat.runtimeState, removeProcessing]);
+  }, [activeChatId, chat.runtimeState, clearPendingRunStart, pendingRunStartChats, queueDrainLockChatId, removeProcessing]);
 
   const handleAgentEvent = useCallback(
     (event: AgentEvent) => {
@@ -324,13 +353,31 @@ export function App() {
         return;
       }
       if (event.type === 'agent_started') {
+        clearPendingRunStart(event.chatId);
         setProcessingChats((prev) => new Set(prev).add(event.chatId));
+        if (queueDrainLockChatId === event.chatId) {
+          setQueueDrainLockChatId(null);
+        }
       }
       if (event.type === 'agent_done') {
+        clearPendingRunStart(event.chatId);
         removeProcessing(event.chatId);
+        const cancellationReason = cancellationReasonByChatRef.current[event.chatId];
+        if (cancellationReason != null) {
+          delete cancellationReasonByChatRef.current[event.chatId];
+        } else {
+          setQueueFrozenChats((prev) => {
+            if (!prev.has(event.chatId)) return prev;
+            const next = new Set(prev);
+            next.delete(event.chatId);
+            return next;
+          });
+        }
       }
       if (event.type === 'agent_paused') {
+        clearPendingRunStart(event.chatId);
         removeProcessing(event.chatId);
+        delete cancellationReasonByChatRef.current[event.chatId];
         const payload = event.payload as AgentPausePayload;
         if (payload.reason === 'max_iterations') {
           if (event.chatId === activeChatId) {
@@ -352,7 +399,9 @@ export function App() {
         }
       }
       if (event.type === 'error' && !(event.payload as { toolCallId?: string })?.toolCallId) {
+        clearPendingRunStart(event.chatId);
         removeProcessing(event.chatId);
+        delete cancellationReasonByChatRef.current[event.chatId];
         if (event.chatId === activeChatId) {
           const payload = event.payload as { message?: string };
           showToast(`Error: ${payload.message ?? 'Unknown error'}`);
@@ -361,7 +410,7 @@ export function App() {
       if (event.chatId !== activeChatId) return;
       chat.processEvent(event);
     },
-    [activeChatId, chat, projectsApi, removeProcessing, showToast],
+    [activeChatId, chat, clearPendingRunStart, projectsApi, queueDrainLockChatId, removeProcessing, showToast],
   );
 
   useAgentEvents([activeChatId, ...processingChats], handleAgentEvent);
@@ -370,6 +419,7 @@ export function App() {
 
   const sendPayloadNow = useCallback(
     async (chatIdToProcess: string, payload: QueuedMessagePayload) => {
+      markPendingRunStart(chatIdToProcess);
       setProcessingChats((prev) => new Set(prev).add(chatIdToProcess));
 
       const res = await chat.sendMessage(payload.content, {
@@ -379,6 +429,7 @@ export function App() {
         attachments: payload.attachments,
       });
       if (!res.ok) {
+        clearPendingRunStart(chatIdToProcess);
         showToast(`Error: ${res.error}`);
         setProcessingChats((prev) => {
           const next = new Set(prev);
@@ -389,7 +440,45 @@ export function App() {
 
       return res;
     },
-    [chat, showToast],
+    [chat, clearPendingRunStart, markPendingRunStart, showToast],
+  );
+
+  const waitForChatIdle = useCallback(
+    async (chatIdToWaitFor: string, timeoutMs = 10000) => {
+      const startedAt = Date.now();
+      while (Date.now() - startedAt < timeoutMs) {
+        const runtimeRes = await chat.refreshRuntimeState(chatIdToWaitFor);
+        if (runtimeRes.ok && !runtimeRes.runtime?.isRunning) {
+          return true;
+        }
+        await new Promise<void>((resolve) => {
+          globalThis.setTimeout(resolve, 200);
+        });
+      }
+      return false;
+    },
+    [chat],
+  );
+
+  const waitForRunStart = useCallback(
+    async (chatIdToWaitFor: string, checkpointId: string, timeoutMs = 10000) => {
+      const startedAt = Date.now();
+      while (Date.now() - startedAt < timeoutMs) {
+        const runtimeRes = await chat.refreshRuntimeState(chatIdToWaitFor);
+        if (
+          runtimeRes.ok
+          && runtimeRes.runtime?.isRunning
+          && runtimeRes.runtime.checkpointId === checkpointId
+        ) {
+          return true;
+        }
+        await new Promise<void>((resolve) => {
+          globalThis.setTimeout(resolve, 200);
+        });
+      }
+      return false;
+    },
+    [chat],
   );
 
   const handleSendMessage = async (
@@ -422,13 +511,21 @@ export function App() {
 
   const handleCancelMessage = useCallback(() => {
     if (activeChatId == null) return;
-    chat.cancelProcessing(activeChatId);
-    setProcessingChats((prev) => {
-      const next = new Set(prev);
-      next.delete(activeChatId);
-      return next;
-    });
-  }, [activeChatId, chat]);
+    cancellationReasonByChatRef.current[activeChatId] = 'manual';
+    setQueueFrozenChats((prev) => new Set(prev).add(activeChatId));
+    if (pendingPriorityQueuedMessage?.chatId === activeChatId) {
+      setQueuedMessagesByChat((prev) => ({
+        ...prev,
+        [activeChatId]: [pendingPriorityQueuedMessage, ...(prev[activeChatId] ?? [])],
+      }));
+      setPendingPriorityQueuedMessage(null);
+    }
+    if (queueDrainLockChatId === activeChatId) {
+      setQueueDrainLockChatId(null);
+    }
+    clearPendingRunStart(activeChatId);
+    void chat.cancelProcessing(activeChatId);
+  }, [activeChatId, chat, clearPendingRunStart, pendingPriorityQueuedMessage, queueDrainLockChatId]);
 
   const handleDeleteQueuedMessage = useCallback(
     (queuedId: string) => {
@@ -446,29 +543,106 @@ export function App() {
       const target = queuedForChat.find((item) => item.id === queuedId);
       if (!target) return;
 
+      setPendingPriorityQueuedMessage(target);
+      setQueueDrainLockChatId(chatId);
       removeQueuedMessage(chatId, queuedId);
-      if (isProcessing) {
-        chat.cancelProcessing(chatId);
-        setProcessingChats((prev) => {
-          const next = new Set(prev);
-          next.delete(chatId);
-          return next;
-        });
+
+      const hadActiveRun = isProcessing;
+      if (hadActiveRun) {
+        cancellationReasonByChatRef.current[chatId] = 'priority';
+        clearPendingRunStart(chatId);
+        const cancelRes = await chat.cancelProcessing(chatId);
+        if (!cancelRes.ok) {
+          delete cancellationReasonByChatRef.current[chatId];
+          setPendingPriorityQueuedMessage(null);
+          setQueueDrainLockChatId(null);
+          setQueuedMessagesByChat((prev) => ({
+            ...prev,
+            [chatId]: [target, ...(prev[chatId] ?? [])],
+          }));
+          showToast(`Error: ${cancelRes.error}`);
+          return;
+        }
+
+        const idleConfirmed = await waitForChatIdle(chatId);
+        if (!idleConfirmed) {
+          delete cancellationReasonByChatRef.current[chatId];
+          if (pendingPriorityQueuedMessageRef.current?.id === target.id) {
+            setPendingPriorityQueuedMessage(null);
+            setQueueDrainLockChatId(null);
+            setQueuedMessagesByChat((prev) => ({
+              ...prev,
+              [chatId]: [target, ...(prev[chatId] ?? [])],
+            }));
+          }
+          showToast('Timed out waiting for the previous run to stop.');
+          return;
+        }
       }
 
-      const res = await sendPayloadNow(chatId, target.payload);
-      if (!res.ok) {
+      if (pendingPriorityQueuedMessageRef.current?.id !== target.id) {
+        return;
+      }
+
+      const sendRes = await sendPayloadNow(chatId, target.payload);
+      if (pendingPriorityQueuedMessageRef.current?.id !== target.id) {
+        return;
+      }
+
+      if (!sendRes.ok) {
+        setPendingPriorityQueuedMessage(null);
+        setQueueDrainLockChatId(null);
         setQueuedMessagesByChat((prev) => ({
           ...prev,
           [chatId]: [target, ...(prev[chatId] ?? [])],
         }));
+        return;
+      }
+
+      const checkpointId = sendRes.data.checkpoint?.id;
+      if (!checkpointId) {
+        setPendingPriorityQueuedMessage(null);
+        setQueueDrainLockChatId(null);
+        showToast('Message was sent, but the new run checkpoint was missing.');
+        return;
+      }
+
+      const runStarted = await waitForRunStart(chatId, checkpointId);
+      if (pendingPriorityQueuedMessageRef.current?.id !== target.id) {
+        return;
+      }
+
+      setPendingPriorityQueuedMessage(null);
+      setQueueDrainLockChatId(null);
+      if (!runStarted) {
+        showToast('Message was sent, but the new agent run was not confirmed within 10 seconds.');
       }
     },
-    [activeChatId, chat, isProcessing, queuedMessagesByChat, removeQueuedMessage, sendPayloadNow],
+    [
+      activeChatId,
+      chat,
+      clearPendingRunStart,
+      isProcessing,
+      queuedMessagesByChat,
+      removeQueuedMessage,
+      sendPayloadNow,
+      showToast,
+      waitForChatIdle,
+      waitForRunStart,
+    ],
   );
 
   useEffect(() => {
-    if (activeChatId == null || isProcessing || awaitingUserQuery != null) return;
+    if (
+      activeChatId == null
+      || isProcessing
+      || awaitingUserQuery != null
+      || pendingPriorityQueuedMessage != null
+      || queueFrozenChats.has(activeChatId)
+      || queueDrainLockChatId === activeChatId
+    ) {
+      return;
+    }
     const nextQueued = queuedMessagesByChatRef.current[activeChatId]?.[0];
     if (!nextQueued) return;
 
@@ -481,7 +655,16 @@ export function App() {
         }));
       }
     });
-  }, [activeChatId, awaitingUserQuery, isProcessing, removeQueuedMessage, sendPayloadNow]);
+  }, [
+    activeChatId,
+    awaitingUserQuery,
+    isProcessing,
+    pendingPriorityQueuedMessage,
+    queueFrozenChats,
+    queueDrainLockChatId,
+    removeQueuedMessage,
+    sendPayloadNow,
+  ]);
 
   const handleRetryObservation = useCallback(async () => {
     const res = await chat.retryObservation();

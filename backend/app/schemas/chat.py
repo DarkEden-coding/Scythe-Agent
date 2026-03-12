@@ -114,6 +114,7 @@ class ProjectPlanOut(BaseModel):
 class ChatRuntimeStateOut(BaseModel):
     chatId: str
     isRunning: bool
+    checkpointId: str | None = None
 
 
 class GetChatHistoryResponse(BaseModel):

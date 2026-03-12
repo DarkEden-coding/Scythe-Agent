@@ -460,9 +460,9 @@ export class ApiClient {
     }
   }
 
-  /** Request the backend to cancel the running agent for a chat. Fire-and-forget. */
-  cancelChat(chatId: string): void {
-    void this.request<{ cancelled: boolean }>('POST', `/chat/${chatId}/cancel`);
+  /** Request the backend to cancel the running agent for a chat. */
+  async cancelChat(chatId: string): Promise<ApiResponse<{ cancelled: boolean }>> {
+    return this.request<{ cancelled: boolean }>('POST', `/chat/${chatId}/cancel`);
   }
 
   /** Approve a pending tool call. */
