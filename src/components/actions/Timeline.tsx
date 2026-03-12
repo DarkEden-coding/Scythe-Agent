@@ -136,7 +136,7 @@ export function Timeline({
     return (
       <div className="flex-1 overflow-y-auto p-3">
         <div className="flex items-center justify-center min-h-full rounded-3xl border border-dashed border-gray-700/50 bg-gray-850/40 px-6 py-8">
-          <div className="max-w-md text-center">
+          <div className="max-w-md w-full text-center rounded-3xl border border-gray-700/40 bg-gray-850/70 shadow-xl shadow-black/30 px-6 py-5">
             <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-purple-500/20 bg-purple-500/10">
               <Wand2 className="w-5 h-5 text-purple-300" />
             </div>
@@ -145,17 +145,17 @@ export function Timeline({
               Tool calls, reasoning, file edits, and checkpoints show up after the agent starts working on your request.
             </p>
             <div className="mt-5 grid gap-2 text-left sm:grid-cols-3">
-              <div className="rounded-2xl border border-gray-700/40 bg-gray-800/70 p-3">
+              <div className="rounded-2xl border border-gray-700/40 bg-gray-850/70 shadow-xl shadow-black/20 p-3">
                 <Activity className="w-4 h-4 text-aqua-400 mb-2" />
                 <p className="text-[11px] font-medium text-gray-200">Live activity</p>
                 <p className="mt-1 text-[11px] text-gray-400">See the agent think and call tools.</p>
               </div>
-              <div className="rounded-2xl border border-gray-700/40 bg-gray-800/70 p-3">
+              <div className="rounded-2xl border border-gray-700/40 bg-gray-850/70 shadow-xl shadow-black/20 p-3">
                 <GitBranch className="w-4 h-4 text-aqua-400 mb-2" />
                 <p className="text-[11px] font-medium text-gray-200">Checkpoints</p>
                 <p className="mt-1 text-[11px] text-gray-400">Track steps and revert changes when needed.</p>
               </div>
-              <div className="rounded-2xl border border-gray-700/40 bg-gray-800/70 p-3">
+              <div className="rounded-2xl border border-gray-700/40 bg-gray-850/70 shadow-xl shadow-black/20 p-3">
                 <MousePointerClick className="w-4 h-4 text-aqua-400 mb-2" />
                 <p className="text-[11px] font-medium text-gray-200">Starts automatically</p>
                 <p className="mt-1 text-[11px] text-gray-400">This placeholder disappears on the first action.</p>
