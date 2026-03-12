@@ -37,6 +37,7 @@ import type {
   AgentObservationStatusPayload,
   AgentPlanConflictPayload,
   AgentPlanPayload,
+  ChatRuntimeStateResponse,
   ChatMemoryStateResponse,
 } from '@/api/types';
 import type { ObservationStatus } from '@/components/chat/ObservationStatusIndicator';
@@ -409,6 +410,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
   const [observations, setObservations] = useState<ObservationData[]>([]);
   const [persistentError, setPersistentError] = useState<ChatPersistentError | null>(null);
   const [visionPreprocessing, setVisionPreprocessing] = useState(false);
+  const [runtimeState, setRuntimeState] = useState<ChatRuntimeStateResponse | null>(null);
 
   const pendingContentDeltas = useRef<Map<string, string>>(new Map());
   const pendingReasoningDeltas = useRef<Map<string, string>>(new Map());
@@ -478,6 +480,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
       setObservations([]);
       setPersistentError(null);
       setVisionPreprocessing(false);
+      setRuntimeState(null);
       setError(null);
       pendingContentDeltas.current.clear();
       pendingReasoningDeltas.current.clear();
@@ -485,6 +488,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
       return;
     }
 
+    const resolvedChatId = chatId;
     let cancelled = false;
     memoryStateRef.current = null;
     pendingContentDeltas.current.clear();
@@ -506,11 +510,13 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
     setObservations([]);
     setObservationStatus('idle');
     setPersistentError(null);
+    setRuntimeState(null);
 
     Promise.all([
-      client.getChatHistory(chatId),
-      client.getMemoryState(chatId),
-    ]).then(([histRes, obsRes]) => {
+      client.getChatHistory(resolvedChatId),
+      client.getMemoryState(resolvedChatId),
+      client.getChatRuntime(resolvedChatId),
+    ]).then(([histRes, obsRes, runtimeRes]) => {
       if (cancelled) return;
       if (histRes.ok) {
         const d = histRes.data;
@@ -542,6 +548,11 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
         setObservations(toObservationTimeline(obsRes.data));
       } else {
         memoryStateRef.current = null;
+      }
+      if (runtimeRes.ok) {
+        setRuntimeState(runtimeRes.data);
+      } else {
+        setRuntimeState({ chatId: resolvedChatId, isRunning: false });
       }
       if (histRes.ok) {
         commitContextItems(histRes.data.contextItems, memoryStateRef.current);
@@ -634,6 +645,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
       if (typeof id !== 'string') return;
       client.cancelSession(id);
       client.cancelChat(id);
+      setRuntimeState({ chatId: id, isRunning: false });
       setProcessingChats((prev) => {
         const next = new Set(prev);
         next.delete(id);
@@ -716,6 +728,23 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
     streamFlushScheduled.current = false;
     setStreamingReasoningBlockIds(new Set());
   }, []);
+
+  const refreshRuntimeState = useCallback(
+    async (targetChatId?: string | null) => {
+      const resolvedChatId = targetChatId ?? chatId;
+      if (!isValidChatId(resolvedChatId)) {
+        setRuntimeState(null);
+        return { ok: true as const, runtime: null as ChatRuntimeStateResponse | null };
+      }
+      const res = await client.getChatRuntime(resolvedChatId);
+      if (res.ok) {
+        setRuntimeState(res.data);
+        return { ok: true as const, runtime: res.data };
+      }
+      return { ok: false as const, runtime: runtimeState };
+    },
+    [chatId, client, runtimeState],
+  );
 
   const refreshMemoryState = useCallback(
     async (targetChatId?: string | null) => {
@@ -858,6 +887,43 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!isValidChatId(chatId)) return () => {};
+
+    const resolvedChatId = chatId;
+    let cancelled = false;
+    const syncRuntimeState = async () => {
+      const res = await client.getChatRuntime(resolvedChatId);
+      if (cancelled) return;
+      if (res.ok) {
+        setRuntimeState(res.data);
+      }
+    };
+
+    void syncRuntimeState();
+    const intervalId = window.setInterval(() => {
+      void syncRuntimeState();
+    }, 2000);
+
+    const handleWindowFocus = () => {
+      void syncRuntimeState();
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        void syncRuntimeState();
+      }
+    };
+
+    window.addEventListener('focus', handleWindowFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', handleWindowFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [chatId, client]);
 
   useEffect(() => {
     if (!isValidChatId(chatId) || plans.length === 0) return () => {};
@@ -1042,6 +1108,10 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
       };
 
       switch (event.type) {
+        case 'agent_started': {
+          setRuntimeState({ chatId: event.chatId, isRunning: true });
+          break;
+        }
         case 'vision_preprocessing': {
           setVisionPreprocessing(true);
           break;
@@ -1436,7 +1506,12 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
         case 'agent_done': {
           setVisionPreprocessing(false);
           setPersistentError(null);
+          setRuntimeState({ chatId: event.chatId, isRunning: false });
           void refreshHistoryFromServer(event.chatId);
+          break;
+        }
+        case 'agent_paused': {
+          setRuntimeState({ chatId: event.chatId, isRunning: false });
           break;
         }
         case 'error': {
@@ -1457,6 +1532,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
               );
             }
           } else {
+            setRuntimeState({ chatId: event.chatId, isRunning: false });
             setPersistentError({
               message: payload.message ?? 'An error occurred.',
               source: payload.source,
@@ -1493,6 +1569,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
     observations,
     persistentError,
     visionPreprocessing,
+    runtimeState,
     maxTokens,
     model,
     loading,
@@ -1513,6 +1590,7 @@ export function useChatHistory(chatId: string | null | undefined, client: ApiCli
     getProcessingChats,
     cancelProcessing,
     retryObservation,
+    refreshRuntimeState,
     setMessages,
     setToolCalls,
     setFileEdits,

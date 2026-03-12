@@ -43,6 +43,17 @@ def get_chat_history(chat_id: str, db: Session = Depends(get_db)):
         return _internal_error(exc)
 
 
+@router.get("/{chat_id}/runtime")
+def get_chat_runtime(chat_id: str, db: Session = Depends(get_db)):
+    try:
+        data = ChatService(db).get_chat_runtime(chat_id)
+        return ok(data.model_dump())
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content=err(str(exc)).model_dump())
+    except Exception as exc:
+        return _internal_error(exc)
+
+
 @router.get("/{chat_id}/debug")
 def get_chat_debug(chat_id: str, db: Session = Depends(get_db)):
     try:

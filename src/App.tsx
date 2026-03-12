@@ -33,10 +33,13 @@ export function App() {
   const [backendConnected, setBackendConnected] = useState(false);
   const [backendConnectionChecked, setBackendConnectionChecked] = useState(false);
 
-  const isProcessing = activeChatId != null && processingChats.has(activeChatId);
-
   // ── API hooks ──────────────────────────────────────────────────
   const chat = useChatHistory(activeChatId);
+  const isProcessing = activeChatId != null
+    && (
+      processingChats.has(activeChatId)
+      || (chat.runtimeState?.chatId === activeChatId && chat.runtimeState?.isRunning === true)
+    );
 
   const awaitingUserQuery = useMemo(() => {
     if (isProcessing) return null;
@@ -233,11 +236,24 @@ export function App() {
     });
   }, []);
 
+  useEffect(() => {
+    const activeRuntimeState = chat.runtimeState;
+    if (activeChatId == null || activeRuntimeState?.chatId !== activeChatId) return;
+    if (activeRuntimeState.isRunning) {
+      setProcessingChats((prev) => new Set(prev).add(activeChatId));
+      return;
+    }
+    removeProcessing(activeChatId);
+  }, [activeChatId, chat.runtimeState, removeProcessing]);
+
   const handleAgentEvent = useCallback(
     (event: AgentEvent) => {
       if (event.type === 'chat_title_updated') {
         projectsApi.refresh();
         return;
+      }
+      if (event.type === 'agent_started') {
+        setProcessingChats((prev) => new Set(prev).add(event.chatId));
       }
       if (event.type === 'agent_done') {
         removeProcessing(event.chatId);

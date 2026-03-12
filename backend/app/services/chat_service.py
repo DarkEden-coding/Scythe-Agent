@@ -16,6 +16,7 @@ from app.db.session import get_sessionmaker
 from app.initial_information import apply_initial_information
 from app.schemas.chat import (
     ApprovePlanResponse,
+    ChatRuntimeStateOut,
     ContinueAgentResponse,
     CheckpointOut,
     EditMessageResponse,
@@ -908,6 +909,15 @@ class ChatService:
         )
         return assembler.assemble(chat_id)
 
+    def get_chat_runtime(self, chat_id: str) -> ChatRuntimeStateOut:
+        chat = self.repo.get_chat(chat_id)
+        if chat is None:
+            raise ValueError(f"Chat not found: {chat_id}")
+
+        active_task = self.task_manager.get(chat_id)
+        is_running = active_task is not None and not active_task.done()
+        return ChatRuntimeStateOut(chatId=chat_id, isRunning=is_running)
+
     def get_chat_debug(self, chat_id: str) -> dict:
         """Assemble a debug dump of prompts and API payload for the current conversation."""
         history = self.get_chat_history(chat_id)
@@ -1026,6 +1036,13 @@ def _schedule_background_task(
     async def _run() -> None:
         try:
             await asyncio.sleep(0)
+            await event_bus.publish(
+                chat_id,
+                {
+                    "type": "agent_started",
+                    "payload": {"checkpointId": checkpoint_id},
+                },
+            )
             follow_up = await run_agent_turn(
                 chat_id=chat_id,
                 checkpoint_id=checkpoint_id,

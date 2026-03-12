@@ -70,6 +70,7 @@ export type {
   UpsertProjectMemoryResponse,
   DeleteProjectMemoryResponse,
   GetChatHistoryResponse,
+  ChatRuntimeStateResponse,
   GetProjectsResponse,
   FsChild,
   GetFsChildrenResponse,

@@ -63,6 +63,7 @@ import type {
   GetFsChildrenResponse,
   PickDirectoryResponse,
   GetChatHistoryResponse,
+  ChatRuntimeStateResponse,
   GetProjectsResponse,
   GetSettingsResponse,
   AgentEvent,
@@ -587,6 +588,11 @@ export class ApiClient {
   /** Fetch complete chat history and all associated agent activity. */
   async getChatHistory(chatId: string): Promise<ApiResponse<GetChatHistoryResponse>> {
     return this.request('GET', `/chat/${chatId}/history`, undefined, `history-${chatId}`);
+  }
+
+  /** Fetch lightweight backend runtime state for a chat. */
+  async getChatRuntime(chatId: string): Promise<ApiResponse<ChatRuntimeStateResponse>> {
+    return this.request('GET', `/chat/${chatId}/runtime`, undefined, `runtime-${chatId}`);
   }
 
   /** Fetch debug dump (prompts, assembled messages, full history) for the conversation. */

@@ -111,6 +111,11 @@ class ProjectPlanOut(BaseModel):
     content: str | None = None
 
 
+class ChatRuntimeStateOut(BaseModel):
+    chatId: str
+    isRunning: bool
+
+
 class GetChatHistoryResponse(BaseModel):
     chatId: str
     messages: list[MessageOut]

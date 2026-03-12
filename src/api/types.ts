@@ -319,6 +319,11 @@ export interface GetChatHistoryResponse {
   model: string;
 }
 
+export interface ChatRuntimeStateResponse {
+  chatId: string;
+  isRunning: boolean;
+}
+
 // 2. All projects
 export interface GetProjectsResponse {
   projects: Project[];
@@ -346,6 +351,7 @@ export interface PickDirectoryResponse {
 
 // 3. Agent-to-user notifications / streaming
 export type AgentEventType =
+  | 'agent_started'
   | 'message'
   | 'content_delta'
   | 'sub_agent_start'
@@ -398,6 +404,7 @@ export interface AgentEvent {
     | AgentApprovalPayload
     | AgentContextPayload
     | AgentChatTitlePayload
+    | AgentRunStatusPayload
     | AgentVerificationIssuesPayload
     | AgentPausePayload
     | AgentObservationStatusPayload
@@ -405,6 +412,10 @@ export interface AgentEvent {
     | AgentPlanPayload
     | AgentPlanConflictPayload
     | AgentErrorPayload;
+}
+
+export interface AgentRunStatusPayload {
+  checkpointId?: string;
 }
 
 export interface AgentPlanStartedPayload {
