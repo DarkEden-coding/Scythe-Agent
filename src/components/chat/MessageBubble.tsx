@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { User, Bot, Pencil, Check, X, RotateCw, Copy, ChevronDown, ChevronUp } from 'lucide-react';
+import { User, Bot, Pencil, Check, X, RotateCw, Copy, ChevronDown, ChevronUp, Play } from 'lucide-react';
 import type { Message } from '@/types';
 import { Markdown } from '@/components/Markdown';
 import { formatTime } from '@/utils/formatTime';
@@ -9,6 +9,9 @@ interface MessageBubbleProps {
   readonly message: Message;
   readonly onEdit?: (messageId: string, newContent: string, referencedFiles?: string[]) => void;
   readonly isProcessing?: boolean;
+  readonly showContinueButton?: boolean;
+  readonly onContinue?: () => void;
+  readonly continueBusy?: boolean;
 }
 
 function fileLabel(path: string): string {
@@ -123,7 +126,14 @@ function renderUserContent(
   );
 }
 
-export function MessageBubble({ message, onEdit, isProcessing }: MessageBubbleProps) {
+export function MessageBubble({
+  message,
+  onEdit,
+  isProcessing,
+  showContinueButton = false,
+  onContinue,
+  continueBusy = false,
+}: MessageBubbleProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(message.content);
   const [editReferencedFiles, setEditReferencedFiles] = useState<string[]>(message.referencedFiles ?? []);
@@ -344,6 +354,23 @@ export function MessageBubble({ message, onEdit, isProcessing }: MessageBubblePr
                 </div>
               )}
             </div>
+            {message.role === 'agent' && showContinueButton && onContinue && (
+              <div className="mt-2 flex justify-center">
+                <button
+                  type="button"
+                  onClick={onContinue}
+                  disabled={continueBusy}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-aqua-500/30 bg-aqua-500/10 px-2.5 py-1.5 text-[11px] font-medium text-aqua-300 transition-colors hover:bg-aqua-500/15 hover:text-aqua-200 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {continueBusy ? (
+                    <div className="h-3 w-3 animate-spin rounded-full border border-aqua-300/40 border-t-aqua-300" />
+                  ) : (
+                    <Play className="w-3 h-3" />
+                  )}
+                  {continueBusy ? 'Continuing…' : 'Continue'}
+                </button>
+              </div>
+            )}
           </>
         )}
       </div>

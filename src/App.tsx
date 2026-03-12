@@ -29,6 +29,7 @@ export function App() {
   const [processingChats, setProcessingChats] = useState<Set<string>>(new Set());
   const [iterationLimitPause, setIterationLimitPause] = useState<IterationLimitPauseState | null>(null);
   const [continuingPausedRun, setContinuingPausedRun] = useState(false);
+  const [continuingInterruptedRun, setContinuingInterruptedRun] = useState(false);
   const [backendConnected, setBackendConnected] = useState(false);
   const [backendConnectionChecked, setBackendConnectionChecked] = useState(false);
 
@@ -59,6 +60,51 @@ export function App() {
     }
     return map;
   }, [chat.toolCalls, chat.checkpoints]);
+  const canContinueInterruptedRun = useMemo(() => {
+    if (activeChatId == null || isProcessing || continuingPausedRun || continuingInterruptedRun) return false;
+    if (awaitingUserQuery != null || iterationLimitPause != null) return false;
+    const lastMessage = chat.messages.at(-1);
+    if (lastMessage?.role !== 'agent') return false;
+    const lastMessageTimestamp = lastMessage.timestamp.getTime();
+    const lastToolAction = [...chat.toolCalls]
+      .filter((toolCall) => toolCall.timestamp.getTime() >= lastMessageTimestamp)
+      .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())[0];
+    if (
+      lastToolAction?.name === 'submit_task'
+      && lastToolAction.status === 'completed'
+      && String(lastToolAction.output ?? '').trim() === 'Task submitted.'
+    ) {
+      return false;
+    }
+    const hasIncompleteToolCall = chat.toolCalls.some((toolCall) => toolCall.status === 'pending' || toolCall.status === 'running');
+    const hasRecoverablePersistentError = Boolean(
+      chat.persistentError && chat.persistentError.source !== 'observer' && chat.persistentError.source !== 'reflector',
+    );
+    const latestPostMessageActivityTimestamp = Math.max(
+      lastMessageTimestamp,
+      ...chat.toolCalls.map((toolCall) => toolCall.timestamp.getTime()),
+      ...chat.fileEdits.map((fileEdit) => fileEdit.timestamp.getTime()),
+      ...chat.reasoningBlocks.map((reasoningBlock) => reasoningBlock.timestamp.getTime()),
+      ...chat.subAgentRuns.map((subAgentRun) => subAgentRun.timestamp.getTime()),
+      ...chat.checkpoints.map((checkpoint) => checkpoint.timestamp.getTime()),
+    );
+    const hasPostMessageActivity = latestPostMessageActivityTimestamp > lastMessageTimestamp;
+    return hasIncompleteToolCall || hasRecoverablePersistentError || hasPostMessageActivity;
+  }, [
+    activeChatId,
+    awaitingUserQuery,
+    chat.checkpoints,
+    chat.fileEdits,
+    chat.messages,
+    chat.persistentError,
+    chat.reasoningBlocks,
+    chat.subAgentRuns,
+    chat.toolCalls,
+    continuingInterruptedRun,
+    continuingPausedRun,
+    isProcessing,
+    iterationLimitPause,
+  ]);
   const projectsApi = useProjects();
   const { projects, loading: projectsLoading, projectMemoriesByProject } = projectsApi;
   const settings = useSettings();
@@ -273,6 +319,24 @@ export function App() {
     }
     setContinuingPausedRun(false);
   }, [chat, iterationLimitPause, showToast]);
+
+  const handleContinueInterruptedRun = useCallback(async () => {
+    if (activeChatId == null) return;
+    setContinuingInterruptedRun(true);
+    setProcessingChats((prev) => new Set(prev).add(activeChatId));
+    const res = await chat.continueAgent();
+    if (res.ok) {
+      showToast('Continuing agent run');
+    } else {
+      showToast(`Error: ${res.error}`);
+      setProcessingChats((prev) => {
+        const next = new Set(prev);
+        next.delete(activeChatId);
+        return next;
+      });
+    }
+    setContinuingInterruptedRun(false);
+  }, [activeChatId, chat, showToast]);
 
   const handleApproveCommand = async (toolCallId: string) => {
     if (activeChatId != null) {
@@ -609,6 +673,9 @@ export function App() {
             awaitingUserQuery={awaitingUserQuery}
             userQueriesByCheckpoint={userQueriesByCheckpoint}
             visionPreprocessing={chat.visionPreprocessing}
+            canContinueInterruptedRun={canContinueInterruptedRun}
+            onContinueInterruptedRun={handleContinueInterruptedRun}
+            continueBusy={continuingInterruptedRun}
           />
         }
         rightPanel={

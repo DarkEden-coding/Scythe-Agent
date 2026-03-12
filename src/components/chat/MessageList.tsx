@@ -17,6 +17,9 @@ interface MessageListProps {
   readonly showObservationsInChat?: boolean;
   readonly userQueriesByCheckpoint?: Record<string, string>;
   readonly visionPreprocessing?: boolean;
+  readonly canContinueInterruptedRun?: boolean;
+  readonly onContinueInterruptedRun?: () => void;
+  readonly continueBusy?: boolean;
 }
 
 function UserQueryBubble({ query }: { query: string }) {
@@ -96,6 +99,9 @@ export function MessageList({
   showObservationsInChat = false,
   userQueriesByCheckpoint = {},
   visionPreprocessing = false,
+  canContinueInterruptedRun = false,
+  onContinueInterruptedRun,
+  continueBusy = false,
 }: MessageListProps) {
   if (!activeChatId) {
     return (
@@ -135,6 +141,7 @@ export function MessageList({
   return (
     <>
       {messages.map((message, index) => {
+        const isLastMessage = index === messages.length - 1;
         const checkpoint = message.checkpointId ? getCheckpointForMessage(message.id) : null;
         const prevCpId = prevCheckpointId;
         if (checkpoint) {
@@ -171,7 +178,14 @@ export function MessageList({
                   <div className="flex-1 h-px bg-gray-700/50" />
                 </div>
               )}
-              <MessageBubble message={message} onEdit={onEditMessage} isProcessing={isProcessing} />
+              <MessageBubble
+                message={message}
+                onEdit={onEditMessage}
+                isProcessing={isProcessing}
+                showContinueButton={canContinueInterruptedRun && isLastMessage && message.role === 'agent'}
+                onContinue={onContinueInterruptedRun}
+                continueBusy={continueBusy}
+              />
               {checkpoint && userQueriesByCheckpoint[checkpoint.id] && (
                 <UserQueryBubble query={userQueriesByCheckpoint[checkpoint.id] ?? ''} />
               )}

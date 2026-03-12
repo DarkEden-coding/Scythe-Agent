@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { Layers, CheckSquare, ChevronDown } from 'lucide-react';
+import { Layers, CheckSquare, ChevronDown, Loader2 } from 'lucide-react';
 import { SubAgentRun, ToolCall, FileEdit, Checkpoint, ReasoningBlock, TodoItem, ProjectPlan } from '../types';
 import { cn } from '@/utils/cn';
 import { Timeline } from './actions/Timeline';
@@ -160,6 +160,7 @@ export function ActionsPanel({
   const pendingApproval = toolCalls.find(
     (tc) => tc.status === 'pending' && tc.approvalRequired === true,
   );
+  const isWritingAction = toolCalls.some((tc) => tc.status === 'running');
   const completedTodoCount = todos.filter((t) => t.status === 'completed').length;
 
   return (
@@ -168,6 +169,12 @@ export function ActionsPanel({
         <div className="flex items-center gap-2">
           <Layers className="w-4 h-4 text-aqua-400" />
           <h2 className="font-semibold text-gray-200 text-sm">Agent Activity</h2>
+          {isWritingAction && (
+            <div className="inline-flex items-center gap-1.5 rounded-full border border-aqua-500/20 bg-aqua-500/10 px-2 py-0.5">
+              <Loader2 className="h-3 w-3 animate-spin text-aqua-300" />
+              <span className="text-[10px] font-medium text-aqua-300">agent writing action</span>
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <span className="text-[10px] text-gray-600 font-mono">{toolCalls.length} calls</span>

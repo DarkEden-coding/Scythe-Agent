@@ -80,6 +80,9 @@ interface ChatPanelProps {
   readonly awaitingUserQuery?: { query: string } | null;
   readonly userQueriesByCheckpoint?: Record<string, string>;
   readonly visionPreprocessing?: boolean;
+  readonly canContinueInterruptedRun?: boolean;
+  readonly onContinueInterruptedRun?: () => void;
+  readonly continueBusy?: boolean;
 }
 
 export function ChatPanel({
@@ -119,6 +122,9 @@ export function ChatPanel({
   awaitingUserQuery = null,
   userQueriesByCheckpoint = {},
   visionPreprocessing = false,
+  canContinueInterruptedRun = false,
+  onContinueInterruptedRun,
+  continueBusy = false,
 }: ChatPanelProps) {
   const [inputValue, setInputValue] = useState('');
   const [inputReferencedFiles, setInputReferencedFiles] = useState<string[]>([]);
@@ -310,6 +316,9 @@ export function ChatPanel({
               observations={observations}
               showObservationsInChat={showObservationsInChat}
               userQueriesByCheckpoint={userQueriesByCheckpoint}
+              canContinueInterruptedRun={canContinueInterruptedRun}
+              onContinueInterruptedRun={onContinueInterruptedRun}
+              continueBusy={continueBusy}
             />
           </div>
           {awaitingUserQuery && (
